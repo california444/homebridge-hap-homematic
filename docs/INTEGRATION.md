@@ -68,8 +68,8 @@ looks like this:
 
 ```json
 {
-  "platform": "HomematicHap",
-  "name": "HomematicHap",
+  "platform": "HapHomematic",
+  "name": "HapHomematic",
   "ccuIp": "192.168.1.10",
   "useTls": false,
   "interfaces": {
@@ -146,7 +146,7 @@ the variable's min/max as the Brightness range).
   Homebridge installer does by default.
 - `config.json` is plain JSON. Make sure it is `chmod 600` and owned by
   the Homebridge user.
-- The plugin writes its own state under `<homebridge-storage>/homebridge-homematic-hap/`.
+- The plugin writes its own state under `<homebridge-storage>/homebridge-hap-homematic/`.
   No file outside that directory is opened by the plugin.
 - The custom UI is reachable only through the Homebridge UI itself;
   the plugin does not open any extra TCP/HTTP listeners. Do not expose
@@ -184,6 +184,6 @@ binds those legacy ports to localhost only.
 Variables are polled every 60 s. The CCU does not push variable
 updates through the RPC channel reliably. There is no fix on our side.
 
-**Heavy log spam from `[HomematicHap:ccu:events]`**
+**Heavy log spam from `[HapHomematic:ccu:events]`**
 Set `--debug` off — at default verbosity, only errors and reconnects
 log.

@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "HomematicHap",
+  "pluginAlias": "HapHomematic",
   "pluginType": "platform",
   "singular": true,
   "strictValidation": false,
@@ -13,7 +13,7 @@
       "name": {
         "title": "Platform name",
         "type": "string",
-        "default": "HomematicHap",
+        "default": "HapHomematic",
         "required": true
       },
       "ccuIp": {

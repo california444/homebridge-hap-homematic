@@ -1,6 +1,6 @@
 # Architecture
 
-This document explains how `homebridge-homematic-hap` works at a
+This document explains how `homebridge-hap-homematic` works at a
 level of detail that should be sufficient for a contributor to make
 meaningful changes without reading every file first. The companion
 [INTEGRATION.md](INTEGRATION.md) covers operational concerns

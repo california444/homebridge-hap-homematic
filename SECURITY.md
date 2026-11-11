@@ -2,7 +2,7 @@
 
 ## Threat model
 
-`homebridge-homematic-hap` runs in the trusted Homebridge process on a
+`homebridge-hap-homematic` runs in the trusted Homebridge process on a
 LAN host that already has full RPC and ReGa access to your CCU. It is not a
 multi-tenant product and is not intended to be exposed to the public
 internet. The relevant threats it actively mitigates are:
@@ -30,9 +30,9 @@ internet. The relevant threats it actively mitigates are:
 
 ## Reporting a vulnerability
 
-Please open a private security advisory at
-<https://github.com/matthiaseinig/Homebridge-Homematic-HAP/security/advisories/new>
-rather than a public issue. Include:
+Please report it privately to the maintainer of this fork (via the
+repository's private security advisory feature once it is hosted)
+rather than in a public issue. Include:
 
 - A clear description of the issue.
 - Steps to reproduce, ideally a minimal config.

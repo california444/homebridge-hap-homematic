@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { describe, it, expect, vi } from 'vitest';
 import { CcuClient } from '../../src/ccu/CcuClient.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
@@ -6,7 +8,7 @@ import { resolveConfig } from '../../src/util/config.js';
 import type { ChannelEvent } from '../../src/ccu/EventServer.js';
 
 function makeCcu(): CcuClient {
-  const config = resolveConfig({ platform: 'HomematicHap', ccuIp: '127.0.0.1' });
+  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
   return new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'ccu-test') });
 }
 

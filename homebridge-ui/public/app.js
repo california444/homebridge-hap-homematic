@@ -1,5 +1,7 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
- * homebridge-homematic-hap custom UI.
+ * homebridge-hap-homematic custom UI.
  *
  * Vanilla ES module + the global `homebridge` object provided by
  * homebridge-config-ui-x. Bootstrap 5 CSS is injected by the host;
@@ -53,8 +55,8 @@ const sortBy = (arr, fn) => [...arr].sort((a, b) => {
 const PAGE_SIZE = 10;
 
 const DEFAULT_BLOCK = () => ({
-  platform: 'HomematicHap',
-  name: 'HomematicHap',
+  platform: 'HapHomematic',
+  name: 'HapHomematic',
   ccuIp: '',
   useTls: false,
   interfaces: { bidcosRf: true, hmIpRf: true, bidcosWired: false, virtualDevices: true, cuxd: false },
@@ -720,7 +722,7 @@ function addChildBridge() {
   const main = state.blocks[0];
   state.blocks.push({
     ...DEFAULT_BLOCK(),
-    name: `HomematicHap (${state.blocks.length})`,
+    name: `HapHomematic (${state.blocks.length})`,
     _bridge: { username: identityUsername(seed), port: identityPort(seed) },
     ccuIp: main.ccuIp, useTls: main.useTls,
     interfaces: { ...main.interfaces }, interfacePorts: { ...main.interfacePorts },
@@ -1528,7 +1530,7 @@ async function init() {
     const ours = []; const other = [];
     for (const b of blocks ?? []) {
       if (!b) continue;
-      if (b.platform === 'HomematicHap' || b.platform === undefined) ours.push(b);
+      if (b.platform === 'HapHomematic' || b.platform === undefined) ours.push(b);
       else other.push(b);
     }
     if (!ours.length) ours.push(DEFAULT_BLOCK());

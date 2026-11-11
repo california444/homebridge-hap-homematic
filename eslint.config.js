@@ -52,6 +52,7 @@ export default tseslint.config(
       'node_modules/',
       'coverage/',
       'references/',
+      'ccu-dump/',
       'homebridge-ui/server.js',
     ],
   },

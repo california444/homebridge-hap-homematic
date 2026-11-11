@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * homebridge-config-ui-x runs this in its own Node process. It bridges
  * the iframe-side HTML to the runtime CCU client and the backup
@@ -35,9 +37,9 @@ const PLUGIN_VERSION = (() => {
   } catch { /* ignore */ }
   const distRoot = resolvePath(here, '..', 'dist', 'src');
   const distPresent = existsSync(distRoot);
-  console.log(`[homebridge-homematic-hap UI] v${version} booting from ${here}; dist present: ${distPresent}`);
+  console.log(`[homebridge-hap-homematic UI] v${version} booting from ${here}; dist present: ${distPresent}`);
   if (!distPresent) {
-    console.error(`[homebridge-homematic-hap UI] FATAL: ${distRoot} does not exist. ` +
+    console.error(`[homebridge-hap-homematic UI] FATAL: ${distRoot} does not exist. ` +
       'The custom UI cannot start without the compiled dist/ folder. ' +
       'Re-install the plugin (npm install --install-links /path/to/clone) and restart Homebridge.');
   }
@@ -72,7 +74,7 @@ class UiLogger {
   prefix = 'ui';
 }
 
-class HomematicHapUiServer extends HomebridgePluginUiServer {
+class HapHomematicUiServer extends HomebridgePluginUiServer {
   constructor() {
     super();
 
@@ -84,7 +86,7 @@ class HomematicHapUiServer extends HomebridgePluginUiServer {
     this.onRequest('/split-into-bridges', (payload) => this.handleSplitIntoBridges(payload));
 
     this.ready();
-    console.log('[homebridge-homematic-hap UI] handlers registered, ready signaled');
+    console.log('[homebridge-hap-homematic UI] handlers registered, ready signaled');
   }
 
   // --- handlers ----------------------------------------------------
@@ -223,8 +225,8 @@ class HomematicHapUiServer extends HomebridgePluginUiServer {
     }
     try {
       return resolveConfig({
-        platform: 'HomematicHap',
-        name: typeof payload.name === 'string' ? payload.name : 'HomematicHap',
+        platform: 'HapHomematic',
+        name: typeof payload.name === 'string' ? payload.name : 'HapHomematic',
         ccuIp: payload.ccuIp,
         useTls: payload.useTls,
         interfaces: payload.interfaces,
@@ -241,5 +243,5 @@ class HomematicHapUiServer extends HomebridgePluginUiServer {
   }
 }
 
-export { HomematicHapUiServer, mergeIntoConfig };
-export default new HomematicHapUiServer();
+export { HapHomematicUiServer, mergeIntoConfig };
+export default new HapHomematicUiServer();

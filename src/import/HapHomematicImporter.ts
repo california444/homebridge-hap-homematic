@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Imports a hap-homematic configuration into our config schema.
  *
@@ -263,7 +265,7 @@ export function splitReportIntoBridges(report: ImportReport): BridgeImportBlock[
   if (uuids.length === 0) {
     return [{
       instanceUuid: 'default',
-      name: 'HomematicHap',
+      name: 'HapHomematic',
       bridge: bridgeIdentityFor('default'),
       channels: [...report.channels],
       variables: [...report.variables],
@@ -275,7 +277,7 @@ export function splitReportIntoBridges(report: ImportReport): BridgeImportBlock[
   for (const uuid of uuids) {
     blocks.set(uuid, {
       instanceUuid: uuid,
-      name: instances[uuid]?.name ?? `HomematicHap-${uuid.slice(0, 8)}`,
+      name: instances[uuid]?.name ?? `HapHomematic-${uuid.slice(0, 8)}`,
       bridge: bridgeIdentityFor(uuid),
       channels: [],
       variables: [],

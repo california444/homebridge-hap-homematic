@@ -1,38 +1,33 @@
 {
-  "name": "homebridge-homematic-hap",
-  "displayName": "HomeMatic HAP",
-  "version": "1.2.12",
-  "description": "Homebridge plugin for HomeMatic / HomematicIP devices with a full configuration GUI. Spiritual successor to thkl/hap-homematic, running as a Homebridge plugin instead of a CCU addon. Imports existing hap-homematic configurations.",
+  "name": "homebridge-hap-homematic",
+  "displayName": "HAP HomeMatic",
+  "version": "0.1.0",
+  "description": "Homebridge plugin for HomeMatic / HomematicIP devices on a CCU / OpenCCU, using XML-RPC only. Hard fork of matthiaseinig/Homebridge-Homematic-HAP (homebridge-homematic-hap); not affiliated with thkl/hap-homematic.",
   "type": "module",
   "license": "Apache-2.0",
   "author": {
-    "name": "mattein",
-    "url": "https://github.com/matthiaseinig"
+    "name": "california444"
   },
   "contributors": [
+    "mattein (Homebridge-Homematic-HAP, upstream of this fork) <https://github.com/matthiaseinig>",
     "thkl (original hap-homematic and homebridge-homematic author) <https://github.com/thkl>"
   ],
-  "homepage": "https://github.com/matthiaseinig/Homebridge-Homematic-HAP#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/matthiaseinig/Homebridge-Homematic-HAP.git"
-  },
-  "bugs": {
-    "url": "https://github.com/matthiaseinig/Homebridge-Homematic-HAP/issues"
-  },
   "keywords": [
     "homebridge-plugin",
     "homematic",
     "homematicip",
     "ccu",
-    "ccu3",
+    "openccu",
     "raspberrymatic",
-    "hap-homematic"
+    "xml-rpc"
   ],
   "main": "dist/src/index.js",
   "engines": {
-    "node": "^20.18.0 || ^22.10.0 || ^24.0.0",
-    "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+    "node": ">=24",
+    "homebridge": ">=2.4.0"
+  },
+  "peerDependencies": {
+    "homebridge": ">=2.4.0"
   },
   "files": [
     "dist/",
@@ -44,7 +39,7 @@
   ],
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && node ./node_modules/typescript/bin/tsc && npm run build:ui",
-    "build:ui": "./node_modules/.bin/esbuild homebridge-ui/server.src.js --bundle --platform=node --format=esm --target=node20 --outfile=homebridge-ui/server.js --external:../dist/*",
+    "build:ui": "./node_modules/.bin/esbuild homebridge-ui/server.src.js --bundle --platform=node --format=esm --target=node24 --outfile=homebridge-ui/server.js --external:../dist/*",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -66,7 +61,7 @@
     "@vitest/coverage-v8": "^3.2.4",
     "esbuild": "^0.27.7",
     "eslint": "^9.39.1",
-    "homebridge": "^2.0.0-beta.55",
+    "homebridge": "^2.5.0",
     "nodemon": "^3.1.11",
     "rimraf": "^6.1.0",
     "ts-node": "^10.9.2",

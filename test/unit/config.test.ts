@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { describe, it, expect } from 'vitest';
 import { ConfigError, isValidHost, resolveConfig } from '../../src/util/config.js';
 
@@ -18,7 +20,7 @@ describe('isValidHost', () => {
 });
 
 describe('resolveConfig', () => {
-  const base = { platform: 'HomematicHap', ccuIp: '192.168.1.10' };
+  const base = { platform: 'HapHomematic', ccuIp: '192.168.1.10' };
 
   it('fills defaults for everything else', () => {
     const c = resolveConfig(base);

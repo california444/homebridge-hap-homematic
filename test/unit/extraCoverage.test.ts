@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Targeted top-up tests for branches not exercised by the focused suites.
  */
@@ -88,14 +90,14 @@ describe('storage edge cases', () => {
 
 describe('CcuClient internals', () => {
   it('routes addresses without dots (bare interface name) to BidCos-RF default', () => {
-    const config = resolveConfig({ platform: 'HomematicHap', ccuIp: '127.0.0.1' });
+    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
     const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
     expect(intfFor('NoDot')).toBe('BidCos-RF');
   });
 
   it('routes hmip-lowercase prefix to HmIP-RF', () => {
-    const config = resolveConfig({ platform: 'HomematicHap', ccuIp: '127.0.0.1' });
+    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
     const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
     expect(intfFor('hmip.X:1')).toBe('HmIP-RF');
@@ -117,7 +119,7 @@ describe('CcuClient watchdog', () => {
     vi.useFakeTimers();
     try {
       const config = resolveConfig({
-        platform: 'HomematicHap',
+        platform: 'HapHomematic',
         ccuIp: '127.0.0.1',
         eventServer: { host: '127.0.0.1', port: 9876, watchdogSeconds: 60 },
       });

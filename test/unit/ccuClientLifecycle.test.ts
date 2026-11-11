@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Covers start/stop/list-* and watchdog branches of CcuClient by stubbing
  * the JSON-RPC client and the event server so we never open sockets.
@@ -18,7 +20,7 @@ afterEach(() => {
 
 function makeCcu(): CcuClient {
   const config = resolveConfig({
-    platform: 'HomematicHap',
+    platform: 'HapHomematic',
     ccuIp: '127.0.0.1',
     eventServer: { host: '127.0.0.1', port: 9876, watchdogSeconds: 60 },
     interfaces: { bidcosRf: false, hmIpRf: false, bidcosWired: false, virtualDevices: false, cuxd: false },
@@ -84,7 +86,7 @@ describe('CcuClient resolveCallbackHost', () => {
 
   it('falls back when host is 0.0.0.0', () => {
     const config = resolveConfig({
-      platform: 'HomematicHap',
+      platform: 'HapHomematic',
       ccuIp: '127.0.0.1',
       eventServer: { host: '0.0.0.0', port: 9876 },
     });
@@ -197,7 +199,7 @@ describe('CcuClient interfacePorts override', () => {
     // ports but the CCU firewall blocks them; user pins legacy 2001 in
     // config. The override must beat the discovered value.
     const config = resolveConfig({
-      platform: 'HomematicHap',
+      platform: 'HapHomematic',
       ccuIp: '127.0.0.1',
       eventServer: { host: '127.0.0.1', port: 9876 },
       interfaces: { bidcosRf: true, hmIpRf: false, bidcosWired: false, virtualDevices: false, cuxd: false },

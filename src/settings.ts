@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Constants for plugin registration. PLATFORM_NAME must match the
  * `pluginAlias` field of config.schema.json, and PLUGIN_NAME must match
@@ -5,5 +7,5 @@
  * when persisting accessories.
  */
 
-export const PLATFORM_NAME = 'HomematicHap';
-export const PLUGIN_NAME = 'homebridge-homematic-hap';
+export const PLATFORM_NAME = 'HapHomematic';
+export const PLUGIN_NAME = 'homebridge-hap-homematic';

@@ -1,3 +1,13 @@
+homebridge-hap-homematic
+Copyright 2026 california444
+
+This product is a hard fork of Homebridge-Homematic-HAP
+(https://github.com/matthiaseinig/Homebridge-Homematic-HAP), forked at
+commit d635ecf (v1.2.12, 2026-05-05). The upstream notice follows
+unchanged; the modifications made in this fork are listed at the end.
+
+----------------------------------------------------------------------
+
 Homebridge-Homematic-HAP
 Copyright 2026 Matthias Einig and contributors
 
@@ -48,3 +58,22 @@ third-party libraries:
   * homebridge       (Apache-2.0)       -- Type definitions only
 
 See LICENSE for the full Apache 2.0 license text that governs this project.
+
+----------------------------------------------------------------------
+
+Modifications (homebridge-hap-homematic, 2026, california444)
+
+This fork is maintained independently; no changes are exchanged with
+the upstream project. Modified files carry a "Modified by california444
+(2026)" notice at the top (Apache-2.0, section 4(b)).
+
+  * 2026-11-11  Forked at d635ecf. Renamed package to
+                homebridge-hap-homematic and the platform to HapHomematic;
+                Node >= 24 and Homebridge >= 2.4.0 only; CI on Node 24.
+  * 2026-11-11  Window-covering movement reporting
+                (src/services/impl/BlindAccessory.ts and
+                test/unit/blindMovement.test.ts) taken from upstream
+                commit 2011787 (2026-11-11), Apache-2.0.
+
+Planned: XML-RPC only (JSON-RPC, ReGa, system variables, programs,
+hap-homematic import and multi-bridge support are removed).

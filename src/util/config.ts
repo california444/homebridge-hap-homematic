@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Resolves and validates the raw plugin config from Homebridge into the
  * strongly-typed ResolvedConfig the rest of the code depends on. Bad
@@ -108,7 +110,7 @@ export function resolveConfig(raw: RawConfig): ResolvedConfig {
   }
 
   return {
-    name: typeof raw.name === 'string' && raw.name.length > 0 ? raw.name : 'HomematicHap',
+    name: typeof raw.name === 'string' && raw.name.length > 0 ? raw.name : 'HapHomematic',
     ccuIp,
     interfaces,
     interfacePorts,

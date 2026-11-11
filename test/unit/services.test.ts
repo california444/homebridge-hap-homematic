@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * One test file covering each ChannelService implementation. Each test
  * builds the service with the hap stub, attaches a synthetic channel,
@@ -37,7 +39,7 @@ interface TestEnv {
 }
 
 function makeEnv(): TestEnv {
-  const config = resolveConfig({ platform: 'HomematicHap', ccuIp: '127.0.0.1' });
+  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'svc-test') });
   const setValueMock = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   const getValueMock = vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);

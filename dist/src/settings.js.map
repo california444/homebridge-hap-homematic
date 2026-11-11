@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../src/settings.ts"],
-  "sourcesContent": ["/**\n * Constants for plugin registration. PLATFORM_NAME must match the\n * `pluginAlias` field of config.schema.json, and PLUGIN_NAME must match\n * the package.json `name` field \u2014 Homebridge uses both as composite key\n * when persisting accessories.\n */\n\nexport const PLATFORM_NAME = 'HomematicHap';\nexport const PLUGIN_NAME = 'homebridge-homematic-hap';\n"],
-  "mappings": "AAOO,MAAM,gBAAgB;AACtB,MAAM,cAAc;",
-  "names": []
-}

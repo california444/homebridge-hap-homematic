@@ -1,3 +1,5 @@
+# Modified by california444 (2026) for homebridge-hap-homematic,
+# a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 name: CI
 
 on:
@@ -11,21 +13,23 @@ permissions:
 
 jobs:
   test:
-    name: Lint, build, test, audit (Node ${{ matrix.node }})
+    name: Lint, build, test, audit (Node 24, latest Homebridge)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['20', '22', '24']
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '24'
           cache: 'npm'
 
       - run: npm ci
+
+      # Test against the newest Homebridge release, not only the locked one.
+      - name: Install latest Homebridge
+        run: npm install --no-save homebridge@latest
+
+      - run: npx homebridge --version
 
       - run: npm run lint
 
