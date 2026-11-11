@@ -129,7 +129,8 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     await this.storage.ensureRoot();
 
     const known = new Set(SERVICE_DEFINITIONS.map((d) => d.key));
-    const { mappings } = await loadDevicesFile(this.storage, this.log, known);
+    const deviceScoped = new Set(SERVICE_DEFINITIONS.filter((d) => d.scope === 'device').map((d) => d.key));
+    const { mappings } = await loadDevicesFile(this.storage, this.log, known, deviceScoped);
     this.mappings = mappings;
     // devices.json names the interface of every mapped device.
     for (const m of mappings) {

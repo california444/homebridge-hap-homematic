@@ -43,6 +43,23 @@ export interface ServiceVariant {
   hapServices?: string[];
 }
 
+/**
+ * A user-settable option, rendered by the custom UI and stored in
+ * devices.json (`options` of the mapping, or per channel for
+ * `channelOptions`).
+ */
+export interface OptionSpec {
+  key: string;
+  label: string;
+  type: 'boolean' | 'number' | 'enum' | 'text';
+  default?: boolean | number | string;
+  /** enum: allowed values (stored as given). */
+  values?: string[];
+  min?: number;
+  max?: number;
+  hint?: string;
+}
+
 export interface ServiceDefinition {
   /** Stable key used in config / accessory.context. */
   key: string;
@@ -54,6 +71,12 @@ export interface ServiceDefinition {
   priority: number;
   /** Sub-variants the user can pick (optional). */
   variants?: ServiceVariant[];
+  /** `device`: one accessory for the whole device (devices.json mode "device"). */
+  scope?: 'channel' | 'device';
+  /** Options of the mapping. */
+  options?: OptionSpec[];
+  /** Device scope: options per channel (e.g. valve name and type). */
+  channelOptions?: OptionSpec[];
   /** Constructor for the per-accessory handler. */
   build(ctx: ServiceContext): ChannelService;
 }

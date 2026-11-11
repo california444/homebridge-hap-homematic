@@ -15,6 +15,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve as resolvePath } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 
 import { HomebridgePluginUiServer, RequestError } from '@homebridge/plugin-ui-utils';
 
@@ -63,6 +64,7 @@ import {
 /** devices.json is small; refuse anything absurd from the iframe. */
 const MAX_DEVICES_JSON_BYTES = 512 * 1024;
 const KNOWN_SERVICES = new Set(SERVICE_DEFINITIONS.map((s) => s.key));
+const DEVICE_SERVICES = new Set(SERVICE_DEFINITIONS.filter((s) => s.scope === 'device').map((s) => s.key));
 
 class UiLogger {
   info(...args)    { console.log('[ui]', ...args); }
@@ -81,6 +83,7 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     this.onRequest('/services', () => this.handleServices());
     this.onRequest('/test-connection', (payload) => this.handleTestConnection(payload));
     this.onRequest('/discover', (payload) => this.handleDiscover(payload));
+    this.onRequest('/network', () => this.handleNetwork());
     this.onRequest('/devices/get', () => this.handleGetDevices());
     this.onRequest('/devices/put', (payload) => this.handlePutDevices(payload));
 
@@ -99,6 +102,9 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
         channelTypes: s.channelTypes,
         priority: s.priority,
         variants: s.variants ?? [],
+        scope: s.scope ?? 'channel',
+        options: s.options ?? [],
+        channelOptions: s.channelOptions ?? [],
       })),
     };
   }
@@ -151,6 +157,17 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     }
   }
 
+  /** Local IPv4 addresses, offered as callback address (5.1). */
+  handleNetwork() {
+    const out = [];
+    for (const [name, list] of Object.entries(networkInterfaces())) {
+      for (const i of list ?? []) {
+        if (i.family === 'IPv4' && !i.internal) out.push({ name, address: i.address });
+      }
+    }
+    return { addresses: out };
+  }
+
   /**
    * Current devices.json. A missing file is an empty mapping; an invalid
    * file comes back with its errors so the UI refuses to overwrite it.
@@ -166,7 +183,7 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     if (raw === undefined) {
       return { ok: true, file: emptyDevicesFile(), errors: [], path: storage.rootPath() };
     }
-    const result = validateDevicesFile(raw, KNOWN_SERVICES);
+    const result = validateDevicesFile(raw, KNOWN_SERVICES, DEVICE_SERVICES);
     return result.ok
       ? { ok: true, file: result.file, errors: [], path: storage.rootPath() }
       : { ok: false, file: null, errors: result.errors, path: storage.rootPath() };
@@ -180,7 +197,7 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     if (JSON.stringify(payload.file).length > MAX_DEVICES_JSON_BYTES) {
       throw new RequestError(`${DEVICES_FILE} too large`, { status: 413 });
     }
-    const result = await saveDevicesFile(this.storage(), payload.file, KNOWN_SERVICES);
+    const result = await saveDevicesFile(this.storage(), payload.file, KNOWN_SERVICES, DEVICE_SERVICES);
     if (!result.ok) {
       throw new RequestError(`${DEVICES_FILE} invalid: ${result.errors.join('; ')}`, { status: 400 });
     }

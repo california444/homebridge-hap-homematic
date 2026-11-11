@@ -205,6 +205,12 @@ just typed (so **Test connection** works before they save):
   suggested services per channel.
 - `/devices/get`, `/devices/put` — read / validate and write
   `devices.json`.
+- `/network` — local IPv4 addresses, offered as callback address.
+
+The edit dialog is generic: each `ServiceDefinition` declares its
+`scope` (`channel` or `device`), `options` and, for device services,
+`channelOptions`; `/services` passes them to the UI. Changing the service
+of an existing mapping shows the D6 warning (new accessory in Home).
 
 Critical security points:
 

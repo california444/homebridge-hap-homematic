@@ -37,9 +37,10 @@ ports are supported. Each interface is supervised with ping/PONG and
 re-subscribed after a CCU restart. Start values come from `getParamset`;
 new services: irrigation (IrrigationSystem + Valves), doorbell
 (HmIP-DSD-PCB); HmIP smoke detector via `SMOKE_DETECTOR_ALARM_STATUS`;
-HmIP transmitter/receiver channel pairing. Planned:
+HmIP transmitter/receiver channel pairing. The custom UI maps channels
+or whole devices (irrigation), edits service options and offers the
+local IPv4 addresses as callback address. Planned:
 
-- UI: whole-device mappings, service options, callback IP picker
 - release pipeline, installation and acceptance on the real system
 
 ## Requirements

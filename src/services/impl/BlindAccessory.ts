@@ -242,5 +242,9 @@ export const blindService: ServiceDefinition = {
   description: 'Window covering / blind / shutter',
   channelTypes: BLIND_CHANNEL_TYPES,
   priority: 10,
+  options: [
+    { key: 'invert', label: 'Invert (awning)', type: 'boolean', default: false,
+      hint: 'HomeKit 100 % = CCU level 0. For awnings that are open when the CCU says closed.' },
+  ],
   build: (ctx: ServiceContext) => new BlindHandler(ctx),
 };

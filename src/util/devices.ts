@@ -58,9 +58,14 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /**
  * Structural validation. `knownServices` (registry keys) is optional so
- * the validator stays independent of the service registry.
+ * the validator stays independent of the service registry;
+ * `deviceServices` (keys with scope "device") checks the mode.
  */
-export function validateDevicesFile(raw: unknown, knownServices?: ReadonlySet<string>): ValidationResult {
+export function validateDevicesFile(
+  raw: unknown,
+  knownServices?: ReadonlySet<string>,
+  deviceServices?: ReadonlySet<string>,
+): ValidationResult {
   const errors: string[] = [];
   const err = (path: string, msg: string): void => {
     errors.push(`${path}: ${msg}`);
@@ -170,6 +175,9 @@ export function validateDevicesFile(raw: unknown, knownServices?: ReadonlySet<st
       }
       if (mode === 'perChannel' && ch.enabled !== false) {
         checkService(`${cpath}.service`, ch.service);
+        if (deviceServices && typeof ch.service === 'string' && deviceServices.has(ch.service)) {
+          err(`${cpath}.service`, `"${ch.service}" maps a whole device; use "service" on the device entry`);
+        }
       } else if (mode === 'device' && ch.service !== undefined) {
         err(`${cpath}.service`, 'not allowed in a device mapping');
       }
@@ -240,6 +248,7 @@ export async function loadDevicesFile(
   storage: PluginStorage,
   log: PrefixedLogger,
   knownServices?: ReadonlySet<string>,
+  deviceServices?: ReadonlySet<string>,
 ): Promise<LoadedDevices> {
   let raw: unknown;
   try {
@@ -253,7 +262,7 @@ export async function loadDevicesFile(
     log.info('%s not found in %s — no devices mapped yet', DEVICES_FILE, storage.rootPath());
     return { file: undefined, mappings: [], errors: [] };
   }
-  const result = validateDevicesFile(raw, knownServices);
+  const result = validateDevicesFile(raw, knownServices, deviceServices);
   if (!result.ok) {
     log.error('%s is invalid (%d problems) — no accessories will be created; the file is left as it is:\n  %s',
       DEVICES_FILE, result.errors.length, result.errors.join('\n  '));
@@ -267,8 +276,9 @@ export async function saveDevicesFile(
   storage: PluginStorage,
   file: unknown,
   knownServices?: ReadonlySet<string>,
+  deviceServices?: ReadonlySet<string>,
 ): Promise<ValidationResult> {
-  const result = validateDevicesFile(file, knownServices);
+  const result = validateDevicesFile(file, knownServices, deviceServices);
   if (result.ok) {
     await storage.writeJson(DEVICES_FILE, result.file);
   }

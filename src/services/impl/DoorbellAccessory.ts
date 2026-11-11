@@ -67,5 +67,10 @@ export const doorbellService: ServiceDefinition = {
   description: 'Doorbell (bell-signal input, e.g. HmIP-DSD-PCB)',
   channelTypes: ['MULTI_MODE_INPUT_TRANSMITTER'],
   priority: 20,
+  options: [
+    { key: 'trigger', label: 'Trigger', type: 'enum', values: [...TRIGGERS], default: 'PRESS_SHORT',
+      hint: 'PRESS_SHORT fires on the event whatever its value; STATE fires when it turns on.' },
+    { key: 'debounceSeconds', label: 'Debounce (s)', type: 'number', default: 2, min: 0, max: 30 },
+  ],
   build: (ctx: ServiceContext) => new DoorbellHandler(ctx),
 };

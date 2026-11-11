@@ -117,5 +117,9 @@ export const smokeService: ServiceDefinition = {
   description: 'Smoke detector',
   channelTypes: SMOKE_CHANNEL_TYPES,
   priority: 10,
+  options: [
+    { key: 'secondaryAlarm', label: 'Show group alarms', type: 'boolean', default: true,
+      hint: 'Off: an alarm of another detector of the group does not show smoke on this one.' },
+  ],
   build: (ctx: ServiceContext) => new SmokeHandler(ctx),
 };

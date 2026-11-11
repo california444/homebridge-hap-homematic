@@ -115,6 +115,17 @@ describe('validateDevicesFile', () => {
     expect(validateDevicesFile({ version: 1, devices: { 'BidCos-RF:A3': { service: 'NopeAccessory' } } }).ok).toBe(true);
   });
 
+  it('whole-device services must not be mapped per channel', () => {
+    const dev = new Set(['IrrigationAccessory']);
+    const r = validateDevicesFile({ version: 1, devices: {
+      'BidCos-RF:A1': { channels: { '1': { service: 'IrrigationAccessory' } } },
+      'BidCos-RF:A2': { service: 'IrrigationAccessory' },
+    } }, KNOWN, dev);
+    expect(r).toEqual({ ok: false, errors: [
+      'devices["BidCos-RF:A1"].channels["1"].service: "IrrigationAccessory" maps a whole device; use "service" on the device entry',
+    ] });
+  });
+
   it('allows disabled perChannel devices without channels and disabled channels without service', () => {
     expect(errorsOf({ version: 1, devices: {
       'BidCos-RF:A1': { mode: 'perChannel', enabled: false },

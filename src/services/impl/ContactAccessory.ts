@@ -91,5 +91,8 @@ export const contactService: ServiceDefinition = {
     { id: 'door', label: 'Door', hapServices: ['Door'] },
     { id: 'window', label: 'Window', hapServices: ['Window'] },
   ],
+  options: [
+    { key: 'invert', label: 'Invert open / closed', type: 'boolean', default: false },
+  ],
   build: (ctx: ServiceContext) => new ContactHandler(ctx),
 };

@@ -77,6 +77,8 @@ const state = {
   /** Errors of an invalid devices.json; editing is blocked while set. */
   devicesErrors: null,
   devicesPath: '',
+  /** Local IPv4 addresses of the Homebridge host (callback picker). */
+  network: [],
   discovered: { devices: [] },
   services: { channelServices: [] },
   ui: {
@@ -117,12 +119,12 @@ function configuredChannels() {
     const devOn = dev.enabled !== false;
     if (deviceMode(dev) === 'device') {
       out.push({ address: serial, interface: intf, kind: 'device', name: dev.name, service: dev.service,
-        subtype: dev.variant, enabled: devOn });
+        subtype: dev.variant, enabled: devOn, options: dev.options ?? {}, channels: dev.channels ?? {} });
       continue;
     }
     for (const [idx, ch] of Object.entries(dev.channels ?? {})) {
       out.push({ address: `${serial}:${idx}`, interface: intf, kind: 'channel', name: ch.name, service: ch.service,
-        subtype: ch.variant, enabled: devOn && ch.enabled !== false });
+        subtype: ch.variant, enabled: devOn && ch.enabled !== false, options: ch.options ?? {} });
     }
   }
   return out;
@@ -133,15 +135,14 @@ function findDeviceKey(serial) {
   return Object.keys(state.devicesFile.devices).find((k) => splitKey(k)[1] === serial);
 }
 
-function upsertMapping(address, intf, fields) {
+const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ''
+  && !(typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length === 0)));
+
+/** Per-channel mapping `SERIAL:N`; keeps unknown fields of the entry. */
+function saveChannelMapping(address, intf, fields) {
   const [serial, idx] = address.split(':');
   const devices = state.devicesFile.devices;
   const key = findDeviceKey(serial) ?? `${intf}:${serial}`;
-  const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ''));
-  if (idx === undefined) {
-    devices[key] = clean({ ...(devices[key] ?? {}), ...fields });
-    return;
-  }
   const dev = devices[key] ?? { channels: {} };
   if (deviceMode(dev) === 'device') {
     throw new Error('This device is mapped as a whole; remove that mapping first.');
@@ -149,6 +150,15 @@ function upsertMapping(address, intf, fields) {
   dev.channels = dev.channels ?? {};
   dev.channels[idx] = clean({ ...(dev.channels[idx] ?? {}), ...fields });
   devices[key] = dev;
+}
+
+/** Whole-device mapping; replaces any per-channel mappings of the device. */
+function saveDeviceMapping(serial, intf, fields) {
+  const devices = state.devicesFile.devices;
+  const key = findDeviceKey(serial) ?? `${intf}:${serial}`;
+  const old = devices[key] ?? {};
+  const keep = old.enabled === false ? { enabled: false } : {};
+  devices[key] = clean({ ...keep, ...fields });
 }
 
 function removeMapping(address) {
@@ -358,7 +368,14 @@ function drawChannelRows() {
     // 'all' or 'unconfigured' both need discovered data.
     rows = [];
     for (const d of state.discovered.devices) {
+      // A whole-device mapping (e.g. irrigation) is one card, not N channels.
+      const whole = configuredByAddr.get(d.address);
+      if (whole) {
+        if (filter !== 'unconfigured') rows.push({ ...whole, _info: { device: d, channel: undefined }, isConfigured: true });
+        continue;
+      }
       for (const c of d.channels) {
+        if (c.index === 0) continue; // MAINTENANCE: not mappable
         const existing = configuredByAddr.get(c.address);
         const isConfigured = !!existing;
         if (filter === 'unconfigured' && isConfigured) continue;
@@ -367,7 +384,9 @@ function drawChannelRows() {
           name: existing?.name ?? c.name,
           service: existing?.service,
           subtype: existing?.subtype,
-          settings: existing?.settings,
+          options: existing?.options,
+          kind: existing?.kind,
+          enabled: existing?.enabled,
           isConfigured,
           _info: { device: d, channel: c },
         });
@@ -445,7 +464,7 @@ function channelTileHTML(r) {
   // hasn't run, show a hint so the user knows to click Discover for
   // the rich data. The address always shows in the meta line.
   const subtitle = info?.device
-    ? `${h(info.device.name ?? '')}${info.device.type ? ` · ${h(info.device.type)}` : ''}${info.channel?.name && info.channel.name !== hkName ? ` · ch ${h(info.channel.name)}` : ''}`
+    ? `${h(info.device.name ?? '')}${info.device.type && !String(info.device.name ?? '').startsWith(info.device.type) ? ` · ${h(info.device.type)}` : ''}${info.channel?.name && info.channel.name !== hkName ? ` · ch ${h(info.channel.name)}` : ''}`
     : '<span class="hgui-meta">discovery data not loaded — click "Discover" for device + CCU names</span>';
   const channelType = info?.channel?.type ?? '';
   return `
@@ -460,10 +479,13 @@ function channelTileHTML(r) {
       </div>
       <div class="hgui-tile-sub">${subtitle}</div>
       <div class="hgui-tile-meta"><code>${h(r.address)}</code>${channelType ? ` · ${h(channelType)}` : ''}</div>
+      ${r.kind === 'device' && Object.keys(r.channels ?? {}).length ? `
+        <div class="hgui-tile-meta">${Object.entries(r.channels).map(([i, c]) => `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}</span>`).join('')}</div>` : ''}
       <div class="hgui-tile-pills">
         ${inHK ? `<span class="hgui-pill primary">${h(r.service ?? '?')}</span>` : '<span class="hgui-pill muted">not in HomeKit</span>'}
         ${r.subtype ? `<span class="hgui-pill">${h(r.subtype)}</span>` : ''}
         ${r.kind === 'device' ? '<span class="hgui-pill">whole device</span>' : ''}
+        ${Object.entries(r.options ?? {}).filter(([, v]) => v !== false).map(([k, v]) => `<span class="hgui-pill">${h(k)}${v === true ? '' : `=${h(v)}`}</span>`).join('')}
         ${r.enabled === false ? '<span class="hgui-pill warning">disabled</span>' : ''}
       </div>
     </div>`;
@@ -509,8 +531,11 @@ function viewSettings(host) {
       <div class="row g-2 mb-2">
         <div class="col-md-6">
           <label class="form-label">Callback address (required)</label>
-          <input class="form-control" id="cf-callback-host" placeholder="192.168.0.13" value="${h(m.eventServer.callbackHost ?? '')}" />
-          <div class="hgui-hint">IP of this Homebridge host as seen from the CCU. The CCU sends its events to <code>http://&lt;address&gt;:&lt;port&gt;</code>.</div>
+          <input class="form-control" id="cf-callback-host" list="cf-callback-list" placeholder="192.168.0.13" value="${h(m.eventServer.callbackHost ?? '')}" />
+          <datalist id="cf-callback-list">${state.network.map((n) => `<option value="${h(n.address)}">${h(n.name)}</option>`).join('')}</datalist>
+          <div class="hgui-hint">IP of this Homebridge host as seen from the CCU. The CCU sends its events to <code>http://&lt;address&gt;:&lt;port&gt;</code>.
+            ${state.network.length ? `Local addresses: ${state.network.map((n) => `<a href="#" data-pick-ip="${h(n.address)}">${h(n.address)}</a> (${h(n.name)})`).join(', ')}.
+            In Docker these are container addresses — use the host's IP instead.` : ''}</div>
         </div>
       </div>
     </div>
@@ -563,6 +588,11 @@ function viewSettings(host) {
   $('cf-event-port').addEventListener('input', (e) => propagate((b) => b.eventServer.port = parseInt(e.target.value, 10) || 9875));
   $('cf-tls').addEventListener('change', (e) => propagate((b) => b.useTls = e.target.checked));
   $('cf-callback-host').addEventListener('input', (e) => propagate((b) => b.eventServer.callbackHost = e.target.value.trim()));
+  host.querySelectorAll('[data-pick-ip]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    $('cf-callback-host').value = a.dataset.pickIp;
+    propagate((b) => b.eventServer.callbackHost = a.dataset.pickIp);
+  }));
   $('cf-auth-enabled').addEventListener('change', (e) => propagate((b) => b.rpcAuth.enabled = e.target.checked));
   $('cf-auth-user').addEventListener('input', (e) => propagate((b) => b.rpcAuth.username = e.target.value));
   $('cf-auth-pass').addEventListener('input', (e) => propagate((b) => b.rpcAuth.password = e.target.value));
@@ -685,49 +715,106 @@ function subEditChannel(host, props) {
   const { address, mode } = props;
   const cl = channelLookup();
   const info = cl.get(address);
-
+  const [serial] = address.split(':');
+  const isDeviceRow = !address.includes(':');
+  const device = info?.device ?? cl.get(serial)?.device;
   const entry = configuredChannels().find((c) => c.address === address) ?? null;
+  const all = state.services.channelServices;
+  const byKey = (k) => all.find((s) => s.key === k);
 
-  const candidates = info?.channel
-    ? state.services.channelServices.filter((s) => s.channelTypes.includes(info.channel.type))
-    : state.services.channelServices;
+  // Candidate services: by the channel's type; for a whole-device row by
+  // any channel type of the device.
+  const types = isDeviceRow
+    ? new Set((device?.channels ?? []).map((c) => c.type))
+    : new Set(info?.channel?.type ? [info.channel.type] : []);
+  let candidates = all.filter((s) => s.channelTypes.some((t) => types.has(t)));
+  if (!candidates.length) candidates = all;
+  if (entry?.service && !candidates.some((s) => s.key === entry.service) && byKey(entry.service)) {
+    candidates = [byKey(entry.service), ...candidates];
+  }
+
   const draft = entry
-    ? {
-        ...entry,
-        name: effectiveHkName({ ...entry, _info: info }),
-      }
+    ? { ...entry, name: effectiveHkName({ ...entry, _info: info }), options: { ...(entry.options ?? {}) },
+        channels: JSON.parse(JSON.stringify(entry.channels ?? {})) }
     : {
         address,
-        name: info?.channel?.name ?? address,
-        service: candidates[0]?.key ?? state.services.channelServices[0]?.key ?? 'SwitchAccessory',
+        name: info?.channel?.name ?? device?.name ?? address,
+        service: candidates[0]?.key ?? all[0]?.key ?? 'SwitchAccessory',
         subtype: candidates[0]?.variants?.[0]?.id,
+        options: {},
+        channels: {},
       };
+  const originalService = entry?.service;
 
-  subviewHeader(host, mode === 'add' ? 'Add channel' : `Edit: ${draft.name || address}`, address);
+  /** Channels a whole-device service works on (e.g. irrigation valves). */
+  const deviceChannels = (def) => {
+    const fromDevice = (device?.channels ?? [])
+      .filter((c) => c.index > 0 && def.channelTypes.includes(c.type)).map((c) => String(c.index));
+    if (fromDevice.length) return fromDevice;
+    const fromEntry = Object.keys(draft.channels ?? {});
+    return fromEntry.length ? fromEntry : ['1', '2', '3', '4'];
+  };
+
+  const optionInput = (spec, value, id) => {
+    const v = value ?? spec.default;
+    switch (spec.type) {
+      case 'boolean':
+        return `<div class="form-check"><input class="form-check-input" type="checkbox" id="${id}" ${v ? 'checked' : ''} />
+          <label class="form-check-label" for="${id}">${h(spec.label)}</label></div>`;
+      case 'enum':
+        return `<select class="form-select" id="${id}">${(spec.values ?? []).map((x) =>
+          `<option value="${h(x)}" ${x === v ? 'selected' : ''}>${h(x)}</option>`).join('')}</select>`;
+      case 'number':
+        return `<input class="form-control" type="number" id="${id}" value="${h(v ?? '')}"
+          ${spec.min !== undefined ? `min="${spec.min}"` : ''} ${spec.max !== undefined ? `max="${spec.max}"` : ''} />`;
+      default:
+        return `<input class="form-control" id="${id}" value="${h(v ?? '')}" />`;
+    }
+  };
+  const readOption = (spec, el) => {
+    if (spec.type === 'boolean') return el.checked;
+    if (spec.type === 'number') {
+      const n = Number(el.value);
+      return el.value === '' || !Number.isFinite(n) ? undefined : n;
+    }
+    return el.value;
+  };
+
+  subviewHeader(host, mode === 'add' ? 'Add to HomeKit' : `Edit: ${draft.name || address}`, address);
   const body = $('hgui-sub-body');
   const draw = () => {
-    const def = state.services.channelServices.find((s) => s.key === draft.service);
+    const def = byKey(draft.service);
     const variants = def?.variants ?? [];
+    const asDevice = isDeviceRow || def?.scope === 'device';
+    const serviceChanged = mode === 'edit' && originalService && draft.service !== originalService;
+    const otherChannels = asDevice && !isDeviceRow
+      ? configuredChannels().filter((r) => r.kind === 'channel' && r.address.startsWith(`${serial}:`))
+      : [];
+    const chans = asDevice && def?.channelOptions?.length ? deviceChannels(def) : [];
     body.innerHTML = `
       <div class="hgui-card">
         <div class="hgui-meta mb-2">
-          <code>${h(address)}</code>${info?.channel?.type ? ` · ${h(info.channel.type)}` : ''}${info?.device?.name ? ` · ${h(info.device.name)}` : ''}
+          <code>${h(asDevice ? serial : address)}</code>${!asDevice && info?.channel?.type ? ` · ${h(info.channel.type)}` : ''}${device?.type ? ` · ${h(device.type)}` : ''}
+          ${asDevice ? '<span class="hgui-pill ms-2">whole device</span>' : ''}
         </div>
+        ${serviceChanged ? `<div class="alert alert-warning">Changing the service creates a <strong>new accessory</strong> in Home —
+          its room and automations are lost (the accessory identity includes the service).</div>` : ''}
+        ${otherChannels.length ? `<div class="alert alert-info">${h(def.key)} maps the whole device. The existing
+          channel mappings of this device (${otherChannels.map((r) => h(r.address)).join(', ')}) are replaced.</div>` : ''}
         <div class="hgui-form-row">
           <label>HomeKit name</label>
           <div>
             <input class="form-control" id="ec-name" value="${h(draft.name ?? '')}" />
-            <div class="hgui-hint">Shown in the Home app. Already-paired bridges keep their original pairing name in HomeKit — that's a HomeKit limitation we can't override; rename in the Home app too.</div>
+            <div class="hgui-hint">Shown in the Home app. Already-paired accessories keep the name they had in Home; rename there too.</div>
           </div>
         </div>
         <div class="hgui-form-row">
           <label>Service</label>
           <div>
             <select class="form-select" id="ec-service">
-              ${(candidates.length ? candidates : state.services.channelServices).map((s) =>
+              ${candidates.map((s) =>
                 `<option value="${h(s.key)}" ${s.key === draft.service ? 'selected' : ''}>${h(s.description)} (${h(s.key)})</option>`).join('')}
             </select>
-            <div class="hgui-hint">${candidates.length ? 'Filtered to services that support this channel type.' : 'No service explicitly supports this channel type — pick the closest match or leave the default.'}</div>
           </div>
         </div>
         ${variants.length ? `
@@ -735,22 +822,44 @@ function subEditChannel(host, props) {
             <label>Variant</label>
             <div>
               <select class="form-select" id="ec-subtype">
-                ${variants.map((v) => `<option value="${h(v.id)}" ${v.id === draft.subtype ? 'selected' : ''}>${h(v.label)}</option>`).join('')}
+                ${variants.map((v) => `<option value="${h(v.id)}" ${v.id.toLowerCase() === String(draft.subtype ?? '').toLowerCase() ? 'selected' : ''}>${h(v.label)}</option>`).join('')}
               </select>
-              <div class="hgui-hint">Some services support multiple HomeKit shapes — pick the one that fits.</div>
             </div>
           </div>` : ''}
+        ${(def?.options ?? []).map((o, i) => `
+          <div class="hgui-form-row">
+            <label>${o.type === 'boolean' ? '' : h(o.label)}</label>
+            <div>${optionInput(o, draft.options[o.key], `ec-opt-${i}`)}${o.hint ? `<div class="hgui-hint">${h(o.hint)}</div>` : ''}</div>
+          </div>`).join('')}
+        ${chans.length ? `
+          <h6 class="mt-3">Channels</h6>
+          ${chans.map((idx) => `
+            <div class="hgui-form-row">
+              <label>Channel ${h(idx)}</label>
+              <div class="d-flex gap-2">${def.channelOptions.map((o, j) =>
+                `<div class="flex-fill">${optionInput(o, draft.channels[idx]?.[o.key], `ec-ch-${idx}-${j}`)}</div>`).join('')}</div>
+            </div>`).join('')}` : ''}
       </div>
     `;
     body.querySelector('#ec-name').addEventListener('input', (e) => { draft.name = e.target.value; });
     body.querySelector('#ec-service').addEventListener('change', (e) => {
       draft.service = e.target.value;
-      const newDef = state.services.channelServices.find((s) => s.key === draft.service);
-      draft.subtype = newDef?.variants?.[0]?.id;
+      draft.subtype = byKey(draft.service)?.variants?.[0]?.id;
+      draft.options = {};
       draw();
     });
     if (variants.length) {
       body.querySelector('#ec-subtype').addEventListener('change', (e) => { draft.subtype = e.target.value; });
+    }
+    (def?.options ?? []).forEach((o, i) => {
+      body.querySelector(`#ec-opt-${i}`).addEventListener('change', (e) => { draft.options[o.key] = readOption(o, e.target); });
+    });
+    for (const idx of chans) {
+      def.channelOptions.forEach((o, j) => {
+        body.querySelector(`#ec-ch-${idx}-${j}`).addEventListener('change', (e) => {
+          draft.channels[idx] = { ...(draft.channels[idx] ?? {}), [o.key]: readOption(o, e.target) };
+        });
+      });
     }
   };
   draw();
@@ -766,18 +875,31 @@ function subEditChannel(host, props) {
     if (state.devicesErrors) { toast('warning', 'Fix devices.json first'); return; }
     const name = (draft.name ?? '').trim();
     if (!name) { toast('warning', 'HomeKit name cannot be empty'); return; }
-    const intf = info?.device?.interface ?? entry?.interface ?? guessInterface(address.split(':')[0]);
+    const def = byKey(draft.service);
+    const intf = device?.interface ?? entry?.interface ?? guessInterface(serial);
+    const options = clean(draft.options ?? {});
     try {
-      upsertMapping(address, intf, { name, service: draft.service, variant: draft.subtype || undefined });
+      if (isDeviceRow || def?.scope === 'device') {
+        const channels = {};
+        for (const idx of (def?.channelOptions?.length ? deviceChannels(def) : Object.keys(draft.channels ?? {}))) {
+          const c = clean(draft.channels?.[idx] ?? {});
+          if (Object.keys(c).length) channels[idx] = c;
+        }
+        saveDeviceMapping(serial, intf, {
+          service: draft.service, variant: draft.subtype || undefined, name, options, channels,
+        });
+      } else {
+        saveChannelMapping(address, intf, { name, service: draft.service, variant: draft.subtype || undefined, options });
+      }
     } catch (err) {
       toast('warning', err.message); return;
     }
-    if (await saveDevices(mode === 'add' ? 'Channel added' : 'Channel updated')) popNav();
+    if (await saveDevices(mode === 'add' ? 'Added' : 'Updated')) popNav();
   });
   if (mode === 'edit') {
     footer.querySelector('#ec-remove').addEventListener('click', async () => {
       removeMapping(address);
-      if (await saveDevices('Channel removed')) popNav();
+      if (await saveDevices('Removed')) popNav();
     });
   }
 }
@@ -863,6 +985,9 @@ async function init() {
   }
 
   await loadDevices();
+  try {
+    state.network = (await homebridge.request('/network')).addresses ?? [];
+  } catch { /* optional */ }
 
   try {
     const r = await homebridge.request('/services');

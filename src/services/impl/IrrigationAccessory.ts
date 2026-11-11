@@ -207,5 +207,15 @@ export const irrigationService: ServiceDefinition = {
   channelTypes: ['SWITCH'],
   // Below SwitchAccessory: only chosen explicitly, as a device mapping.
   priority: 50,
+  scope: 'device',
+  options: [
+    { key: 'defaultDuration', label: 'Default run time (s)', type: 'number', default: DEFAULT_DURATION_S,
+      min: 0, max: MAX_DURATION_S, hint: 'Used until a duration is set in Home. 0 = stays on until switched off.' },
+  ],
+  channelOptions: [
+    { key: 'name', label: 'Valve name', type: 'text' },
+    { key: 'valveType', label: 'Valve type', type: 'enum', default: 'Irrigation',
+      values: ['Irrigation', 'GenericValve', 'ShowerHead', 'WaterFaucet'] },
+  ],
   build: (ctx: ServiceContext) => new IrrigationHandler(ctx),
 };
