@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Forces the RpcClient to take its lazy-load path through the
  * homematic-xmlrpc module by stubbing the module via vi.mock.
