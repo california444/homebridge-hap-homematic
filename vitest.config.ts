@@ -7,7 +7,9 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'lcov', 'html'],
+      // One HTML report in coverage/ (the lcov reporter would add a second
+      // copy under coverage/lcov-report/ plus lcov.info, which nothing reads).
+      reporter: ['text', 'html'],
       include: ['src/**/*.ts', 'homebridge-ui/server/**/*.ts'],
       exclude: ['src/**/index.ts', 'src/**/types.ts', 'src/**/*.d.ts'],
       thresholds: {
