@@ -1,12 +1,11 @@
 # Modified by california444 (2026) for homebridge-hap-homematic,
 # a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
-name: CI
+name: Build
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+  workflow_dispatch:
+  workflow_call: # from release.yml, before every release
 
 permissions:
   contents: read
@@ -16,9 +15,9 @@ jobs:
     name: Lint, build, test, audit (Node 24, latest Homebridge)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'

@@ -5,7 +5,7 @@
   a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 -->
 
-[![CI](https://github.com/california444/homebridge-hap-homematic/actions/workflows/ci.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/ci.yml)
+[![Release](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A Homebridge plugin for **HomeMatic** (BidCos-RF) and **HomematicIP** (HmIP-RF)
@@ -72,6 +72,19 @@ npm run lint
 npm run build
 npm run coverage
 ```
+
+## Releases
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
+(`feat:`, `fix:`, `chore(deps):` …). Every push to `main` builds and tests;
+[semantic-release](https://github.com/semantic-release/semantic-release)
+then tags `vX.Y.Z` and creates the GitHub release with notes
+(`feat` → minor, `fix` / `chore(deps)` → patch, breaking change → major).
+`package.json` keeps the placeholder `0.0.0-development`; the tag is the
+version. Publishing to npm (trusted publishing, provenance) is a separate
+job that needs approval in the `npm` environment and is switched off
+until the plugin has passed acceptance (repository variable
+`NPM_PUBLISH`).
 
 ## Acknowledgements
 
