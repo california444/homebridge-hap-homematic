@@ -34,7 +34,7 @@
   ],
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && node ./node_modules/typescript/bin/tsc && npm run build:ui",
-    "build:ui": "./node_modules/.bin/esbuild homebridge-ui/server.src.js --bundle --platform=node --format=esm --target=node24 --outfile=homebridge-ui/server.js --external:../dist/*",
+    "build:ui": "esbuild homebridge-ui/server.src.js --bundle --platform=node --format=esm --target=node24 --outfile=homebridge-ui/server.js --external:../dist/*",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
