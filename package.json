@@ -66,5 +66,13 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.4",
     "vitest": "^3.2.4"
+  },
+  "homepage": "https://github.com/california444/homebridge-hap-homematic#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/california444/homebridge-hap-homematic.git"
+  },
+  "bugs": {
+    "url": "https://github.com/california444/homebridge-hap-homematic/issues"
   }
 }

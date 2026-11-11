@@ -5,6 +5,7 @@
   a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 -->
 
+[![CI](https://github.com/california444/homebridge-hap-homematic/actions/workflows/ci.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A Homebridge plugin for **HomeMatic** (BidCos-RF) and **HomematicIP** (HmIP-RF)
