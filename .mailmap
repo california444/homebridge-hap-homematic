@@ -1,8 +1,0 @@
-# Canonical author identity. Older commits use varied emails because the
-# repo's git config wasn't pinned at the time. The form below is the
-# GitHub privacy no-reply address that GitHub auto-attributes to the
-# `matthiaseinig` account; tools that respect .mailmap (git log, git
-# shortlog -s, GitHub's Contributors page) display all of these as the
-# same person.
-Matthias Einig <4833736+matthiaseinig@users.noreply.github.com> <matthias@einig.dev>
-Matthias Einig <4833736+matthiaseinig@users.noreply.github.com> <me@MBA-Techroom.einig.at>
