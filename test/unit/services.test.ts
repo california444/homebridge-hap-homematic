@@ -151,7 +151,8 @@ describe('BlindAccessory', () => {
     env.fireEvent('HmIP.000123:1', 'LEVEL', 0.4);
     expect(getChar(service, 'CurrentPosition').value).toBe(40);
     expect(getChar(service, 'TargetPosition').value).toBe(40);
-    expect(getChar(service, 'PositionState').value).toBe(2);
+    // 0 -> 40 outside HomeKit: moving up, target follows current.
+    expect(getChar(service, 'PositionState').value).toBe(1);
     env.fireEvent('HmIP.000123:1', 'LEVEL', 'nope'); // ignored
   });
 
