@@ -10,12 +10,23 @@
  * plus the local EventServer for the CCU's push events. No JSON-RPC,
  * no ReGa, no CCU login.
  *
+ * Each interface has an InterfaceSupervisor (ping/PONG, re-subscribe
+ * after a CCU restart, backoff). The CcuClient feeds it every inbound
+ * callback and re-emits its events:
+ *   'interfaceState' (id, state, previous)
+ *   'subscribed'     (id, reason)   — after every successful init
+ *
  * Exactly one CcuClient lives per HomematicPlatform instance.
  */
 
 import { networkInterfaces } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { EventServer, type ChannelEvent } from './EventServer.js';
+import { EventServer, type CallbackActivity, type ChannelEvent } from './EventServer.js';
+import {
+  InterfaceSupervisor,
+  type InterfaceState,
+  type SupervisorTimings,
+} from './InterfaceSupervisor.js';
 import {
   RpcClient,
   INTERFACE_PORTS,
@@ -35,6 +46,8 @@ import { PLUGIN_NAME } from '../settings.js';
 export interface CcuClientOptions {
   config: ResolvedConfig;
   log: PrefixedLogger;
+  /** Override supervisor timings (tests). */
+  timings?: Partial<SupervisorTimings>;
 }
 
 type DatapointListener = (value: unknown) => void;
@@ -62,8 +75,9 @@ export class CcuClient extends EventEmitter {
   private readonly datapointListeners: Map<string, Set<DatapointListener>> = new Map();
   private readonly config: ResolvedConfig;
   private readonly log: PrefixedLogger;
-  private watchdogTimer: NodeJS.Timeout | undefined;
-  private lastEventAt = 0;
+  private readonly supervisors: Map<CcuInterfaceId, InterfaceSupervisor> = new Map();
+  /** callback id (`homebridge-hap-homematic:<interface>`) → supervisor */
+  private readonly byCallbackId: Map<string, InterfaceSupervisor> = new Map();
   private started = false;
   /** address → interface map, filled by listDevices(). */
   private readonly addressInterface: Map<string, CcuInterfaceId> = new Map();
@@ -80,6 +94,7 @@ export class CcuClient extends EventEmitter {
     });
 
     this.eventServer.on('event', (ev) => this.handleEvent(ev));
+    this.eventServer.on('activity', (a) => this.handleActivity(a));
     this.eventServer.on('error', (err) => {
       this.log.error('Event server error: %s', err.message);
     });
@@ -94,16 +109,29 @@ export class CcuClient extends EventEmitter {
       if (!this.config.interfaces[flag]) {
         continue;
       }
-      this.rpcClients.set(id, new RpcClient({
+      const callbackId = `${PLUGIN_NAME}:${id}`;
+      const client = new RpcClient({
         interfaceId: id,
         host: this.config.ccuIp,
         port: this.portFor(id),
         callbackUrl,
-        callbackId: `${PLUGIN_NAME}:${id}`,
+        callbackId,
         log: this.log.child(`rpc:${id}`),
         tls: this.config.useTls,
         ...(auth ? { auth } : {}),
-      }));
+      });
+      this.rpcClients.set(id, client);
+      const sup = new InterfaceSupervisor({
+        client,
+        log: this.log.child(`link:${id}`),
+        pingId: callbackId,
+        callbackUrl,
+        ...(opts.timings ? { timings: opts.timings } : {}),
+      });
+      sup.on('state', (state, prev) => this.emit('interfaceState', id, state, prev));
+      sup.on('subscribed', (reason) => this.emit('subscribed', id, reason));
+      this.supervisors.set(id, sup);
+      this.byCallbackId.set(callbackId, sup);
     }
   }
 
@@ -112,30 +140,13 @@ export class CcuClient extends EventEmitter {
       return;
     }
     await this.eventServer.start();
-
-    for (const client of this.rpcClients.values()) {
-      const id = client.interfaceId;
-      const port = this.portFor(id);
-      this.log.info('Using XML-RPC port %d for %s%s', port, id, this.config.useTls ? ' (TLS)' : '');
-      try {
-        await client.subscribe();
-      } catch (err) {
-        const msg = (err as Error).message;
-        this.log.warn('Could not subscribe to %s: %s', id, msg);
-        if (/ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH/.test(msg)) {
-          this.log.warn(
-            'Hint: %s:%d is not reachable from this host. Check the CCU firewall '
-              + '(Settings → Control Panel → Security → Firewall: "XML-RPC API") '
-              + 'or set interfacePorts.%s in the plugin config.',
-            this.config.ccuIp, port, id,
-          );
-        }
-      }
-    }
-
-    this.lastEventAt = Date.now();
-    this.startWatchdog();
     this.started = true;
+    for (const id of this.supervisors.keys()) {
+      this.log.info('Using XML-RPC port %d for %s%s', this.portFor(id), id, this.config.useTls ? ' (TLS)' : '');
+    }
+    // First attempt on every interface in parallel; failures retry in the
+    // background (backoff), so start() never throws because of the CCU.
+    await Promise.all([...this.supervisors.values()].map((s) => s.start()));
   }
 
   async stop(): Promise<void> {
@@ -143,13 +154,8 @@ export class CcuClient extends EventEmitter {
       return;
     }
     this.started = false;
-    if (this.watchdogTimer) {
-      clearInterval(this.watchdogTimer);
-      this.watchdogTimer = undefined;
-    }
-    for (const client of this.rpcClients.values()) {
-      await client.unsubscribe();
-      await client.close();
+    for (const sup of this.supervisors.values()) {
+      await sup.stop();
     }
     await this.eventServer.stop();
   }
@@ -255,14 +261,14 @@ export class CcuClient extends EventEmitter {
     };
   }
 
-  /** Returns true if any RPC interface is currently subscribed. */
+  /** True if any interface is currently CONNECTED. */
   isLive(): boolean {
-    for (const c of this.rpcClients.values()) {
-      if (c.isSubscribed()) {
-        return true;
-      }
-    }
-    return false;
+    return [...this.supervisors.values()].some((s) => s.state === 'CONNECTED');
+  }
+
+  /** Supervisor state of one interface (undefined if not enabled). */
+  getInterfaceState(id: CcuInterfaceId): InterfaceState | undefined {
+    return this.supervisors.get(id)?.state;
   }
 
   /** Set a CCU datapoint via XML-RPC on the channel's interface. */
@@ -290,8 +296,24 @@ export class CcuClient extends EventEmitter {
     return this.config.interfacePorts[id] ?? (this.config.useTls ? INTERFACE_TLS_PORTS : INTERFACE_PORTS)[id];
   }
 
+  /** Every inbound callback is a sign of life for its interface. */
+  private handleActivity(a: CallbackActivity): void {
+    const sup = this.byCallbackId.get(a.callbackId);
+    if (!sup || a.method === 'event') {
+      return; // events are handled (and classified) in handleEvent
+    }
+    sup.noteActivity(a.method === 'listDevices' ? 'listDevices' : 'other');
+  }
+
   private handleEvent(ev: ChannelEvent): void {
-    this.lastEventAt = ev.receivedAt;
+    const sup = this.byCallbackId.get(ev.callbackId);
+    if (ev.datapoint === 'PONG' && (ev.channelAddress === 'CENTRAL' || ev.channelAddress === 'CENTRAL:0')) {
+      // Own PONG (value = our caller id) or a foreign client's; both prove
+      // that our subscription on this interface is alive.
+      sup?.noteActivity(ev.value === ev.callbackId ? 'pong' : 'event');
+      return;
+    }
+    sup?.noteActivity('event');
     const fullAddress = `${ev.channelAddress}.${ev.datapoint}`;
     const set = this.datapointListeners.get(fullAddress);
     if (!set) {
@@ -322,25 +344,6 @@ export class CcuClient extends EventEmitter {
     // are 10 characters (3 letters + 7 digits).
     const serial = colon === -1 ? address : address.slice(0, colon);
     return /^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF';
-  }
-
-  private startWatchdog(): void {
-    const intervalMs = Math.max(30_000, Math.floor(this.config.eventServer.watchdogSeconds * 1000 / 3));
-    this.watchdogTimer = setInterval(() => {
-      const elapsed = Date.now() - this.lastEventAt;
-      if (elapsed > this.config.eventServer.watchdogSeconds * 1000) {
-        this.log.warn('No events for %d ms, re-subscribing to all interfaces', elapsed);
-        for (const client of this.rpcClients.values()) {
-          client.subscribe().catch((err) =>
-            this.log.warn('Re-subscribe failed for %s: %s', client.interfaceId, (err as Error).message),
-          );
-        }
-        this.lastEventAt = Date.now();
-      }
-    }, intervalMs);
-    if (this.watchdogTimer.unref) {
-      this.watchdogTimer.unref();
-    }
   }
 
   private resolveCallbackHost(): string {

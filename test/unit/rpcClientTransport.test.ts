@@ -48,7 +48,7 @@ describe('RpcClient lazy-loaded transport', () => {
     const c = makeClient();
     await c.subscribe();
     expect(c.isSubscribed()).toBe(true);
-    expect(await c.ping()).toBe(true);
+    await expect(c.ping('caller')).resolves.toBeUndefined();
     expect(await c.getValue('addr', 'STATE')).toBe(17);
     await c.setValue('addr', 'STATE', true);
   });

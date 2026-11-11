@@ -65,7 +65,7 @@ const DEFAULT_BLOCK = () => ({
   interfaces: { bidcosRf: true, hmIpRf: true },
   interfacePorts: {},
   rpcAuth: { enabled: false, username: '', password: '' },
-  eventServer: { host: '0.0.0.0', callbackHost: '', port: 9875, watchdogSeconds: 600 },
+  eventServer: { host: '0.0.0.0', callbackHost: '', port: 9875 },
 });
 
 const state = {
@@ -857,6 +857,7 @@ async function init() {
     };
     // Fields of removed features; channel mappings now live in devices.json.
     for (const k of ['ccuAuth', 'variables', 'programs', '_bridge', 'channels']) delete state.cfg[k];
+    delete state.cfg.eventServer.watchdogSeconds; // replaced by per-interface ping/PONG
   } catch (err) {
     toast('error', `Could not load config: ${err.message}`);
   }

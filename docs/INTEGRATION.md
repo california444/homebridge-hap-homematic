@@ -69,8 +69,7 @@ looks like this:
   "eventServer": {
     "host": "0.0.0.0",
     "callbackHost": "192.168.1.20",
-    "port": 9875,
-    "watchdogSeconds": 600
+    "port": 9875
   }
 }
 ```
@@ -88,7 +87,6 @@ Device mappings are **not** part of `config.json`; they live in
 | `eventServer.host` | Local bind address of the event server. Default `0.0.0.0` (all interfaces). |
 | `eventServer.callbackHost` | **Required.** Address the CCU calls back. |
 | `eventServer.port` | Default 9875. Pick anything in 1024–65535. |
-| `eventServer.watchdogSeconds` | If no events arrive for this long, every interface re-subscribes. Default 600 s. |
 
 ### Service registry
 
@@ -124,8 +122,14 @@ See [SECURITY.md](../SECURITY.md) for the full threat model.
 **Devices show up but never update in real time.**
 Check the EventServer port and `eventServer.callbackHost`. The CCU must be able
 to open a connection to `http://<eventServer.host>:<port>`. After a
-CCU restart the CCU forgets all subscriptions; the watchdog re-subscribes
-after `watchdogSeconds` without events.
+CCU restart the CCU forgets all subscriptions; the plugin notices it
+(ping / PONG per interface, see ARCHITECTURE.md) and subscribes again
+within about 15–90 s.
+
+**`did not call back within 15 s`**
+`init` worked, but the CCU cannot reach the event server. Check
+`eventServer.callbackHost`, the port, the host firewall and Docker port
+mappings.
 
 **`init failed: connect ETIMEDOUT` / `ECONNREFUSED`**
 The interface failed to subscribe at startup. Most common cause: the

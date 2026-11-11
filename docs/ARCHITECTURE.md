@@ -191,14 +191,36 @@ Critical security points:
   payload (type, length, allowlisted shape).
 - The xmlRpc parser refuses DOCTYPE / external entities.
 
-## Watchdog
+## Connection supervision
 
-A CCU XML-RPC subscription is fire-and-forget — the CCU forgets
-clients after a restart and does not re-register them. The CcuClient
-keeps a `lastEventAt` timestamp; if no events arrive within
-`watchdogSeconds` (default 300), every interface re-issues `init`.
-A per-interface state machine with ping/PONG is planned (plan
-section 7).
+A CCU XML-RPC subscription is fire-and-forget: after a restart the CCU
+answers again but has forgotten every client and does not re-register
+it. Each interface therefore has an `InterfaceSupervisor`
+([src/ccu/InterfaceSupervisor.ts](../src/ccu/InterfaceSupervisor.ts)):
+
+| State | Leaves when … |
+| --- | --- |
+| `CONNECTING` | first `init` succeeds → `CONNECTED`, fails → `DISCONNECTED` |
+| `CONNECTED` | `ping(callerId)` every 60 s fails → `DISCONNECTED`; no own PONG and no other callback for 90 s → `STALE` |
+| `STALE` | `init` again → `CONNECTED` (or `DISCONNECTED`) |
+| `DISCONNECTED` | a `ping` call succeeds again → `init` at once → `CONNECTED` |
+
+- Signs of life per interface: every inbound callback with that
+  interface's callback id — events, foreign PONGs (other clients' pings
+  are broadcast), `listDevices`, `newDevices`.
+- PONG: BidCos-RF `CENTRAL` / `PONG`, HmIP-RF `CENTRAL:0` / `PONG`,
+  value = our caller id.
+- Unreachable: timeout (15 s per call, 45 s for `init`), `ECONNREFUSED`,
+  `Invalid XML-RPC message` (CCU still booting).
+- Retry while `DISCONNECTED`: backoff 5 s → 5 min until the interface
+  has been connected once (HMIPServer starts later than rfd), then every
+  15 s. Only state changes are logged.
+- Handshake: the CCU calls `listDevices` on the callback during `init`.
+  If nothing arrives within 15 s, a log error names the callback URL.
+- After every re-subscribe the platform re-runs discovery (and reports
+  new / vanished devices) and calls `refresh()` on the interface's
+  handlers, because events during the outage are lost.
+- Shutdown: `init(sameUrl, '')` unsubscribes.
 
 ## Testing strategy
 

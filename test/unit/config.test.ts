@@ -28,7 +28,7 @@ describe('resolveConfig', () => {
     const c = resolveConfig(base);
     expect(c.ccuIp).toBe('192.168.1.10');
     expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: true });
-    expect(c.eventServer).toEqual({ host: '0.0.0.0', callbackHost: '192.168.1.20', port: 9875, watchdogSeconds: 600 });
+    expect(c.eventServer).toEqual({ host: '0.0.0.0', callbackHost: '192.168.1.20', port: 9875 });
     expect(c.useTls).toBe(false);
     expect(c.rpcAuth).toEqual({ enabled: false });
     expect(c).not.toHaveProperty('ccuAuth');
@@ -89,9 +89,9 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig(ev({ port: 70000 }))).toThrow(/port/);
   });
 
-  it('rejects out-of-range watchdog', () => {
-    expect(() => resolveConfig(ev({ watchdogSeconds: 0 }))).toThrow(/watchdog/i);
-    expect(() => resolveConfig(ev({ watchdogSeconds: 999999 }))).toThrow(/watchdog/i);
+  it('ignores the upstream watchdogSeconds (replaced by ping/PONG per interface)', () => {
+    const c = resolveConfig(ev({ watchdogSeconds: 0 }));
+    expect(c.eventServer).not.toHaveProperty('watchdogSeconds');
   });
 
   it('rejects empty event-server host', () => {

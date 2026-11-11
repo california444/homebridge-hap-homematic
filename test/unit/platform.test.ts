@@ -335,4 +335,63 @@ describe('HomematicPlatform', () => {
     expect(managed.size).toBe(0);
     expect(vi.mocked(log.debug).mock.calls.some((c) => String(c[1]).includes('dispose boom'))).toBe(true);
   });
+
+  it('after a re-subscribe: compares listDevices, warns about vanished mapped devices, refreshes that interface', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory' } } } } });
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    const { ccu, list } = stubCcu(platform, { 'HmIP-RF': PS_LIST, 'BidCos-RF': [] });
+    vi.spyOn(ccu, 'isLive').mockReturnValue(true);
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(vi.mocked(log.success)).toHaveBeenCalled();
+
+    const managed = (platform as unknown as { managed: Map<string, { handler: Record<string, unknown>; interface?: string }> }).managed;
+    const refreshIp = vi.fn();
+    const refreshBid = vi.fn();
+    managed.set('ip', { handler: { refresh: refreshIp }, interface: 'HmIP-RF' });
+    managed.set('ip2', { handler: { refresh: () => { throw new Error('refresh boom'); } }, interface: 'HmIP-RF' });
+    managed.set('ip3', { handler: {}, interface: 'HmIP-RF' });
+    managed.set('bid', { handler: { refresh: refreshBid }, interface: 'BidCos-RF' });
+
+    ccu.emit('subscribed', 'HmIP-RF', 'initial'); // ignored
+    await flushAsync(5);
+    expect(list).toHaveBeenCalledTimes(1);
+
+    // The device vanished and a new one appeared on HmIP-RF.
+    list.mockResolvedValueOnce({
+      results: new Map([['HmIP-RF', [{ ADDRESS: 'NEW0000001', TYPE: 'X', PARENT: '' }]], ['BidCos-RF', []]]),
+      errors: new Map(),
+    } as never);
+    ccu.emit('subscribed', 'HmIP-RF', 'reconnect');
+    await flushAsync();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(refreshIp).toHaveBeenCalledTimes(1);
+    expect(refreshBid).not.toHaveBeenCalled();
+    const infos = vi.mocked(log.info).mock.calls.map((c) => c.map(String).join(' '));
+    expect(infos.some((t) => t.includes('after re-subscribe') && t.includes('HmIP-RF 1 1'))).toBe(true);
+    const warns = vi.mocked(log.warn).mock.calls.map((c) => c.map(String).join(' '));
+    expect(warns.some((t) => t.includes('no longer on the CCU') && t.includes(PS))).toBe(true);
+    expect(warns.some((t) => t.includes('refresh boom'))).toBe(true);
+
+    // A failing follow-up is logged and does not block the next one.
+    list.mockRejectedValueOnce(new Error('disc boom'));
+    ccu.emit('subscribed', 'HmIP-RF', 'stale');
+    await flushAsync();
+    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[1]).includes('disc boom'))).toBe(true);
+    ccu.emit('subscribed', 'BidCos-RF', 'stale'); // no changes → no info line
+    await flushAsync();
+    expect(refreshBid).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns when no interface is reachable at start', async () => {
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    stubCcu(platform, {});
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('not reachable yet'))).toBe(true);
+  });
 });

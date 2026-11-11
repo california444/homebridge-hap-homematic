@@ -103,27 +103,3 @@ describe('CcuClient internals', () => {
     expect(intfFor('000a5d8996bbab:1')).toBe('HmIP-RF');
   });
 });
-
-describe('CcuClient watchdog', () => {
-  it('triggers re-subscribe after the watchdog window', async () => {
-    vi.useFakeTimers();
-    try {
-      const config = resolveConfig({
-        platform: 'HapHomematic',
-        ccuIp: '127.0.0.1',
-        eventServer: { host: '127.0.0.1', callbackHost: '127.0.0.1', port: 9876, watchdogSeconds: 60 },
-      });
-      const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'wd') });
-      vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-      vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
-      await ccu.start();
-      // Force a tick past the watchdog interval (1/3 of 60s = 20s).
-      await vi.advanceTimersByTimeAsync(25_000);
-      await vi.advanceTimersByTimeAsync(25_000);
-      await vi.advanceTimersByTimeAsync(25_000);
-      await ccu.stop();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});

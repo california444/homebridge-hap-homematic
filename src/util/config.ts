@@ -37,7 +37,6 @@ const VALID_INTERFACE_IDS: ReadonlySet<CcuInterfaceId> = new Set(['BidCos-RF', '
 const DEFAULT_EVENT_SERVER = {
   host: '0.0.0.0',
   port: 9875,
-  watchdogSeconds: 600,
 };
 
 const HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/;
@@ -101,10 +100,8 @@ export function resolveConfig(raw: RawConfig, opts: ResolveOptions = {}): Resolv
   if (!Number.isInteger(evPort) || evPort < 1024 || evPort > 65535) {
     throw new ConfigError('eventServer.port must be an integer in [1024, 65535]');
   }
-  const evWatchdog = Number(raw.eventServer?.watchdogSeconds ?? DEFAULT_EVENT_SERVER.watchdogSeconds);
-  if (!Number.isInteger(evWatchdog) || evWatchdog < 30 || evWatchdog > 3600) {
-    throw new ConfigError('eventServer.watchdogSeconds must be an integer in [30, 3600]');
-  }
+  // eventServer.watchdogSeconds (upstream) is ignored: every interface is
+  // supervised with ping/PONG instead (ccu/InterfaceSupervisor.ts).
 
   const interfacePorts: Partial<Record<CcuInterfaceId, number>> = {};
   if (raw.interfacePorts && typeof raw.interfacePorts === 'object') {
@@ -135,7 +132,6 @@ export function resolveConfig(raw: RawConfig, opts: ResolveOptions = {}): Resolv
       host: evHost,
       callbackHost: callbackHost ?? '',
       port: evPort,
-      watchdogSeconds: evWatchdog,
     },
   };
 }

@@ -85,3 +85,6 @@ the upstream project. Modified files carry a "Modified by california444
                 Basic auth; homematic-xmlrpc 2.0.0 without the upstream
                 deserializer patch; accessory UUIDs per interface, serial,
                 channel and service.
+  * 2026-11-11  Per-interface connection supervision (ping/PONG, stale
+                detection, backoff, re-subscribe after a CCU restart,
+                init handshake check) replaces the global watchdog.

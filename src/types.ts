@@ -23,7 +23,6 @@ export interface EventServerConfig {
   /** Address the CCU calls back (`http://<callbackHost>:<port>`). Required. */
   callbackHost: string;
   port: number;
-  watchdogSeconds: number;
 }
 
 /** HTTP Basic auth on the XML-RPC ports (CCU setting "Authentifizierung"). */

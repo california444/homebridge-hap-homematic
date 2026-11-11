@@ -102,12 +102,27 @@ describe('RpcClient', () => {
     expect(t.calls.find((c) => c[0] === 'setValue')).toBeDefined();
   });
 
-  it('ping returns true on success, false on error', async () => {
+  it('ping sends the caller id and throws when unreachable', async () => {
     const t = makeTransport();
     const c = makeClient(t);
-    expect(await c.ping()).toBe(true);
-    (t.call as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('nope'));
-    expect(await c.ping()).toBe(false);
+    await expect(c.ping('me')).resolves.toBeUndefined();
+    expect(vi.mocked(t.call).mock.calls.at(-1)).toEqual(['ping', ['me']]);
+    vi.mocked(t.call).mockRejectedValueOnce(new Error('Invalid XML-RPC message'));
+    await expect(c.ping('me')).rejects.toThrow('Invalid XML-RPC message');
+  });
+
+  it('unsubscribes with exactly the same callback URL and an empty id (plan 7.5)', async () => {
+    const t = makeTransport();
+    const c = makeClient(t);
+    await c.unsubscribe(); // not subscribed → no call
+    expect(t.calls).toHaveLength(0);
+    await c.subscribe();
+    await c.unsubscribe();
+    expect(t.calls).toEqual([
+      ['init', ['http://example/cb', 'cbid']],
+      ['init', ['http://example/cb', '']],
+    ]);
+    expect(c.isSubscribed()).toBe(false);
   });
 
   it('close releases the transport', async () => {

@@ -31,6 +31,8 @@ import type {
   AccessoryContext,
   AccessoryMapping,
   CcuChannel,
+  CcuDevice,
+  CcuInterfaceId,
   RawConfig,
   ResolvedConfig,
 } from './types.js';
@@ -42,6 +44,7 @@ import { PluginStorage } from './util/storage.js';
 interface ManagedAccessory {
   accessory: PlatformAccessory<AccessoryContext>;
   handler: ChannelService;
+  interface?: CcuInterfaceId;
 }
 
 export class HomematicPlatform implements DynamicPlatformPlugin {
@@ -56,6 +59,9 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   private readonly discovery: Discovery | undefined;
   private readonly cachedAccessories = new Map<string, PlatformAccessory<AccessoryContext>>();
   private readonly managed = new Map<string, ManagedAccessory>();
+  private mappings: AccessoryMapping[] = [];
+  /** Re-subscribe follow-ups run one after another (shared cache files). */
+  private refreshQueue: Promise<void> = Promise.resolve();
 
   constructor(log: Logging, config: PlatformConfig, api: API) {
     this.api = api;
@@ -81,6 +87,13 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
 
     this.ccu = new CcuClient({ config: this.resolved, log: this.log.child('ccu') });
     this.discovery = new Discovery({ ccu: this.ccu, storage: this.storage, log: this.log.child('discovery') });
+    this.ccu.on('subscribed', (id: CcuInterfaceId, reason: string) => {
+      if (reason !== 'initial') {
+        this.refreshQueue = this.refreshQueue
+          .then(() => this.afterResubscribe(id))
+          .catch((err) => this.log.warn('Refresh after re-subscribe failed: %s', (err as Error).message));
+      }
+    });
 
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
       this.didFinishLaunching().catch((err) => {
@@ -114,6 +127,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
 
     const known = new Set(SERVICE_DEFINITIONS.map((d) => d.key));
     const { mappings } = await loadDevicesFile(this.storage, this.log, known);
+    this.mappings = mappings;
     // devices.json names the interface of every mapped device.
     for (const m of mappings) {
       this.ccu.setInterfaceFor(m.device, m.interface);
@@ -124,7 +138,11 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     await this.discovery.loadParamsets(this.paramsetAddresses(mappings));
 
     await this.ccu.start();
-    this.log.success('Connected to CCU at %s', this.resolved.ccuIp);
+    if (this.ccu.isLive()) {
+      this.log.success('Connected to CCU at %s', this.resolved.ccuIp);
+    } else {
+      this.log.warn('CCU at %s not reachable yet; retrying in the background', this.resolved.ccuIp);
+    }
 
     const seen = new Set<string>();
     for (const mapping of mappings) {
@@ -218,7 +236,44 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     };
     const handler = def.build(ctx);
     handler.attach(channel);
-    this.managed.set(uuid, { accessory, handler });
+    this.managed.set(uuid, { accessory, handler, interface: mapping.interface });
+  }
+
+  /**
+   * Plan 7.3: after a re-subscribe compare listDevices with what we had
+   * and let the interface's handlers re-read their values (events during
+   * the outage are lost).
+   */
+  private async afterResubscribe(id: CcuInterfaceId): Promise<void> {
+    /* c8 ignore next 3 — unreachable: the listener is only registered with a discovery */
+    if (!this.discovery) {
+      return;
+    }
+    const before = new Set(devicesOf(this.discovery.getDevices(), id));
+    await this.discovery.run();
+    const after = new Set(devicesOf(this.discovery.getDevices(), id));
+    const added = [...after].filter((a) => !before.has(a));
+    const removed = [...before].filter((a) => !after.has(a));
+    if (added.length || removed.length) {
+      this.log.info('%s after re-subscribe: %d new, %d removed devices', id, added.length, removed.length);
+    }
+    for (const m of this.mappings) {
+      if (m.interface === id && removed.includes(m.device)) {
+        this.log.warn('Mapped device %s:%s is no longer on the CCU', id, m.device);
+      }
+    }
+    let n = 0;
+    for (const m of this.managed.values()) {
+      if (m.interface === id && m.handler.refresh) {
+        try {
+          m.handler.refresh();
+          n++;
+        } catch (err) {
+          this.log.warn('refresh failed: %s', (err as Error).message);
+        }
+      }
+    }
+    this.log.debug('%s: refreshed %d accessories after re-subscribe', id, n);
   }
 
   /**
@@ -276,4 +331,8 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
  */
 function stubChannel(address: string, index: number, name: string | undefined): CcuChannel {
   return { address, index, name: name ?? address, type: 'UNKNOWN' };
+}
+
+function devicesOf(devices: CcuDevice[], id: CcuInterfaceId): string[] {
+  return devices.filter((d) => d.interface === id).map((d) => d.address);
 }

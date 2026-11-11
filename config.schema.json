@@ -111,14 +111,6 @@
             "default": 9875,
             "minimum": 1024,
             "maximum": 65535
-          },
-          "watchdogSeconds": {
-            "title": "Watchdog (s)",
-            "type": "integer",
-            "default": 600,
-            "minimum": 30,
-            "maximum": 3600,
-            "description": "Re-init the RPC subscription if no events arrive within this window."
           }
         }
       }

@@ -149,42 +149,24 @@ describe('CcuClient start/stop', () => {
     expect(unsub).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps going when subscribe fails, with a firewall hint; TLS uses 42001', async () => {
+  it('start() resolves when subscribe fails; the interface is DISCONNECTED and retried later; TLS uses 42001', async () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false }, useTls: true });
     vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
     vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
-    vi.spyOn(RpcClient.prototype, 'listDevices').mockRejectedValue(new Error('down'));
     vi.spyOn(RpcClient.prototype, 'subscribe').mockRejectedValue(new Error('init failed: connect ECONNREFUSED'));
-    const warns: string[] = [];
-    vi.spyOn(ccu['log'] as unknown as { warn: (...args: unknown[]) => void }, 'warn')
-      .mockImplementation((fmt: string, ...args: unknown[]) => {
-        warns.push([fmt, ...args].map(String).join(' '));
-      });
     const infos: string[] = [];
     vi.spyOn(ccu['log'] as unknown as { info: (...args: unknown[]) => void }, 'info')
       .mockImplementation((...args: unknown[]) => { infos.push(args.map(String).join(' ')); });
+    const states: string[] = [];
+    ccu.on('interfaceState', (id: string, state: string) => states.push(`${id}:${state}`));
     await expect(ccu.start()).resolves.toBeUndefined();
-    const all = warns.join('\n');
     expect(infos.join('\n')).toMatch(/42001 BidCos-RF +\(TLS\)/);
-    expect(all).toMatch(/Could not subscribe/);
-    expect(all).toMatch(/Hint:/);
+    expect(ccu.getInterfaceState('BidCos-RF')).toBe('DISCONNECTED');
+    expect(ccu.getInterfaceState('HmIP-RF')).toBeUndefined();
+    expect(ccu.isLive()).toBe(false);
+    expect(states).toEqual(['BidCos-RF:CONNECTING', 'BidCos-RF:DISCONNECTED']);
     await ccu.stop();
-  });
-
-  it('does not print the firewall hint for other subscribe errors', async () => {
-    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false } });
-    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
-    vi.spyOn(RpcClient.prototype, 'listDevices').mockResolvedValue([]);
-    vi.spyOn(RpcClient.prototype, 'subscribe').mockRejectedValue(new Error('init failed: fault'));
-    const warns: string[] = [];
-    vi.spyOn(ccu['log'] as unknown as { warn: (...args: unknown[]) => void }, 'warn')
-      .mockImplementation((fmt: string, ...args: unknown[]) => {
-        warns.push([fmt, ...args].map(String).join(' '));
-      });
-    await ccu.start();
-    expect(warns.join('\n')).not.toMatch(/Hint:/);
-    await ccu.stop();
+    expect(ccu.getInterfaceState('BidCos-RF')).toBe('STOPPED');
   });
 });
 
@@ -242,24 +224,48 @@ describe('CcuClient address → interface routing', () => {
   });
 });
 
-describe('CcuClient watchdog', () => {
-  it('re-subscribes every interface after the watchdog window and logs failures', async () => {
+describe('CcuClient supervision wiring', () => {
+  const fire = (ccu: CcuClient, ev: Record<string, unknown>) =>
+    (ccu as unknown as { handleEvent(e: object): void }).handleEvent({ receivedAt: 0, ...ev });
+  const activity = (ccu: CcuClient, method: string, callbackId: string) =>
+    (ccu as unknown as { handleActivity(a: object): void }).handleActivity({ method, callbackId });
+
+  it('re-subscribes a stale interface; own PONGs, foreign PONGs and callbacks keep it alive', async () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
     vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
     vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
-    vi.spyOn(RpcClient.prototype, 'listDevices').mockResolvedValue([]);
     vi.spyOn(RpcClient.prototype, 'unsubscribe').mockResolvedValue(undefined);
+    vi.spyOn(RpcClient.prototype, 'ping').mockResolvedValue(undefined);
     const sub = vi.spyOn(RpcClient.prototype, 'subscribe').mockResolvedValue(undefined);
+    const subscribed: string[] = [];
+    ccu.on('subscribed', (id: string, reason: string) => subscribed.push(`${id}:${reason}`));
     await ccu.start();
+    expect(ccu.isLive()).toBe(true);
+    expect(subscribed).toEqual(['BidCos-RF:initial', 'HmIP-RF:initial']);
+
+    const listener = vi.fn();
+    ccu.registerListener('ABC0000002:1.STATE', listener);
+    // Keep both alive for 3 minutes: BidCos by own PONG + CCU callbacks,
+    // HmIP by a foreign client's PONG and a regular event.
+    for (let t = 0; t < 180; t += 30) {
+      fire(ccu, { callbackId: 'homebridge-hap-homematic:BidCos-RF', channelAddress: 'CENTRAL', datapoint: 'PONG',
+        value: 'homebridge-hap-homematic:BidCos-RF' });
+      activity(ccu, 'newDevices', 'homebridge-hap-homematic:BidCos-RF');
+      fire(ccu, { callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'CENTRAL:0', datapoint: 'PONG', value: 'mb' });
+      fire(ccu, { callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'ABC0000002:1', datapoint: 'STATE', value: true });
+      await vi.advanceTimersByTimeAsync(30_000);
+    }
+    expect(listener).toHaveBeenCalledTimes(6);
     expect(sub).toHaveBeenCalledTimes(2);
-    sub.mockRejectedValue(new Error('gone'));
-    const warns: string[] = [];
-    vi.spyOn(ccu['log'] as unknown as { warn: (...args: unknown[]) => void }, 'warn')
-      .mockImplementation((...args: unknown[]) => { warns.push(args.map(String).join(' ')); });
-    await vi.advanceTimersByTimeAsync(95_000); // > 60 s silence, checked every 30 s → fires at 90 s
-    expect(sub).toHaveBeenCalledTimes(4);
-    expect(warns.join('\n')).toMatch(/No events for/);
-    expect(warns.join('\n')).toMatch(/Re-subscribe failed for %s: %s HmIP-RF gone/);
+
+    // Unknown callback ids and event activity are ignored by the activity hook.
+    activity(ccu, 'event', 'homebridge-hap-homematic:HmIP-RF');
+    activity(ccu, 'listDevices', 'someone-else');
+    fire(ccu, { callbackId: 'someone-else', channelAddress: 'CENTRAL', datapoint: 'PONG', value: 'x' });
+
+    // Silence → both STALE → init again.
+    await vi.advanceTimersByTimeAsync(100_000);
+    expect(subscribed).toEqual(['BidCos-RF:initial', 'HmIP-RF:initial', 'BidCos-RF:stale', 'HmIP-RF:stale']);
     await ccu.stop();
   });
 });

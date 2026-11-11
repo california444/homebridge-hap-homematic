@@ -13,6 +13,14 @@ import type { CcuInterfaceId } from '../types.js';
 
 /** Default timeout for the pre-init TCP reachability probe. */
 const PROBE_TIMEOUT_MS = 5_000;
+/**
+ * Upper bound for one XML-RPC call. homematic-xmlrpc has no timeout of
+ * its own; while the CCU shuts down, calls otherwise hang (plan 3.1,
+ * finding 14). `init` gets more time: the CCU calls our listDevices
+ * before it answers.
+ */
+export const CALL_TIMEOUT_MS = 15_000;
+export const INIT_TIMEOUT_MS = 45_000;
 
 export const INTERFACE_PORTS: Record<CcuInterfaceId, number> = {
   'BidCos-RF': 2001,
@@ -159,7 +167,19 @@ export class RpcClient {
     this.transport = {
       call: (method, params) =>
         new Promise((resolve, reject) => {
+          const timeoutMs = method === 'init' ? INIT_TIMEOUT_MS : CALL_TIMEOUT_MS;
+          let done = false;
+          const timer = setTimeout(() => {
+            done = true;
+            reject(new RpcError(`${method} failed: timeout after ${timeoutMs} ms`));
+          }, timeoutMs);
+          timer.unref?.();
           client.methodCall(method, params, (err, value) => {
+            if (done) {
+              return;
+            }
+            done = true;
+            clearTimeout(timer);
             if (err) {
               const e = err as { message?: string; faultString?: string; faultCode?: number };
               const detail = e.faultString
@@ -271,16 +291,17 @@ export class RpcClient {
     await t.call('setValue', [channel, datapoint, value]);
   }
 
-  async ping(): Promise<boolean> {
-    try {
-      const t = await this.ensureTransport();
-      // listMethods is a cheap no-op for liveness probing.
-      await t.call('system.listMethods', []);
-      return true;
-    } catch (err) {
-      this.log.debug('ping failed: %s', (err as Error).message);
-      return false;
-    }
+  /**
+   * XML-RPC `ping(callerId)`. The call itself only proves the port is
+   * open; a live subscription answers with an event `PONG` = callerId
+   * (BidCos: `CENTRAL`, HmIP: `CENTRAL:0`). Throws when unreachable
+   * (timeout, ECONNREFUSED, "Invalid XML-RPC message" while the CCU
+   * boots, faults).
+   */
+  async ping(callerId: string): Promise<void> {
+    await this.probeOnce();
+    const t = await this.ensureTransport();
+    await t.call('ping', [callerId]);
   }
 
   async close(): Promise<void> {

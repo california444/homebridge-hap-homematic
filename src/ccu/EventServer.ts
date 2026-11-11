@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Minimal XML-RPC server the CCU calls back into. We deliberately do
  * NOT depend on homematic-xmlrpc's createServer for this so we can keep
@@ -11,7 +13,10 @@
  *   system.listMethods()                       -- discovery
  *
  * Events are dispatched through a typed EventEmitter for the rest of
- * the plugin to consume.
+ * the plugin to consume. Every inbound call that carries a callback id
+ * (also inside system.multicall) is reported as `activity`, which the
+ * per-interface supervisors use as a sign of life and as the init
+ * handshake (the CCU calls listDevices right after init).
  */
 
 import { Buffer } from 'node:buffer';
@@ -37,8 +42,14 @@ export interface ChannelEvent {
   receivedAt: number;
 }
 
+export interface CallbackActivity {
+  method: string;
+  callbackId: string;
+}
+
 export interface EventServerEvents {
   event: (ev: ChannelEvent) => void;
+  activity: (a: CallbackActivity) => void;
   newDevices: (callbackId: string) => void;
   listening: (info: { host: string; port: number }) => void;
   error: (err: Error) => void;
@@ -127,6 +138,9 @@ export class EventServer extends EventEmitter {
   }
 
   private dispatch(method: string, params: unknown[]): unknown {
+    if (method !== 'system.multicall' && typeof params[0] === 'string') {
+      this.emit('activity', { method, callbackId: params[0] });
+    }
     switch (method) {
       case 'event': {
         const [callbackId, channelAddress, datapoint, value] = params as [string, string, string, unknown];

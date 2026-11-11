@@ -53,4 +53,10 @@ export interface ChannelService {
   attach(channel: CcuChannel): void;
   /** Disconnect listeners; called when the accessory is removed. */
   dispose?(): void;
+  /**
+   * Re-read current values from the CCU. Called after every re-subscribe
+   * of the channel's interface (CCU restart, stale subscription), because
+   * events during the outage are lost (plan 7.3, 4.2).
+   */
+  refresh?(): void;
 }
