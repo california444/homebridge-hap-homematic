@@ -6,8 +6,9 @@
  *
  *   constructor()        — validate config, build CCU client
  *   configureAccessory() — restore one accessory from disk cache
- *   didFinishLaunching   — start CCU client, then materialize accessories
- *                          for every mapped channel in config
+ *   didFinishLaunching   — read devices.json, discover devices (with
+ *                          cache), start CCU client, then materialize
+ *                          one accessory per mapping
  *   shutdown             — stop CCU client (event server + RPC subs)
  */
 
@@ -22,17 +23,19 @@ import {
   type Service,
 } from 'homebridge';
 import { CcuClient } from './ccu/CcuClient.js';
-import { findServiceByKey } from './services/registry.js';
+import { Discovery } from './ccu/Discovery.js';
+import { findServiceByKey, SERVICE_DEFINITIONS } from './services/registry.js';
 import type { ChannelService, ServiceContext } from './services/types.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import type {
   AccessoryContext,
+  AccessoryMapping,
   CcuChannel,
-  CcuDevice,
   RawConfig,
   ResolvedConfig,
 } from './types.js';
 import { ConfigError, resolveConfig } from './util/config.js';
+import { loadDevicesFile, mappingUuidSeed } from './util/devices.js';
 import { PrefixedLogger } from './util/logger.js';
 import { PluginStorage } from './util/storage.js';
 
@@ -50,6 +53,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   private readonly storage: PluginStorage;
   private readonly resolved: ResolvedConfig | undefined;
   private readonly ccu: CcuClient | undefined;
+  private readonly discovery: Discovery | undefined;
   private readonly cachedAccessories = new Map<string, PlatformAccessory<AccessoryContext>>();
   private readonly managed = new Map<string, ManagedAccessory>();
 
@@ -62,6 +66,10 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
 
     try {
       this.resolved = resolveConfig(config as RawConfig);
+      if (Array.isArray((config as { channels?: unknown }).channels)) {
+        this.log.warn('config.json "channels" is no longer used; mappings live in %s/devices.json',
+          this.storage.rootPath());
+      }
     } catch (err) {
       if (err instanceof ConfigError) {
         // Per the verified-plugin rule: log and stay idle, do not crash.
@@ -72,6 +80,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     }
 
     this.ccu = new CcuClient({ config: this.resolved, log: this.log.child('ccu') });
+    this.discovery = new Discovery({ ccu: this.ccu, storage: this.storage, log: this.log.child('discovery') });
 
     this.api.on(APIEvent.DID_FINISH_LAUNCHING, () => {
       this.didFinishLaunching().catch((err) => {
@@ -98,35 +107,38 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   // --- private -------------------------------------------------------
 
   private async didFinishLaunching(): Promise<void> {
-    if (!this.resolved || !this.ccu) {
+    if (!this.resolved || !this.ccu || !this.discovery) {
       return;
     }
     await this.storage.ensureRoot();
+
+    const known = new Set(SERVICE_DEFINITIONS.map((d) => d.key));
+    const { mappings } = await loadDevicesFile(this.storage, this.log, known);
+    // devices.json names the interface of every mapped device.
+    for (const m of mappings) {
+      this.ccu.setInterfaceFor(m.device, m.interface);
+    }
+
+    // One listDevices per interface and start, with cache fallback.
+    await this.discovery.run();
+    await this.discovery.loadParamsets(this.paramsetAddresses(mappings));
+
     await this.ccu.start();
     this.log.success('Connected to CCU at %s', this.resolved.ccuIp);
 
-    // One listDevices per start (not one per mapping).
-    let devices: CcuDevice[] = [];
-    try {
-      devices = await this.ccu.listDevices();
-    } catch (err) {
-      this.log.warn('Device discovery failed: %s', (err as Error).message);
-    }
-
-    // Materialize each mapped channel from config.
     const seen = new Set<string>();
-
-    for (const mapping of this.resolved.channels) {
+    for (const mapping of mappings) {
+      const seed = mappingUuidSeed(mapping);
       try {
-        const uuid = this.api.hap.uuid.generate(`channel:${mapping.address}`);
+        const uuid = this.api.hap.uuid.generate(seed);
         seen.add(uuid);
-        this.attachChannel(uuid, mapping.address, mapping, devices);
+        this.attachMapping(uuid, mapping);
       } catch (err) {
-        this.log.warn('Skipping channel %s: %s', mapping.address, (err as Error).message);
+        this.log.warn('Skipping %s: %s', seed, (err as Error).message);
       }
     }
 
-    // Drop cached accessories that are no longer in config.
+    // Drop cached accessories that are no longer mapped.
     const toRemove: PlatformAccessory[] = [];
     for (const [uuid, acc] of this.cachedAccessories) {
       if (!seen.has(uuid)) {
@@ -155,14 +167,24 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  private attachChannel(
-    uuid: string,
-    address: string,
-    mapping: { address: string; service: string; subtype?: string; settings?: Record<string, unknown>; name?: string },
-    devices: CcuDevice[],
-  ): void {
+  /** Mapped channels plus channel 0 (MAINTENANCE) of each mapped device. */
+  private paramsetAddresses(mappings: AccessoryMapping[]): string[] {
+    const out: string[] = [];
+    for (const m of mappings) {
+      out.push(`${m.device}:0`);
+      if (m.channel !== undefined) {
+        out.push(`${m.device}:${m.channel}`);
+      } else {
+        const device = this.discovery?.findDevice(m.interface, m.device);
+        out.push(...(device?.channels ?? []).map((c) => c.address));
+      }
+    }
+    return out;
+  }
+
+  private attachMapping(uuid: string, mapping: AccessoryMapping): void {
     /* c8 ignore start — unreachable: didFinishLaunching gates on ccu */
-    if (!this.ccu) {
+    if (!this.ccu || !this.discovery) {
       return;
     }
     /* c8 ignore stop */
@@ -171,17 +193,20 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       throw new Error(`Unknown service: ${mapping.service}`);
     }
 
-    const channel: CcuChannel = findChannel(devices, address, mapping.name);
-    // mapping.name is the user-chosen HomeKit display name (set in the
-    // GUI). Falls back to the placeholder channel name (type + address).
-    const displayName = (mapping.name && mapping.name.length > 0 && mapping.name)
-      || channel.name;
+    const channel = this.resolveChannel(mapping, def.channelTypes);
+    // mapping.name is the user-chosen HomeKit display name. Falls back to
+    // the placeholder name from discovery (type + address).
+    const displayName = mapping.name || channel.name;
+    const isDevice = mapping.channel === undefined;
+    const settings: Record<string, unknown> = isDevice
+      ? { ...mapping.options, channels: mapping.channels }
+      : { ...mapping.options };
     const accessory = this.getOrCreateAccessory<AccessoryContext>(uuid, displayName, {
-      kind: 'channel',
-      id: address,
+      kind: isDevice ? 'device' : 'channel',
+      id: isDevice ? mapping.device : channel.address,
       service: def.key,
-      subtype: mapping.subtype,
-      settings: mapping.settings,
+      subtype: mapping.variant,
+      settings,
       name: displayName,
     });
     const ctx: ServiceContext = {
@@ -194,6 +219,23 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     const handler = def.build(ctx);
     handler.attach(channel);
     this.managed.set(uuid, { accessory, handler });
+  }
+
+  /**
+   * The channel a handler attaches to. Per-channel mappings name it; for
+   * device mappings it is the first channel whose type the service
+   * supports (refined per service in Phase 5).
+   */
+  private resolveChannel(mapping: AccessoryMapping, channelTypes: string[]): CcuChannel {
+    const device = this.discovery?.findDevice(mapping.interface, mapping.device);
+    if (mapping.channel !== undefined) {
+      const address = `${mapping.device}:${mapping.channel}`;
+      return device?.channels.find((c) => c.address === address)
+        ?? stubChannel(address, mapping.channel, mapping.name);
+    }
+    const channels = device?.channels ?? [];
+    const match = channels.find((c) => channelTypes.includes(c.type)) ?? channels.find((c) => c.index > 0);
+    return match ?? stubChannel(`${mapping.device}:1`, 1, mapping.name);
   }
 
   private getOrCreateAccessory<T extends AccessoryContext>(
@@ -228,19 +270,10 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   }
 }
 
-function findChannel(devices: CcuDevice[], address: string, fallbackName: string | undefined): CcuChannel {
-  for (const device of devices) {
-    const channel = device.channels.find((c) => c.address === address);
-    if (channel) {
-      return channel;
-    }
-  }
-  // Channel not currently visible — fall back to a stub so the accessory
-  // still registers; events for it will still flow when the CCU sees it.
-  return {
-    address,
-    index: 0,
-    name: fallbackName ?? address,
-    type: 'UNKNOWN',
-  };
+/**
+ * Channel not currently visible (CCU unreachable, no cache) — a stub lets
+ * the accessory register; events still flow once the CCU sees it.
+ */
+function stubChannel(address: string, index: number, name: string | undefined): CcuChannel {
+  return { address, index, name: name ?? address, type: 'UNKNOWN' };
 }

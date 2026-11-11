@@ -37,7 +37,7 @@ interface TestEnv {
 }
 
 function makeEnv(): TestEnv {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
+  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'svc-test') });
   const setValueMock = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   const getValueMock = vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);

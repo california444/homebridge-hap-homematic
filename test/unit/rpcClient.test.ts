@@ -1,7 +1,7 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { describe, it, expect, vi } from 'vitest';
-import { RpcClient, patchDeserializerForUnknownTags, type RpcTransport } from '../../src/ccu/RpcClient.js';
+import { RpcClient, type RpcTransport } from '../../src/ccu/RpcClient.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
 
@@ -145,45 +145,50 @@ describe('RpcClient TCP reachability probe', () => {
   });
 });
 
-describe('patchDeserializerForUnknownTags', () => {
-  it('makes the homematic-xmlrpc Deserializer ignore non-spec tags like META', async () => {
-    patchDeserializerForUnknownTags();
-    // Sanity check the patch by feeding it a methodResponse that contains a
-    // <META> wrapper around the value. Before the patch, the Deserializer
-    // would reject this with "Unknown XML-RPC tag 'META'".
-    const { createRequire } = await import('node:module');
-    const requireFromHere = createRequire(import.meta.url);
-    const Deserializer = requireFromHere('homematic-xmlrpc/lib/deserializer') as {
-      new (): {
-        deserializeMethodResponse(stream: NodeJS.ReadableStream,
-          cb: (err: Error | null, value?: unknown) => void): void;
-      };
+describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
+  type Factory = (opts: Record<string, unknown>) => { methodCall: (m: string, p: unknown[], cb: (e: Error | null, v?: unknown) => void) => void };
+  async function capture(tls: boolean, auth?: { username: string; password: string }) {
+    const seen: { factory?: string; opts?: Record<string, unknown> } = {};
+    const fake = (name: string): Factory => (opts) => {
+      seen.factory = name;
+      seen.opts = opts;
+      return { methodCall: (_m, _p, cb) => cb(null, ['x']) };
     };
-    const { Readable } = await import('node:stream');
-    const xml = '<?xml version="1.0"?>'
-      + '<methodResponse><params><param><value>'
-      + '<struct>'
-      + '<META><foo>bar</foo></META>'
-      + '<member><name>ok</name><value><boolean>1</boolean></value></member>'
-      + '</struct>'
-      + '</value></param></params></methodResponse>';
-    const stream = Readable.from([xml]);
-    const result = await new Promise<unknown>((resolve, reject) => {
-      const d = new Deserializer();
-      d.deserializeMethodResponse(stream as unknown as NodeJS.ReadableStream,
-        (err, value) => {
-          if (err) reject(err);
-          else resolve(value);
-        });
+    const api = { createClient: fake('createClient'), createSecureClient: fake('createSecureClient') };
+    // ensureTransport() imports homematic-xmlrpc lazily, so doMock applies.
+    vi.doMock('homematic-xmlrpc', () => ({ ...api, default: api }));
+    const c = new RpcClient({
+      interfaceId: 'HmIP-RF', host: '10.0.0.2', callbackUrl: 'http://cb', callbackId: 'id',
+      log: new PrefixedLogger(makeLog(), 'rpc-test'), skipProbe: true, tls, ...(auth ? { auth } : {}),
     });
-    expect(result).toEqual({ ok: true });
+    expect(await c.listMethods()).toEqual(['x']);
+    vi.doUnmock('homematic-xmlrpc');
+    return seen;
+  }
+
+  it('uses plain HTTP on the default port', async () => {
+    const seen = await capture(false);
+    expect(seen.factory).toBe('createClient');
+    expect(seen.opts).toEqual({ host: '10.0.0.2', port: 2010 });
   });
 
-  it('is idempotent when called multiple times', () => {
-    expect(() => {
-      patchDeserializerForUnknownTags();
-      patchDeserializerForUnknownTags();
-      patchDeserializerForUnknownTags();
-    }).not.toThrow();
+  it('uses HTTPS on 42010, accepts the self-signed cert, sends Basic auth', async () => {
+    const seen = await capture(true, { username: 'u', password: 'p' });
+    expect(seen.factory).toBe('createSecureClient');
+    expect(seen.opts).toEqual({
+      host: '10.0.0.2', port: 42010, rejectUnauthorized: false, basic_auth: { user: 'u', pass: 'p' },
+    });
+  });
+});
+
+describe('RpcClient.getParamsetDescription', () => {
+  it('asks for the VALUES paramset and returns {} for non-objects', async () => {
+    const t = makeTransport();
+    const c = makeClient(t);
+    vi.mocked(t.call).mockResolvedValueOnce({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
+    expect(await c.getParamsetDescription('OEQ0000001:1')).toEqual({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
+    expect(vi.mocked(t.call).mock.calls.at(-1)).toEqual(['getParamsetDescription', ['OEQ0000001:1', 'VALUES']]);
+    vi.mocked(t.call).mockResolvedValueOnce([]);
+    expect(await c.getParamsetDescription('OEQ0000001:1')).toEqual({});
   });
 });

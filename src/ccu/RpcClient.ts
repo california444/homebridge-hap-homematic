@@ -8,7 +8,6 @@
  */
 
 import { createConnection } from 'node:net';
-import { createRequire } from 'node:module';
 import type { PrefixedLogger } from '../util/logger.js';
 import type { CcuInterfaceId } from '../types.js';
 
@@ -19,6 +18,25 @@ export const INTERFACE_PORTS: Record<CcuInterfaceId, number> = {
   'BidCos-RF': 2001,
   'HmIP-RF': 2010,
 };
+
+/** CCU defaults for XML-RPC over TLS. */
+export const INTERFACE_TLS_PORTS: Record<CcuInterfaceId, number> = {
+  'BidCos-RF': 42001,
+  'HmIP-RF': 42010,
+};
+
+/** One entry of a `getParamsetDescription(…, 'VALUES')` answer. */
+export interface ParameterDescription {
+  TYPE: string;           // BOOL, INTEGER, FLOAT, ENUM, ACTION, STRING
+  OPERATIONS?: number;    // bit mask: 1 read, 2 write, 4 event
+  FLAGS?: number;
+  MIN?: unknown;
+  MAX?: unknown;
+  DEFAULT?: unknown;
+  UNIT?: string;
+  VALUE_LIST?: string[];
+  [key: string]: unknown;
+}
 
 /** One entry of the XML-RPC `listDevices` answer (device or channel). */
 export interface RpcDeviceDescription {
@@ -41,6 +59,10 @@ export interface RpcClientOptions {
   /** Identifier the CCU will tag callbacks with. */
   callbackId: string;
   log: PrefixedLogger;
+  /** HTTPS instead of HTTP; the CCU's self-signed certificate is accepted. */
+  tls?: boolean;
+  /** HTTP Basic auth on the XML-RPC port. */
+  auth?: { username: string; password: string };
   /**
    * Inject the underlying transport for tests. The default uses
    * homematic-xmlrpc to dial the CCU port.
@@ -77,12 +99,16 @@ export class RpcClient {
   private transport: RpcTransport | undefined;
   private readonly transportFactory?: RpcTransport;
   private readonly skipProbe: boolean;
+  private readonly tls: boolean;
+  private readonly auth: { username: string; password: string } | undefined;
   private subscribed = false;
 
   constructor(opts: RpcClientOptions) {
     this.interfaceId = opts.interfaceId;
     this.host = opts.host;
-    this.port = opts.port ?? INTERFACE_PORTS[opts.interfaceId];
+    this.tls = opts.tls ?? false;
+    this.auth = opts.auth;
+    this.port = opts.port ?? (this.tls ? INTERFACE_TLS_PORTS : INTERFACE_PORTS)[opts.interfaceId];
     this.callbackUrl = opts.callbackUrl;
     this.callbackId = opts.callbackId;
     this.log = opts.log;
@@ -104,25 +130,32 @@ export class RpcClient {
     // homematic-xmlrpc is published as CommonJS; under ESM dynamic import
     // its real `createClient` shows up on `.default`, not directly on the
     // module namespace.
-    type CreateClientFn = (opts: { host: string; port: number }) => {
+    type ClientOptions = {
+      host: string;
+      port: number;
+      rejectUnauthorized?: boolean;
+      basic_auth?: { user: string; pass: string };
+    };
+    type CreateClientFn = (opts: ClientOptions) => {
       methodCall(method: string, params: unknown[],
         cb: (err: Error | null, value: unknown) => void): void;
     };
-    const mod = (await import('homematic-xmlrpc')) as {
-      createClient?: CreateClientFn;
-      default?: { createClient?: CreateClientFn };
-    };
-    const createClient = mod.createClient ?? mod.default?.createClient;
-    if (typeof createClient !== 'function') {
-      throw new RpcError('homematic-xmlrpc module did not expose createClient');
+    type XmlRpcModule = { createClient?: CreateClientFn; createSecureClient?: CreateClientFn };
+    const mod = (await import('homematic-xmlrpc')) as XmlRpcModule & { default?: XmlRpcModule };
+    const factory = this.tls
+      ? mod.createSecureClient ?? mod.default?.createSecureClient
+      : mod.createClient ?? mod.default?.createClient;
+    if (typeof factory !== 'function') {
+      throw new RpcError('homematic-xmlrpc module did not expose createClient/createSecureClient');
     }
-    // RaspberryMatic responses occasionally wrap data in non-spec
-    // elements like <META>...</META>. The bundled deserializer rejects
-    // any unknown tag with `Unknown XML-RPC tag '...'`, breaking init.
-    // Patch its onClosetag once to silently swallow unknown wrapping
-    // tags so legitimate non-spec metadata doesn't poison the response.
-    patchDeserializerForUnknownTags();
-    const client = createClient({ host: this.host, port: this.port });
+    const client = factory({
+      host: this.host,
+      port: this.port,
+      // CCUs use self-signed certificates; the connection only ever goes
+      // to the configured ccuIp.
+      ...(this.tls ? { rejectUnauthorized: false } : {}),
+      ...(this.auth ? { basic_auth: { user: this.auth.username, pass: this.auth.password } } : {}),
+    });
     this.transport = {
       call: (method, params) =>
         new Promise((resolve, reject) => {
@@ -219,6 +252,15 @@ export class RpcClient {
     return Array.isArray(result) ? (result as string[]) : [];
   }
 
+  /** XML-RPC `getParamsetDescription(address, 'VALUES')` (no radio traffic). */
+  async getParamsetDescription(address: string): Promise<Record<string, ParameterDescription>> {
+    const t = await this.ensureTransport();
+    const result = await t.call('getParamsetDescription', [address, 'VALUES']);
+    return result && typeof result === 'object' && !Array.isArray(result)
+      ? (result as Record<string, ParameterDescription>)
+      : {};
+  }
+
   async getValue(channel: string, datapoint: string): Promise<unknown> {
     const t = await this.ensureTransport();
     return t.call('getValue', [channel, datapoint]);
@@ -250,50 +292,5 @@ export class RpcClient {
 
   isSubscribed(): boolean {
     return this.subscribed;
-  }
-}
-
-const KNOWN_XMLRPC_TAGS: ReadonlySet<string> = new Set([
-  'BOOLEAN', 'INT', 'I4', 'I8', 'DOUBLE', 'STRING', 'NAME',
-  'ARRAY', 'STRUCT', 'BASE64', 'DATETIME.ISO8601',
-  'VALUE', 'PARAMS', 'FAULT', 'METHODRESPONSE', 'METHODNAME',
-  'METHODCALL', 'NIL', 'DATA', 'PARAM', 'MEMBER',
-]);
-
-let deserializerPatched = false;
-
-/**
- * Monkey-patch homematic-xmlrpc's Deserializer to ignore non-spec wrapping
- * elements such as `<META>`. The default behaviour is to error out with
- * `Unknown XML-RPC tag 'META'`, which RaspberryMatic's HmIP server can
- * trigger on `init`. Idempotent — safe to call multiple times.
- *
- * Exported only for tests.
- */
-export function patchDeserializerForUnknownTags(): void {
-  if (deserializerPatched) {
-    return;
-  }
-  try {
-    const requireFromHere = createRequire(import.meta.url);
-    const Deserializer = requireFromHere('homematic-xmlrpc/lib/deserializer') as {
-      prototype: { onClosetag: (el: string) => void; _patchedForUnknownTags?: boolean };
-    };
-    if (Deserializer.prototype._patchedForUnknownTags) {
-      deserializerPatched = true;
-      return;
-    }
-    const original = Deserializer.prototype.onClosetag;
-    Deserializer.prototype.onClosetag = function (this: unknown, el: string): void {
-      if (!KNOWN_XMLRPC_TAGS.has(el)) {
-        return;
-      }
-      original.call(this, el);
-    };
-    Deserializer.prototype._patchedForUnknownTags = true;
-    deserializerPatched = true;
-  } catch {
-    // If the module path changed, fall through silently. The original
-    // error will surface on the next init() and we'll know to revisit.
   }
 }

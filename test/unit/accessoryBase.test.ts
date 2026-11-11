@@ -27,7 +27,7 @@ class TestService extends AccessoryBase {
 }
 
 function build() {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
+  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'a') });
   const hap = makeHapStub();
   const accessory = makeAccessory<AccessoryContext>('uuid', 'X', { kind: 'channel', id: 'X', service: 'k' });

@@ -7,8 +7,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { makeHapStub, makeLog } from '../helpers/hapStub.js';
-import { CcuClient } from '../../src/ccu/CcuClient.js';
-import type { CcuDevice } from '../../src/types.js';
+import type { CcuInterfaceId } from '../../src/types.js';
+import type { RpcDeviceDescription } from '../../src/ccu/RpcClient.js';
 import { APIEvent, type API, type PlatformAccessory } from 'homebridge';
 
 class FakeApi extends EventEmitter {
@@ -60,9 +60,10 @@ beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hb-platform-'));
 });
 
+/** Let the async launch chain (real fs I/O in tmpDir) settle. */
 async function flushAsync(rounds = 20): Promise<void> {
   for (let i = 0; i < rounds; i++) {
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setTimeout(r, 5));
   }
 }
 
@@ -70,6 +71,40 @@ function makeApi(): FakeApi {
   const api = new FakeApi();
   api.user.storagePath = () => tmpDir;
   return api;
+}
+
+const CFG = { platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } };
+const PS = '000A0000000B02';
+const PS_LIST: RpcDeviceDescription[] = [
+  { ADDRESS: PS, TYPE: 'HMIP-PS', PARENT: '', FIRMWARE: '2.24.8' },
+  { ADDRESS: `${PS}:0`, TYPE: 'MAINTENANCE', PARENT: PS, INDEX: 0 },
+  { ADDRESS: `${PS}:1`, TYPE: 'SWITCH', PARENT: PS, INDEX: 1 },
+  { ADDRESS: `${PS}:2`, TYPE: 'SWITCH', PARENT: PS, INDEX: 2 },
+];
+
+async function writeDevices(file: unknown): Promise<void> {
+  const dir = path.join(tmpDir, 'homebridge-hap-homematic');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'devices.json'), JSON.stringify(file));
+}
+
+/** Stub the CCU side: listDevices answer (or error), no sockets. */
+function stubCcu(platform: HomematicPlatform, raw: Partial<Record<CcuInterfaceId, RpcDeviceDescription[]>> | Error) {
+  const ccu = platform.getCcu()!;
+  vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
+  vi.spyOn(ccu, 'stop').mockResolvedValue(undefined);
+  const list = vi.spyOn(ccu, 'listRawDevices').mockImplementation(async () => {
+    const results = new Map<CcuInterfaceId, RpcDeviceDescription[]>();
+    const errors = new Map<CcuInterfaceId, Error>();
+    for (const id of ccu.enabledInterfaces()) {
+      if (raw instanceof Error) errors.set(id, raw);
+      else if (raw[id]) results.set(id, raw[id]!);
+      else errors.set(id, new Error('no answer'));
+    }
+    return { results, errors };
+  });
+  const paramsets = vi.spyOn(ccu, 'getParamsetDescription').mockResolvedValue({ STATE: { TYPE: 'BOOL' } });
+  return { ccu, list, paramsets };
 }
 
 describe('HomematicPlatform', () => {
@@ -84,97 +119,16 @@ describe('HomematicPlatform', () => {
   it('configureAccessory restores cached accessories', () => {
     const log = makeLog();
     const api = makeApi();
-    const platform = new HomematicPlatform(log, { platform: 'HapHomematic', ccuIp: '127.0.0.1' }, api as unknown as API);
+    const platform = new HomematicPlatform(log, { platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } }, api as unknown as API);
     const acc = { UUID: 'uuid:test', displayName: 'X', context: {} } as unknown as PlatformAccessory;
     platform.configureAccessory(acc);
     expect(platform.getCcu()).toBeDefined();
   });
 
-  it('didFinishLaunching wires up channel accessories with one listDevices call', async () => {
-    const log = makeLog();
-    const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [
-        { address: 'HmIP.0:1', service: 'SwitchAccessory' },
-        { address: 'HmIP.0:2', service: 'SwitchAccessory' },
-      ],
-      // Old fields from removed features are ignored.
-      variables: [{ name: 'V1' }],
-      programs: [{ name: 'P1' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    const list = vi.spyOn(ccu, 'listDevices').mockResolvedValue([
-      { address: 'HmIP.0', type: 'X', name: 'D', interface: 'HmIP-RF', channels: [
-        { address: 'HmIP.0:1', index: 1, type: 'SWITCH', name: 'C1' },
-        { address: 'HmIP.0:2', index: 2, type: 'SWITCH', name: 'C2' },
-      ] },
-    ] satisfies CcuDevice[]);
-
-    api.emit(APIEvent.DID_FINISH_LAUNCHING);
-    await flushAsync();
-
-    expect(api.registered).toHaveLength(2);
-    expect(list).toHaveBeenCalledTimes(1);
-  });
-
-  it('still registers accessories when discovery fails', async () => {
-    const log = makeLog();
-    const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory', name: 'Lamp' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockRejectedValue(new Error('down'));
-    api.emit(APIEvent.DID_FINISH_LAUNCHING);
-    await flushAsync();
-    expect(api.registered).toHaveLength(1);
-    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('Device discovery failed'))).toBe(true);
-  });
-
-  it('removes stale accessories on next launch', async () => {
-    const log = makeLog();
-    const api = makeApi();
-    const config = { platform: 'HapHomematic', ccuIp: '127.0.0.1', channels: [] };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const stale = { UUID: 'uuid:channel:HmIP.OLD:1', displayName: 'old', context: {} } as unknown as PlatformAccessory;
-    platform.configureAccessory(stale);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    api.emit(APIEvent.DID_FINISH_LAUNCHING);
-    await flushAsync(60);
-    expect(api.unregistered.length).toBeGreaterThan(0);
-    expect(api.unregistered[0]).toBe(stale);
-  });
-
-  it('skips unknown service keys with a warning', async () => {
-    const log = makeLog();
-    const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'NopeAccessory' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([]);
-    api.emit(APIEvent.DID_FINISH_LAUNCHING);
-    await flushAsync();
-    expect(vi.mocked(log.warn)).toHaveBeenCalled();
-  });
-
   it('shutdown stops the CCU client', async () => {
     const log = makeLog();
     const api = makeApi();
-    const platform = new HomematicPlatform(log, { platform: 'HapHomematic', ccuIp: '127.0.0.1' }, api as unknown as API);
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
     const ccu = platform.getCcu()!;
     const stopSpy = vi.spyOn(ccu, 'stop').mockResolvedValue(undefined);
     api.emit(APIEvent.SHUTDOWN);
@@ -182,115 +136,187 @@ describe('HomematicPlatform', () => {
     expect(stopSpy).toHaveBeenCalled();
   });
 
-  it('falls back to stub channel when not visible on CCU', async () => {
+  it('wires per-channel mappings from devices.json with D6 UUIDs, one listDevices and cached paramsets', async () => {
+    await writeDevices({ version: 1, devices: {
+      [`HmIP-RF:${PS}`]: { channels: {
+        '1': { service: 'SwitchAccessory', variant: 'outlet', name: 'Kaffee' },
+        '2': { service: 'SwitchAccessory' },
+      } },
+    } });
     const log = makeLog();
     const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.UNK:1', service: 'SwitchAccessory', name: 'Stubby' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([]);
-    api.emit(APIEvent.DID_FINISH_LAUNCHING);
-    await flushAsync(40);
-    // Either the registration succeeded (good) or attach() threw and a
-    // warn was logged (also acceptable, since the test mostly proves the
-    // fallback channel-name path is exercised).
-    const registered = api.registered.some((a) => (a as unknown as { displayName: string }).displayName === 'Stubby');
-    const warned = vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('HmIP.UNK:1'));
-    expect(registered || warned).toBe(true);
-  });
-
-  it('uses the user-specified mapping.name as the HomeKit display name', async () => {
-    const log = makeLog();
-    const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory', name: 'Living Room Lamp' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([
-      { address: 'HmIP.0', type: 'X', name: 'D', interface: 'HmIP-RF',
-        channels: [{ address: 'HmIP.0:1', index: 1, type: 'SWITCH', name: 'CCU Default Name' }] },
-    ]);
+    const platform = new HomematicPlatform(log, { ...CFG, channels: [{ address: 'x', service: 'y' }] }, api as unknown as API);
+    const { ccu, list, paramsets } = stubCcu(platform, { 'HmIP-RF': PS_LIST });
+    const pin = vi.spyOn(ccu, 'setInterfaceFor');
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
-    const acc = api.registered.find((a) => a.UUID === 'uuid:channel:HmIP.0:1') as
-      unknown as { displayName: string } | undefined;
-    expect(acc?.displayName).toBe('Living Room Lamp');
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(pin).toHaveBeenCalledWith(PS, 'HmIP-RF');
+    expect(api.registered.map((a) => a.UUID)).toEqual([
+      `uuid:HmIP-RF:${PS}:1:SwitchAccessory`,
+      `uuid:HmIP-RF:${PS}:2:SwitchAccessory`,
+    ]);
+    const [a1, a2] = api.registered as unknown as Array<{ displayName: string; context: Record<string, unknown> }>;
+    expect(a1!.displayName).toBe('Kaffee');
+    expect(a1!.context).toMatchObject({ kind: 'channel', id: `${PS}:1`, service: 'SwitchAccessory', subtype: 'outlet' });
+    expect(a2!.displayName).toBe(`HMIP-PS ${PS}:2`); // placeholder from discovery
+    // paramsets per type/firmware/channel type: :1 and :2 share one entry
+    expect(paramsets.mock.calls.map((c) => c[0]).sort()).toEqual([`${PS}:0`, `${PS}:1`]);
+    const root = path.join(tmpDir, 'homebridge-hap-homematic');
+    expect(JSON.parse(await fs.readFile(path.join(root, 'discovery.json'), 'utf8')).interfaces['HmIP-RF'].devices).toHaveLength(4);
+    expect(Object.keys(JSON.parse(await fs.readFile(path.join(root, 'paramsets.json'), 'utf8')).entries)).toEqual([
+      'HMIP-PS|2.24.8|MAINTENANCE', 'HMIP-PS|2.24.8|SWITCH',
+    ]);
+    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('"channels" is no longer used'))).toBe(true);
   });
 
-  it('falls back to the discovered channel name when mapping.name is missing', async () => {
+  it('uses the cached device list when the CCU is unreachable', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory' } } } } });
+    await fs.writeFile(path.join(tmpDir, 'homebridge-hap-homematic', 'discovery.json'), JSON.stringify({
+      version: 1, interfaces: { 'HmIP-RF': { fetchedAt: '2026-11-01T00:00:00.000Z', devices: PS_LIST } },
+    }));
     const log = makeLog();
     const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory', settings: { name: 'Legacy HomeKit Name' } }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([
-      { address: 'HmIP.0', type: 'X', name: 'D', interface: 'HmIP-RF',
-        channels: [{ address: 'HmIP.0:1', index: 1, type: 'SWITCH', name: 'CCU Name' }] },
-    ]);
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    stubCcu(platform, new Error('ECONNREFUSED'));
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
-    const acc = api.registered.find((a) => a.UUID === 'uuid:channel:HmIP.0:1') as
-      unknown as { displayName: string } | undefined;
-    // settings.name (pre-0.1.5 hap-homematic imports) is no longer read.
-    expect(acc?.displayName).toBe('CCU Name');
+    const acc = api.registered[0] as unknown as { displayName: string } | undefined;
+    expect(acc?.displayName).toBe(`HMIP-PS ${PS}:1`);
+    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('using the cached device list'))).toBe(true);
+  });
+
+  it('registers a stub channel when neither CCU nor cache know the device', async () => {
+    await writeDevices({ version: 1, devices: { 'BidCos-RF:ABC0000002': { channels: { '3': { service: 'SwitchAccessory', name: 'Stubby' } } } } });
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    stubCcu(platform, new Error('down'));
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    const acc = api.registered[0] as unknown as { displayName: string; UUID: string } | undefined;
+    expect(acc?.UUID).toBe('uuid:BidCos-RF:ABC0000002:3:SwitchAccessory');
+    expect(acc?.displayName).toBe('Stubby');
+  });
+
+  it('maps a whole device to one accessory on its first matching channel', async () => {
+    await writeDevices({ version: 1, devices: {
+      [`HmIP-RF:${PS}`]: { service: 'SwitchAccessory', name: 'Device', options: { invert: true },
+        channels: { '1': { name: 'eins' } } },
+      'BidCos-RF:ABC0000003': { service: 'ContactAccessory' }, // not discovered → stub :1
+    } });
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    const { paramsets } = stubCcu(platform, { 'HmIP-RF': PS_LIST, 'BidCos-RF': [] });
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    const accs = api.registered as unknown as Array<{ UUID: string; displayName: string; context: Record<string, unknown> }>;
+    expect(accs.map((a) => a.UUID)).toEqual([
+      `uuid:HmIP-RF:${PS}:device:SwitchAccessory`,
+      'uuid:BidCos-RF:ABC0000003:device:ContactAccessory',
+    ]);
+    expect(accs[0]!.context).toMatchObject({
+      kind: 'device', id: PS, settings: { invert: true, channels: { '1': { name: 'eins' } } },
+    });
+    expect(accs[1]!.displayName).toBe('ABC0000003:1');
+    // whole device → every channel considered; :1 and :2 share type and firmware → fetched once
+    expect(paramsets.mock.calls.map((c) => c[0])).toEqual([`${PS}:0`, `${PS}:1`]);
+  });
+
+  it('falls back to the first non-maintenance channel when no channel type matches', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { service: 'ThermostatAccessory' } } });
+    const api = makeApi();
+    const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+    stubCcu(platform, { 'HmIP-RF': PS_LIST });
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    const acc = api.registered[0] as unknown as { displayName: string };
+    expect(acc.displayName).toBe(`HMIP-PS ${PS}:1`);
+  });
+
+  it('skips disabled devices and channels', async () => {
+    await writeDevices({ version: 1, devices: {
+      [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory', enabled: false }, '2': { service: 'SwitchAccessory' } } },
+      'BidCos-RF:ABC0000002': { enabled: false, service: 'SwitchAccessory' },
+    } });
+    const api = makeApi();
+    const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+    stubCcu(platform, { 'HmIP-RF': PS_LIST });
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(api.registered.map((a) => a.UUID)).toEqual([`uuid:HmIP-RF:${PS}:2:SwitchAccessory`]);
+  });
+
+  it('refuses an invalid devices.json, creates nothing and leaves the file untouched', async () => {
+    const bad = { version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'NopeAccessory' } } } } };
+    await writeDevices(bad);
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    const stale = { UUID: 'uuid:old', displayName: 'old', context: {} } as unknown as PlatformAccessory;
+    platform.configureAccessory(stale);
+    stubCcu(platform, { 'HmIP-RF': PS_LIST });
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(api.registered).toHaveLength(0);
+    expect(vi.mocked(log.error).mock.calls.some((c) => String(c[0]).includes('is invalid'))).toBe(true);
+    const file = path.join(tmpDir, 'homebridge-hap-homematic', 'devices.json');
+    expect(JSON.parse(await fs.readFile(file, 'utf8'))).toEqual(bad);
+  });
+
+  it('without devices.json: no accessories, stale ones removed', async () => {
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    const stale = { UUID: 'uuid:channel:OLD:1', displayName: 'old', context: {} } as unknown as PlatformAccessory;
+    platform.configureAccessory(stale);
+    stubCcu(platform, { 'HmIP-RF': [], 'BidCos-RF': [] });
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync(60);
+    expect(api.unregistered).toEqual([stale]);
+    expect(vi.mocked(log.info).mock.calls.some((c) => String(c[0]).includes('not found'))).toBe(true);
+  });
+
+  it('logs a startup failure instead of crashing', async () => {
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    const { ccu } = stubCcu(platform, {});
+    vi.spyOn(ccu, 'start').mockRejectedValue(new Error('EADDRINUSE'));
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(vi.mocked(log.error).mock.calls.some((c) => String(c[1]).includes('EADDRINUSE'))).toBe(true);
   });
 
   it('updates an existing cached accessory instead of re-registering', async () => {
-    const log = makeLog();
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory' } } } } });
     const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)('Cached', 'uuid:channel:HmIP.0:1');
+    const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+    const uuid = `uuid:HmIP-RF:${PS}:1:SwitchAccessory`;
+    const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)(`HMIP-PS ${PS}:1`, uuid);
     platform.configureAccessory(cached);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([
-      { address: 'HmIP.0', type: 'X', name: 'D', interface: 'HmIP-RF', channels: [{ address: 'HmIP.0:1', index: 1, type: 'SWITCH', name: 'C' }] },
-    ]);
+    stubCcu(platform, { 'HmIP-RF': PS_LIST });
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
-    expect(api.updated.length).toBeGreaterThan(0);
-    // Was cached, so should NOT have been registered again.
-    expect(api.registered.find((a) => a.UUID === 'uuid:channel:HmIP.0:1')).toBeUndefined();
+    expect(api.updated).toContain(cached);
+    expect(api.registered).toHaveLength(0);
   });
 
   it('renames a cached accessory and disposes handlers on shutdown', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory', name: 'New Name' } } } } });
     const log = makeLog();
     const api = makeApi();
-    const config = {
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory', name: 'New Name' }],
-    };
-    const platform = new HomematicPlatform(log, config, api as unknown as API);
-    const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)('Old Name', 'uuid:channel:HmIP.0:1');
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)(
+      'Old Name', `uuid:HmIP-RF:${PS}:1:SwitchAccessory`);
     const setCharacteristic = vi.fn();
     const info = api.hap.Service.AccessoryInformation;
     (cached as unknown as { getService: unknown }).getService = vi.fn((svc: unknown) =>
       (svc === info ? { setCharacteristic } : undefined));
     platform.configureAccessory(cached);
-    const ccu = platform.getCcu()!;
-    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'stop').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([]);
+    stubCcu(platform, { 'HmIP-RF': PS_LIST });
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
     expect(cached.displayName).toBe('New Name');

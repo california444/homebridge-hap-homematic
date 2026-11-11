@@ -18,9 +18,19 @@ export interface InterfaceToggles {
 }
 
 export interface EventServerConfig {
+  /** Local bind address of the event server (default 0.0.0.0). */
   host: string;
+  /** Address the CCU calls back (`http://<callbackHost>:<port>`). Required. */
+  callbackHost: string;
   port: number;
   watchdogSeconds: number;
+}
+
+/** HTTP Basic auth on the XML-RPC ports (CCU setting "Authentifizierung"). */
+export interface RpcAuthConfig {
+  enabled: boolean;
+  username?: string;
+  password?: string;
 }
 
 /** Concrete, validated config used by everything below the platform. */
@@ -28,36 +38,71 @@ export interface ResolvedConfig {
   name: string;
   ccuIp: string;
   interfaces: InterfaceToggles;
-  /** XML-RPC port overrides per interface; defaults are 2001 / 2010. */
+  /** XML-RPC port overrides; defaults 2001 / 2010, with TLS 42001 / 42010. */
   interfacePorts: Partial<Record<CcuInterfaceId, number>>;
   useTls: boolean;
+  rpcAuth: RpcAuthConfig;
   eventServer: EventServerConfig;
-  /** Channel mappings; move to devices.json in Phase 3. */
-  channels: ChannelMapping[];
 }
 
-/** Shape of an entry in `config.channels[]`, keyed in the UI by address. */
-export interface ChannelMapping {
-  /** CCU channel address as reported by XML-RPC `listDevices`, e.g. `000123:1`. */
-  address: string;
-  name?: string;
+/**
+ * One accessory to build, resolved from devices.json. `channel` is the
+ * channel index for per-channel mappings and `undefined` for a mapping
+ * of the whole device (e.g. IrrigationAccessory).
+ */
+export interface AccessoryMapping {
+  interface: CcuInterfaceId;
+  /** Device serial, e.g. `ABC0000002`. */
+  device: string;
+  channel?: number;
   /** Class name in the service registry, e.g. `SwitchAccessory`. */
   service: string;
   /** Variant within a service, e.g. `Outlet` vs `Switch` for SwitchAccessory. */
-  subtype?: string;
-  settings?: Record<string, unknown>;
+  variant?: string;
+  name?: string;
+  /** Service options (device and channel level merged, channel wins). */
+  options: Record<string, unknown>;
+  /** Per-channel entries of a device mapping (names, valve types …). */
+  channels: Record<string, DevicesFileChannel>;
+}
+
+/** `<storagePath>/homebridge-hap-homematic/devices.json`, see docs/DEVICES.md. */
+export interface DevicesFile {
+  version: 1;
+  devices: Record<string, DevicesFileDevice>;
+}
+
+export interface DevicesFileDevice {
+  enabled?: boolean;
+  /** `device` (one accessory, needs `service`) or `perChannel`. */
+  mode?: 'device' | 'perChannel';
+  service?: string;
+  variant?: string;
+  name?: string;
+  options?: Record<string, unknown>;
+  channels?: Record<string, DevicesFileChannel>;
+}
+
+export interface DevicesFileChannel {
+  enabled?: boolean;
+  service?: string;
+  variant?: string;
+  name?: string;
+  options?: Record<string, unknown>;
+  /** Service-specific scalar extras such as `valveType`. */
+  [extra: string]: unknown;
 }
 
 /** Shape persisted on `accessory.context`, restored on Homebridge restart. */
 export interface AccessoryContext {
-  kind: 'channel';
-  /** Stable identifier (channel address). */
+  kind: 'channel' | 'device';
+  /** Stable identifier: channel address, or device serial for `device`. */
   id: string;
   /** Service registry key chosen for this accessory. */
   service: string;
   /** Optional user-chosen variant within the service. */
   subtype?: string;
-  /** Service-specific persisted settings. */
+  /** Service-specific persisted settings (mapping options). */
   settings?: Record<string, unknown>;
   /** Last-known display name (used to detect renames). */
   name?: string;
@@ -69,8 +114,8 @@ export interface RawConfig extends PlatformConfig {
   interfaces?: Partial<InterfaceToggles>;
   interfacePorts?: Partial<Record<CcuInterfaceId, number>>;
   useTls?: boolean;
+  rpcAuth?: Partial<RpcAuthConfig>;
   eventServer?: Partial<EventServerConfig>;
-  channels?: ChannelMapping[];
 }
 
 /** Discovery result from the CCU (XML-RPC `listDevices`). */

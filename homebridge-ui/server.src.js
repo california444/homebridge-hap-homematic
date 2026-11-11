@@ -52,6 +52,17 @@ import {
   SERVICE_DEFINITIONS,
   servicesForChannelType,
 } from '../dist/src/services/registry.js';
+import { PluginStorage } from '../dist/src/util/storage.js';
+import {
+  DEVICES_FILE,
+  emptyDevicesFile,
+  saveDevicesFile,
+  validateDevicesFile,
+} from '../dist/src/util/devices.js';
+
+/** devices.json is small; refuse anything absurd from the iframe. */
+const MAX_DEVICES_JSON_BYTES = 512 * 1024;
+const KNOWN_SERVICES = new Set(SERVICE_DEFINITIONS.map((s) => s.key));
 
 class UiLogger {
   info(...args)    { console.log('[ui]', ...args); }
@@ -70,6 +81,8 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     this.onRequest('/services', () => this.handleServices());
     this.onRequest('/test-connection', (payload) => this.handleTestConnection(payload));
     this.onRequest('/discover', (payload) => this.handleDiscover(payload));
+    this.onRequest('/devices/get', () => this.handleGetDevices());
+    this.onRequest('/devices/put', (payload) => this.handlePutDevices(payload));
 
     this.ready();
     console.log('[homebridge-hap-homematic UI] handlers registered, ready signaled');
@@ -138,22 +151,68 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     }
   }
 
+  /**
+   * Current devices.json. A missing file is an empty mapping; an invalid
+   * file comes back with its errors so the UI refuses to overwrite it.
+   */
+  async handleGetDevices() {
+    const storage = this.storage();
+    let raw;
+    try {
+      raw = await storage.readJson(DEVICES_FILE);
+    } catch (err) {
+      return { ok: false, file: null, errors: [`cannot read ${DEVICES_FILE}: ${err.message}`], path: storage.rootPath() };
+    }
+    if (raw === undefined) {
+      return { ok: true, file: emptyDevicesFile(), errors: [], path: storage.rootPath() };
+    }
+    const result = validateDevicesFile(raw, KNOWN_SERVICES);
+    return result.ok
+      ? { ok: true, file: result.file, errors: [], path: storage.rootPath() }
+      : { ok: false, file: null, errors: result.errors, path: storage.rootPath() };
+  }
+
+  /** Validate and write devices.json atomically (mode 0600). */
+  async handlePutDevices(payload) {
+    if (!payload || typeof payload !== 'object' || !payload.file) {
+      throw new RequestError('Missing file', { status: 400 });
+    }
+    if (JSON.stringify(payload.file).length > MAX_DEVICES_JSON_BYTES) {
+      throw new RequestError(`${DEVICES_FILE} too large`, { status: 413 });
+    }
+    const result = await saveDevicesFile(this.storage(), payload.file, KNOWN_SERVICES);
+    if (!result.ok) {
+      throw new RequestError(`${DEVICES_FILE} invalid: ${result.errors.join('; ')}`, { status: 400 });
+    }
+    return { ok: true };
+  }
+
   // --- helpers -----------------------------------------------------
+
+  storage() {
+    const root = this.homebridgeStoragePath;
+    if (!root) {
+      throw new RequestError('Homebridge storage path unknown', { status: 500 });
+    }
+    return new PluginStorage({ user: { storagePath: () => root } });
+  }
 
   coerceConfig(payload) {
     if (!payload || typeof payload !== 'object') {
       throw new RequestError('Missing config payload', { status: 400 });
     }
     try {
+      // Probe/discover only, never subscribe: no callback host needed.
       return resolveConfig({
         platform: 'HapHomematic',
         name: typeof payload.name === 'string' ? payload.name : 'HapHomematic',
         ccuIp: payload.ccuIp,
         useTls: payload.useTls,
+        rpcAuth: payload.rpcAuth,
         interfaces: payload.interfaces,
         interfacePorts: payload.interfacePorts,
         eventServer: payload.eventServer,
-      });
+      }, { requireCallbackHost: false });
     } catch (err) {
       if (err instanceof ConfigError) {
         throw new RequestError(err.message, { status: 400 });

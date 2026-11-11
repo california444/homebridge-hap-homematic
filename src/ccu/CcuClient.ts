@@ -16,7 +16,13 @@
 import { networkInterfaces } from 'node:os';
 import { EventEmitter } from 'node:events';
 import { EventServer, type ChannelEvent } from './EventServer.js';
-import { RpcClient, INTERFACE_PORTS, type RpcDeviceDescription } from './RpcClient.js';
+import {
+  RpcClient,
+  INTERFACE_PORTS,
+  INTERFACE_TLS_PORTS,
+  type ParameterDescription,
+  type RpcDeviceDescription,
+} from './RpcClient.js';
 import type {
   CcuChannel,
   CcuDevice,
@@ -78,7 +84,12 @@ export class CcuClient extends EventEmitter {
       this.log.error('Event server error: %s', err.message);
     });
 
-    const callbackUrl = `http://${this.resolveCallbackHost()}:${this.config.eventServer.port}`;
+    const callbackHost = this.config.eventServer.callbackHost || this.resolveCallbackHost();
+    const callbackUrl = `http://${callbackHost}:${this.config.eventServer.port}`;
+    const { rpcAuth } = this.config;
+    const auth = rpcAuth.enabled && rpcAuth.username && rpcAuth.password
+      ? { username: rpcAuth.username, password: rpcAuth.password }
+      : undefined;
     for (const { id, flag } of ENABLED_INTERFACES) {
       if (!this.config.interfaces[flag]) {
         continue;
@@ -90,6 +101,8 @@ export class CcuClient extends EventEmitter {
         callbackUrl,
         callbackId: `${PLUGIN_NAME}:${id}`,
         log: this.log.child(`rpc:${id}`),
+        tls: this.config.useTls,
+        ...(auth ? { auth } : {}),
       }));
     }
   }
@@ -98,20 +111,12 @@ export class CcuClient extends EventEmitter {
     if (this.started) {
       return;
     }
-    if (this.config.useTls) {
-      this.log.warn('useTls is set but TLS is not supported for XML-RPC yet; using plain HTTP');
-    }
     await this.eventServer.start();
-
-    // Build the address → interface map before any accessory sends a command.
-    await this.listDevices().catch((err) => {
-      this.log.warn('listDevices failed: %s', (err as Error).message);
-    });
 
     for (const client of this.rpcClients.values()) {
       const id = client.interfaceId;
       const port = this.portFor(id);
-      this.log.info('Using XML-RPC port %d for %s', port, id);
+      this.log.info('Using XML-RPC port %d for %s%s', port, id, this.config.useTls ? ' (TLS)' : '');
       try {
         await client.subscribe();
       } catch (err) {
@@ -149,37 +154,74 @@ export class CcuClient extends EventEmitter {
     await this.eventServer.stop();
   }
 
+  /** Interfaces enabled in the config, in a fixed order. */
+  enabledInterfaces(): CcuInterfaceId[] {
+    return [...this.rpcClients.keys()];
+  }
+
   /**
-   * All devices and their channels, via XML-RPC `listDevices` on every
-   * enabled interface. XML-RPC carries no names, so `name` is a
-   * placeholder of type and address. Interfaces that fail are logged and
-   * skipped; the call rejects only if every interface failed.
+   * Raw XML-RPC `listDevices` per enabled interface. Failures are
+   * reported per interface instead of thrown, so callers can fall back
+   * to a cache for just that interface.
    */
-  async listDevices(): Promise<CcuDevice[]> {
-    const out: CcuDevice[] = [];
-    let failures = 0;
-    let lastError: Error | undefined;
+  async listRawDevices(): Promise<{
+    results: Map<CcuInterfaceId, RpcDeviceDescription[]>;
+    errors: Map<CcuInterfaceId, Error>;
+  }> {
+    const results = new Map<CcuInterfaceId, RpcDeviceDescription[]>();
+    const errors = new Map<CcuInterfaceId, Error>();
     for (const client of this.rpcClients.values()) {
       try {
-        const raw = await client.listDevices();
-        out.push(...toDevices(raw, client.interfaceId));
+        results.set(client.interfaceId, await client.listDevices());
       } catch (err) {
-        failures++;
-        lastError = err as Error;
-        this.log.warn('listDevices on %s failed: %s', client.interfaceId, lastError.message);
+        errors.set(client.interfaceId, err as Error);
       }
     }
-    if (failures > 0 && failures === this.rpcClients.size) {
-      throw lastError ?? new Error('no interface enabled');
+    return { results, errors };
+  }
+
+  /**
+   * All devices and their channels, via XML-RPC `listDevices` on every
+   * enabled interface (no cache; see Discovery for that). XML-RPC
+   * carries no names, so `name` is a placeholder of type and address.
+   * Interfaces that fail are logged and skipped; the call rejects only
+   * if every interface failed.
+   */
+  async listDevices(): Promise<CcuDevice[]> {
+    const { results, errors } = await this.listRawDevices();
+    for (const [id, err] of errors) {
+      this.log.warn('listDevices on %s failed: %s', id, err.message);
     }
-    for (const d of out) {
+    if (results.size === 0 && errors.size > 0) {
+      throw [...errors.values()][0]!;
+    }
+    const out: CcuDevice[] = [];
+    for (const [id, raw] of results) {
+      out.push(...toDevices(raw, id));
+    }
+    this.indexDevices(out);
+    return out;
+  }
+
+  /** Remember which interface each device / channel address belongs to. */
+  indexDevices(devices: CcuDevice[]): void {
+    for (const d of devices) {
       this.addressInterface.set(d.address, d.interface);
       for (const c of d.channels) {
         this.addressInterface.set(c.address, d.interface);
       }
     }
     this.log.debug('Indexed %d addresses across interfaces', this.addressInterface.size);
-    return out;
+  }
+
+  /** Pin an address (device serial) to an interface, e.g. from devices.json. */
+  setInterfaceFor(address: string, intf: CcuInterfaceId): void {
+    this.addressInterface.set(address, intf);
+  }
+
+  /** `getParamsetDescription(address, 'VALUES')` on the channel's interface. */
+  async getParamsetDescription(address: string): Promise<Record<string, ParameterDescription>> {
+    return this.clientFor(address).getParamsetDescription(address);
   }
 
   /** `system.listMethods` on every enabled interface (UI "Test connection"). */
@@ -245,7 +287,7 @@ export class CcuClient extends EventEmitter {
   }
 
   private portFor(id: CcuInterfaceId): number {
-    return this.config.interfacePorts[id] ?? INTERFACE_PORTS[id];
+    return this.config.interfacePorts[id] ?? (this.config.useTls ? INTERFACE_TLS_PORTS : INTERFACE_PORTS)[id];
   }
 
   private handleEvent(ev: ChannelEvent): void {

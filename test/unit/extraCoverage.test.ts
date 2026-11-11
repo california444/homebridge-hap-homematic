@@ -90,14 +90,14 @@ describe('storage edge cases', () => {
 
 describe('CcuClient internals', () => {
   it('routes addresses without dots (bare interface name) to BidCos-RF default', () => {
-    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
+    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
     const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
     expect(intfFor('NoDot')).toBe('BidCos-RF');
   });
 
   it('routes 14-hex-digit HmIP serials to HmIP-RF (case-insensitive)', () => {
-    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
+    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
     const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
     expect(intfFor('000a5d8996bbab:1')).toBe('HmIP-RF');
@@ -111,7 +111,7 @@ describe('CcuClient watchdog', () => {
       const config = resolveConfig({
         platform: 'HapHomematic',
         ccuIp: '127.0.0.1',
-        eventServer: { host: '127.0.0.1', port: 9876, watchdogSeconds: 60 },
+        eventServer: { host: '127.0.0.1', callbackHost: '127.0.0.1', port: 9876, watchdogSeconds: 60 },
       });
       const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'wd') });
       vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);

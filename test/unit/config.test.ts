@@ -2,6 +2,7 @@
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { describe, it, expect } from 'vitest';
 import { ConfigError, isValidHost, resolveConfig } from '../../src/util/config.js';
+import type { RawConfig } from '../../src/types.js';
 
 describe('isValidHost', () => {
   it('accepts hostnames, IPv4, IPv6', () => {
@@ -20,16 +21,18 @@ describe('isValidHost', () => {
 });
 
 describe('resolveConfig', () => {
-  const base = { platform: 'HapHomematic', ccuIp: '192.168.1.10' };
+  const base: RawConfig = { platform: 'HapHomematic', ccuIp: '192.168.1.10', eventServer: { callbackHost: '192.168.1.20' } };
+  const ev = (e: Record<string, unknown>): RawConfig => ({ ...base, eventServer: { callbackHost: '192.168.1.20', ...e } });
 
   it('fills defaults for everything else', () => {
     const c = resolveConfig(base);
     expect(c.ccuIp).toBe('192.168.1.10');
-    expect(c.interfaces).toMatchObject({ bidcosRf: true, hmIpRf: true });
-    expect(c.eventServer.port).toBe(9875);
-    expect(c.eventServer.watchdogSeconds).toBe(300);
+    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: true });
+    expect(c.eventServer).toEqual({ host: '0.0.0.0', callbackHost: '192.168.1.20', port: 9875, watchdogSeconds: 600 });
     expect(c.useTls).toBe(false);
+    expect(c.rpcAuth).toEqual({ enabled: false });
     expect(c).not.toHaveProperty('ccuAuth');
+    expect(c).not.toHaveProperty('channels');
   });
 
   it('rejects empty config', () => {
@@ -41,36 +44,63 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig({ ...base, ccuIp: 'has spaces' })).toThrow(/ccuIp/);
   });
 
+  describe('eventServer.callbackHost', () => {
+    it('is required by default', () => {
+      expect(() => resolveConfig({ platform: 'HapHomematic', ccuIp: '192.168.1.10' })).toThrow(/callbackHost is required/);
+      expect(() => resolveConfig(ev({ callbackHost: '' }))).toThrow(/callbackHost is required/);
+    });
+
+    it('may be omitted for the UI (probe / discover only)', () => {
+      const c = resolveConfig({ platform: 'HapHomematic', ccuIp: '192.168.1.10' }, { requireCallbackHost: false });
+      expect(c.eventServer.callbackHost).toBe('');
+    });
+
+    it('must be a valid host', () => {
+      expect(() => resolveConfig(ev({ callbackHost: 'not valid' }))).toThrow(/callbackHost must be/);
+      expect(() => resolveConfig(ev({ callbackHost: 'not valid' }), { requireCallbackHost: false })).toThrow(/callbackHost must be/);
+    });
+  });
+
+  describe('rpcAuth', () => {
+    it('requires username and password when enabled', () => {
+      expect(() => resolveConfig({ ...base, rpcAuth: { enabled: true } })).toThrow(/rpcAuth/);
+      expect(() => resolveConfig({ ...base, rpcAuth: { enabled: true, username: 'u' } })).toThrow(/rpcAuth/);
+    });
+
+    it('passes credentials through', () => {
+      const c = resolveConfig({ ...base, rpcAuth: { enabled: true, username: 'u', password: 'p' } });
+      expect(c.rpcAuth).toEqual({ enabled: true, username: 'u', password: 'p' });
+    });
+
+    it('keeps stored credentials while disabled and ignores non-strings', () => {
+      expect(resolveConfig({ ...base, rpcAuth: { username: 'u', password: 'p' } }).rpcAuth)
+        .toEqual({ enabled: false, username: 'u', password: 'p' });
+      expect(resolveConfig({ ...base, rpcAuth: { username: 1 as never } }).rpcAuth).toEqual({ enabled: false });
+    });
+  });
+
   it('keeps only BidCos-RF / HmIP-RF interface toggles', () => {
     const c = resolveConfig({ ...base, interfaces: { hmIpRf: false, cuxd: true } as never });
     expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: false });
   });
 
   it('rejects out-of-range event-server port', () => {
-    expect(() => resolveConfig({ ...base, eventServer: { port: 80 } })).toThrow(/port/);
-    expect(() => resolveConfig({ ...base, eventServer: { port: 70000 } })).toThrow(/port/);
+    expect(() => resolveConfig(ev({ port: 80 }))).toThrow(/port/);
+    expect(() => resolveConfig(ev({ port: 70000 }))).toThrow(/port/);
   });
 
   it('rejects out-of-range watchdog', () => {
-    expect(() => resolveConfig({ ...base, eventServer: { watchdogSeconds: 0 } })).toThrow(/watchdog/i);
-    expect(() => resolveConfig({ ...base, eventServer: { watchdogSeconds: 999999 } })).toThrow(/watchdog/i);
+    expect(() => resolveConfig(ev({ watchdogSeconds: 0 }))).toThrow(/watchdog/i);
+    expect(() => resolveConfig(ev({ watchdogSeconds: 999999 }))).toThrow(/watchdog/i);
   });
 
   it('rejects empty event-server host', () => {
-    expect(() => resolveConfig({ ...base, eventServer: { host: '' } })).toThrow(/host/);
+    expect(() => resolveConfig(ev({ host: '' }))).toThrow(/host/);
   });
 
-  it('coerces non-array channels to []', () => {
-    const c = resolveConfig({ ...base, channels: 'not an array' as unknown as never[] });
-    expect(c.channels).toEqual([]);
-  });
-
-  it('preserves valid arrays', () => {
-    const c = resolveConfig({
-      ...base,
-      channels: [{ address: '0:1', service: 'SwitchAccessory' }],
-    });
-    expect(c.channels).toHaveLength(1);
+  it('ignores old "channels" (mappings live in devices.json)', () => {
+    const c = resolveConfig({ ...base, channels: [{ address: '0:1', service: 'SwitchAccessory' }] } as RawConfig);
+    expect(c).not.toHaveProperty('channels');
   });
 
   it('uses provided platform name', () => {
@@ -91,6 +121,11 @@ describe('resolveConfig', () => {
       });
       expect(c.interfacePorts['BidCos-RF']).toBe(2001);
       expect(c.interfacePorts['HmIP-RF']).toBe(2010);
+    });
+
+    it('treats cleared UI fields (null / "") as "use the default"', () => {
+      const c = resolveConfig({ ...base, interfacePorts: { 'BidCos-RF': null, 'HmIP-RF': '' } as never });
+      expect(c.interfacePorts).toEqual({});
     });
 
     it('rejects unknown interface names', () => {

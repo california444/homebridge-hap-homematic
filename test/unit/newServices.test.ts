@@ -23,7 +23,7 @@ interface TestEnv {
 }
 
 function makeEnv(): TestEnv {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
+  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'sv') });
   return {
     ccu,

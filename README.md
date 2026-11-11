@@ -29,11 +29,12 @@ taken from it.
 
 Work in progress. Based on upstream v1.2.12; JSON-RPC, system
 variables, programs, rooms, the hap-homematic import and multi-bridge
-support are removed, discovery runs over XML-RPC `listDevices` (see
-NOTICE). Planned:
+support are removed (see NOTICE). Discovery runs over XML-RPC
+`listDevices` with a cache, mappings live in
+`<storagePath>/homebridge-hap-homematic/devices.json`
+([docs/DEVICES.md](docs/DEVICES.md)), TLS and Basic auth on the XML-RPC
+ports are supported. Planned:
 
-- discovery and paramset caches, mappings in
-  `<storagePath>/…/devices.json`
 - per-interface reconnect after a CCU restart (ping/PONG watchdog)
 - new services: irrigation (IrrigationSystem + Valves), doorbell
   (HmIP-DSD-PCB); HmIP smoke detector via `SMOKE_DETECTOR_ALARM_STATUS`;

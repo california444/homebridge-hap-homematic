@@ -15,7 +15,7 @@ const DEC = 0;
 const STOP = 2;
 
 function setup(type: string, address: string) {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
+  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'blind') });
   const setValue = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);

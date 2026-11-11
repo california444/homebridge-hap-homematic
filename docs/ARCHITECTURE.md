@@ -42,7 +42,20 @@ The plugin talks to the CCU over **XML-RPC only**:
 
 XML-RPC carries no device or channel names. Discovery therefore uses a
 placeholder name (`TYPE ADDRESS`); the HomeKit name comes from the
-mapping (`channels[].name`, set in the UI) or from the Home app.
+mapping in `devices.json` (set in the UI) or from the Home app.
+
+## Configuration and storage
+
+| Data | Where |
+| --- | --- |
+| Connection | `config.json`, platform block (`util/config.ts`) |
+| Device mappings | `<storagePath>/homebridge-hap-homematic/devices.json` (`util/devices.ts`, format in [DEVICES.md](DEVICES.md)) |
+| Discovery cache (`listDevices` per interface) | `…/discovery.json` (`ccu/Discovery.ts`) |
+| Paramset cache (`getParamsetDescription` per device type + firmware + channel type) | `…/paramsets.json` (`ccu/Discovery.ts`) |
+
+All writes go through `util/storage.ts` (confined to the storage
+directory, temp file + rename, mode 0600). The caches are rebuilt if
+they are broken; devices.json is never overwritten when invalid.
 
 ## Module map
 
@@ -58,11 +71,13 @@ src/
 │   ├── logger.ts        PrefixedLogger with secret-scrubbing
 │   ├── address.ts       parse / build CCU addresses
 │   ├── sanitize.ts      defensive value coercion at CCU↔HomeKit boundary
+│   ├── devices.ts       devices.json: validate, load, save, flatten
 │   └── storage.ts       confines all writes to <storagePath>/homebridge-hap-homematic/
 ├── ccu/
 │   ├── CcuClient.ts     facade: RpcClient per interface + EventServer,
 │   │                    discovery, routing, listener dispatch, watchdog
-│   ├── RpcClient.ts     XML-RPC client per interface
+│   ├── Discovery.ts     listDevices with cache fallback, paramset cache
+│   ├── RpcClient.ts     XML-RPC client per interface (HTTP / HTTPS, Basic auth)
 │   ├── EventServer.ts   inbound HTTP + XML-RPC dispatcher
 │   └── xmlRpc.ts        in-house XML-RPC parser/serializer (no XXE)
 └── services/
@@ -85,18 +100,23 @@ homebridge-ui/
 2. **`configureAccessory`** is called once per cached accessory restored
    from disk. We just remember them; we never re-register.
 3. On `didFinishLaunching`:
-   1. `CcuClient.start()` boots the EventServer, runs `listDevices` on
-      every enabled interface (this builds the address → interface
-      map), then subscribes each interface via `init`. Unreachable
-      interfaces log a warning and the rest still come up.
-   2. The platform calls `listDevices` once more and iterates
-      `config.channels[]`. For each:
-      - Compute a stable UUID with `api.hap.uuid.generate(...)`.
+   1. Read and validate `devices.json`; each mapping pins its device
+      serial to its interface.
+   2. `Discovery.run()`: `listDevices` once per interface; an interface
+      that fails falls back to `discovery.json`. Then
+      `getParamsetDescription` for each new device-type / firmware /
+      channel-type combination of the mapped channels and channel 0.
+   3. `CcuClient.start()` boots the EventServer and subscribes each
+      interface via `init`. Unreachable interfaces log a warning and the
+      rest still come up.
+   4. One accessory per mapping:
+      - UUID from `<Interface>:<Serial>:<Channel>:<Service>` (D6;
+        `device` instead of the channel for whole-device mappings).
       - If cached, mutate `accessory.context` and call
         `api.updatePlatformAccessories([accessory])`.
       - Otherwise, construct + register via
         `api.registerPlatformAccessories(...)`.
-   3. Anything that was cached but isn't in the new config is
+   5. Anything that was cached but isn't mapped any more is
       `unregisterPlatformAccessories(...)`'d.
 4. On shutdown, `CcuClient.stop()` unregisters from every interface
    (`init` with the same URL and an empty id) and closes the
@@ -162,6 +182,8 @@ just typed (so **Test connection** works before they save):
   result per interface.
 - `/discover` — `listDevices` on every enabled interface, with
   suggested services per channel.
+- `/devices/get`, `/devices/put` — read / validate and write
+  `devices.json`.
 
 Critical security points:
 

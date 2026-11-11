@@ -43,7 +43,7 @@
       "interfacePorts": {
         "title": "XML-RPC port overrides",
         "type": "object",
-        "description": "XML-RPC ports of the CCU interfaces. Defaults: BidCos-RF 2001, HmIP-RF 2010.",
+        "description": "XML-RPC ports of the CCU interfaces. Defaults: BidCos-RF 2001, HmIP-RF 2010; with TLS 42001 / 42010.",
         "properties": {
           "BidCos-RF": {
             "title": "BidCos-RF port",
@@ -65,17 +65,45 @@
         "title": "Use TLS to talk to CCU",
         "type": "boolean",
         "default": false,
-        "description": "Not supported yet for XML-RPC; ignored (a warning is logged)."
+        "description": "XML-RPC over HTTPS (ports 42001 / 42010). The CCU's self-signed certificate is accepted."
+      },
+      "rpcAuth": {
+        "title": "XML-RPC authentication",
+        "type": "object",
+        "description": "HTTP Basic auth on the XML-RPC ports, only if enabled on the CCU (Settings → Control Panel → Security → Authentication).",
+        "properties": {
+          "enabled": {
+            "title": "Use authentication",
+            "type": "boolean",
+            "default": false
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string",
+            "format": "password"
+          }
+        }
       },
       "eventServer": {
         "title": "Local event server",
         "type": "object",
         "properties": {
           "host": {
-            "title": "Bind host",
+            "title": "Bind address",
             "type": "string",
             "default": "0.0.0.0",
-            "description": "Address Homebridge advertises to the CCU as the callback URL. Leave 0.0.0.0 to auto-detect."
+            "description": "Local address the event server listens on. 0.0.0.0 = all interfaces."
+          },
+          "callbackHost": {
+            "title": "Callback address",
+            "type": "string",
+            "required": true,
+            "placeholder": "192.168.0.13",
+            "description": "IP or hostname under which the CCU reaches this Homebridge host. Required."
           },
           "port": {
             "title": "Port",
@@ -87,51 +115,12 @@
           "watchdogSeconds": {
             "title": "Watchdog (s)",
             "type": "integer",
-            "default": 300,
+            "default": 600,
             "minimum": 30,
             "maximum": 3600,
             "description": "Re-init the RPC subscription if no events arrive within this window."
           }
         }
-      },
-      "channels": {
-        "title": "Exposed channels",
-        "type": "array",
-        "items": {
-          "$ref": "#/definitions/channelMapping"
-        },
-        "default": []
-      }
-    },
-    "definitions": {
-      "channelMapping": {
-        "type": "object",
-        "properties": {
-          "address": {
-            "title": "Channel address",
-            "type": "string"
-          },
-          "name": {
-            "title": "Display name",
-            "type": "string"
-          },
-          "service": {
-            "title": "Service class",
-            "type": "string"
-          },
-          "subtype": {
-            "title": "Service variant",
-            "type": "string"
-          },
-          "settings": {
-            "title": "Service settings",
-            "type": "object"
-          }
-        },
-        "required": [
-          "address",
-          "service"
-        ]
       }
     }
   }

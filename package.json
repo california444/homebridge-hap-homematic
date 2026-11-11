@@ -8,10 +8,6 @@
   "author": {
     "name": "california444"
   },
-  "contributors": [
-    "mattein (Homebridge-Homematic-HAP, upstream of this fork) <https://github.com/matthiaseinig>",
-    "thkl (original hap-homematic and homebridge-homematic author) <https://github.com/thkl>"
-  ],
   "keywords": [
     "homebridge-plugin",
     "homematic",
@@ -51,7 +47,7 @@
   },
   "dependencies": {
     "@homebridge/plugin-ui-utils": "^2.0.0",
-    "homematic-xmlrpc": "^1.0.2"
+    "homematic-xmlrpc": "^2.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

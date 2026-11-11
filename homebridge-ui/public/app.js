@@ -10,16 +10,20 @@
  * render inside the host iframe).
  *
  * Architecture
- *   - state.cfg: the single platform-config block of this plugin.
+ *   - state.cfg: the single platform-config block of this plugin
+ *     (connection only).
+ *   - state.devicesFile: devices.json (the mappings), loaded and saved
+ *     through the /devices/get and /devices/put endpoints.
  *   - state.view: top-level view (dashboard | channels | settings).
  *   - state.nav: optional sub-view stack pushed on top of the base
  *     view. Pushing a sub-view (e.g. "edit channel") swaps the body
  *     until the user pops back. No modals.
  *   - state.ui: per-view persistent search/filter/sort.
  *
- * Two-level save:
- *   - Sub-view Save buttons commit a single change into state.cfg.
- *   - Footer "Save configuration" pushes state.cfg to homebridge.
+ * Saving:
+ *   - Mapping changes (add / edit / remove) write devices.json at once.
+ *   - Settings changes are staged with updatePluginConfig(); the host's
+ *     "Save" button writes config.json.
  */
 
 // ---------------------------------------------------------------- helpers
@@ -60,8 +64,8 @@ const DEFAULT_BLOCK = () => ({
   useTls: false,
   interfaces: { bidcosRf: true, hmIpRf: true },
   interfacePorts: {},
-  eventServer: { host: '0.0.0.0', port: 9875, watchdogSeconds: 300 },
-  channels: [],
+  rpcAuth: { enabled: false, username: '', password: '' },
+  eventServer: { host: '0.0.0.0', callbackHost: '', port: 9875, watchdogSeconds: 600 },
 });
 
 const state = {
@@ -69,6 +73,10 @@ const state = {
   /** Optional drill-down sub-view (replaces base view body until popped). */
   nav: [],
   cfg: DEFAULT_BLOCK(),
+  devicesFile: { version: 1, devices: {} },
+  /** Errors of an invalid devices.json; editing is blocked while set. */
+  devicesErrors: null,
+  devicesPath: '',
   discovered: { devices: [] },
   services: { channelServices: [] },
   ui: {
@@ -86,12 +94,109 @@ const state = {
 function channelLookup() {
   const out = new Map();
   for (const d of state.discovered.devices ?? []) {
+    out.set(d.address, { device: d, channel: undefined });
     for (const c of d.channels ?? []) out.set(c.address, { device: d, channel: c });
   }
   return out;
 }
+
+const deviceMode = (dev) => dev.mode ?? (dev.service ? 'device' : 'perChannel');
+const splitKey = (key) => { const i = key.indexOf(':'); return [key.slice(0, i), key.slice(i + 1)]; };
+// Same fallback as the plugin: HmIP serials are 14 hex digits.
+const guessInterface = (serial) => (/^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF');
+
+/**
+ * devices.json flattened to one row per accessory. Per-channel mappings
+ * get address `SERIAL:N`, device mappings (e.g. irrigation) the bare
+ * serial.
+ */
 function configuredChannels() {
-  return state.cfg.channels ?? [];
+  const out = [];
+  for (const [key, dev] of Object.entries(state.devicesFile?.devices ?? {})) {
+    const [intf, serial] = splitKey(key);
+    const devOn = dev.enabled !== false;
+    if (deviceMode(dev) === 'device') {
+      out.push({ address: serial, interface: intf, kind: 'device', name: dev.name, service: dev.service,
+        subtype: dev.variant, enabled: devOn });
+      continue;
+    }
+    for (const [idx, ch] of Object.entries(dev.channels ?? {})) {
+      out.push({ address: `${serial}:${idx}`, interface: intf, kind: 'channel', name: ch.name, service: ch.service,
+        subtype: ch.variant, enabled: devOn && ch.enabled !== false });
+    }
+  }
+  return out;
+}
+
+/** Find the devices.json entry for a row address (`SERIAL` or `SERIAL:N`). */
+function findDeviceKey(serial) {
+  return Object.keys(state.devicesFile.devices).find((k) => splitKey(k)[1] === serial);
+}
+
+function upsertMapping(address, intf, fields) {
+  const [serial, idx] = address.split(':');
+  const devices = state.devicesFile.devices;
+  const key = findDeviceKey(serial) ?? `${intf}:${serial}`;
+  const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ''));
+  if (idx === undefined) {
+    devices[key] = clean({ ...(devices[key] ?? {}), ...fields });
+    return;
+  }
+  const dev = devices[key] ?? { channels: {} };
+  if (deviceMode(dev) === 'device') {
+    throw new Error('This device is mapped as a whole; remove that mapping first.');
+  }
+  dev.channels = dev.channels ?? {};
+  dev.channels[idx] = clean({ ...(dev.channels[idx] ?? {}), ...fields });
+  devices[key] = dev;
+}
+
+function removeMapping(address) {
+  const [serial, idx] = address.split(':');
+  const key = findDeviceKey(serial);
+  if (!key) return;
+  const dev = state.devicesFile.devices[key];
+  if (idx === undefined || deviceMode(dev) === 'device') {
+    delete state.devicesFile.devices[key];
+    return;
+  }
+  delete dev.channels?.[idx];
+  if (!Object.keys(dev.channels ?? {}).length) delete state.devicesFile.devices[key];
+}
+
+async function loadDevices() {
+  try {
+    const r = await homebridge.request('/devices/get');
+    state.devicesPath = r.path ?? '';
+    if (r.ok) {
+      state.devicesFile = r.file;
+      state.devicesErrors = null;
+    } else {
+      state.devicesErrors = r.errors ?? ['unknown error'];
+    }
+  } catch (err) {
+    state.devicesErrors = [err.message];
+  }
+}
+
+async function saveDevices(successMsg) {
+  spinner(true);
+  try {
+    await homebridge.request('/devices/put', { file: state.devicesFile });
+    toast('success', `${successMsg}. Restart the child bridge to apply.`, 'devices.json');
+    return true;
+  } catch (err) {
+    toast('error', err.message, 'devices.json');
+    await loadDevices(); // back to what is on disk
+    return false;
+  } finally { spinner(false); }
+}
+
+function devicesErrorHTML() {
+  if (!state.devicesErrors) return '';
+  return `<div class="alert alert-danger"><strong>devices.json is invalid</strong> — mappings cannot be edited until it is fixed
+    ${state.devicesPath ? `(<code>${h(state.devicesPath)}/devices.json</code>)` : ''}:
+    <ul class="mb-0">${state.devicesErrors.map((e) => `<li>${h(e)}</li>`).join('')}</ul></div>`;
 }
 
 // ---------------------------------------------------------------- nav stack
@@ -196,6 +301,7 @@ function viewChannels(host) {
       <button class="btn btn-primary ms-auto" id="hgui-add-channel">+ Add channel</button>
       <span class="hgui-meta" id="hgui-channels-count"></span>
     </div>
+    ${devicesErrorHTML()}
     <div id="hgui-rows-host"></div>
     <div id="hgui-pager-host"></div>
   `;
@@ -223,6 +329,9 @@ function viewChannels(host) {
     drawChannelRows();
   });
   $('hgui-add-channel').addEventListener('click', () => {
+    if (state.devicesErrors) {
+      toast('warning', 'Fix devices.json first', 'Add channel'); return;
+    }
     if (!state.discovered.devices.length) {
       toast('warning', 'Run "Discover" first', 'Add channel'); return;
     }
@@ -354,6 +463,8 @@ function channelTileHTML(r) {
       <div class="hgui-tile-pills">
         ${inHK ? `<span class="hgui-pill primary">${h(r.service ?? '?')}</span>` : '<span class="hgui-pill muted">not in HomeKit</span>'}
         ${r.subtype ? `<span class="hgui-pill">${h(r.subtype)}</span>` : ''}
+        ${r.kind === 'device' ? '<span class="hgui-pill">whole device</span>' : ''}
+        ${r.enabled === false ? '<span class="hgui-pill warning">disabled</span>' : ''}
       </div>
     </div>`;
 }
@@ -391,8 +502,35 @@ function viewSettings(host) {
         <div class="col-md-3 d-flex align-items-end">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="cf-tls" ${m.useTls ? 'checked' : ''} />
-            <label class="form-check-label" for="cf-tls">Use TLS</label>
+            <label class="form-check-label" for="cf-tls">Use TLS (42001 / 42010)</label>
           </div>
+        </div>
+      </div>
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <label class="form-label">Callback address (required)</label>
+          <input class="form-control" id="cf-callback-host" placeholder="192.168.0.13" value="${h(m.eventServer.callbackHost ?? '')}" />
+          <div class="hgui-hint">IP of this Homebridge host as seen from the CCU. The CCU sends its events to <code>http://&lt;address&gt;:&lt;port&gt;</code>.</div>
+        </div>
+      </div>
+    </div>
+    <div class="hgui-card">
+      <h6>XML-RPC authentication</h6>
+      <p class="hgui-meta">Only if authentication is enabled on the CCU (Settings → Control Panel → Security).</p>
+      <div class="row g-2">
+        <div class="col-md-3 d-flex align-items-end">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="cf-auth-enabled" ${m.rpcAuth.enabled ? 'checked' : ''} />
+            <label class="form-check-label" for="cf-auth-enabled">Use authentication</label>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Username</label>
+          <input class="form-control" id="cf-auth-user" autocomplete="off" value="${h(m.rpcAuth.username || '')}" />
+        </div>
+        <div class="col-md-5">
+          <label class="form-label">Password</label>
+          <input class="form-control" type="password" id="cf-auth-pass" autocomplete="new-password" value="${h(m.rpcAuth.password || '')}" />
         </div>
       </div>
     </div>
@@ -409,7 +547,7 @@ function viewSettings(host) {
     </div>
     <div class="hgui-card">
       <h6>XML-RPC ports</h6>
-      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF) and <code>2010</code> (HmIP-RF).</p>
+      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF) and <code>2010</code> (HmIP-RF), with TLS <code>42001</code> / <code>42010</code>.</p>
       <div class="row g-2">
         ${[['BidCos-RF','2001'],['HmIP-RF','2010']]
           .map(([k,ph]) => `
@@ -424,6 +562,10 @@ function viewSettings(host) {
   $('cf-ccu-ip').addEventListener('input', (e) => propagate((b) => b.ccuIp = e.target.value.trim()));
   $('cf-event-port').addEventListener('input', (e) => propagate((b) => b.eventServer.port = parseInt(e.target.value, 10) || 9875));
   $('cf-tls').addEventListener('change', (e) => propagate((b) => b.useTls = e.target.checked));
+  $('cf-callback-host').addEventListener('input', (e) => propagate((b) => b.eventServer.callbackHost = e.target.value.trim()));
+  $('cf-auth-enabled').addEventListener('change', (e) => propagate((b) => b.rpcAuth.enabled = e.target.checked));
+  $('cf-auth-user').addEventListener('input', (e) => propagate((b) => b.rpcAuth.username = e.target.value));
+  $('cf-auth-pass').addEventListener('input', (e) => propagate((b) => b.rpcAuth.password = e.target.value));
   for (const k of ['bidcosRf','hmIpRf']) {
     $(`cf-if-${k}`).addEventListener('change', (e) => propagate((b) => b.interfaces[k] = e.target.checked));
   }
@@ -620,32 +762,24 @@ function subEditChannel(host, props) {
     <button class="btn btn-primary" id="ec-save">${mode === 'add' ? 'Add' : 'Save'}</button>
   `;
   footer.querySelector('#ec-cancel').addEventListener('click', popNav);
-  footer.querySelector('#ec-save').addEventListener('click', () => {
+  footer.querySelector('#ec-save').addEventListener('click', async () => {
+    if (state.devicesErrors) { toast('warning', 'Fix devices.json first'); return; }
     const name = (draft.name ?? '').trim();
     if (!name) { toast('warning', 'HomeKit name cannot be empty'); return; }
-    removeChannel(address);
-    state.cfg.channels.push({
-      address, name, service: draft.service,
-      ...(draft.subtype ? { subtype: draft.subtype } : {}),
-      ...(draft.settings ? { settings: draft.settings } : {}),
-    });
-    pushConfig();
-    toast('success', mode === 'add' ? 'Channel added' : 'Channel updated', 'Channels');
-    popNav();
+    const intf = info?.device?.interface ?? entry?.interface ?? guessInterface(address.split(':')[0]);
+    try {
+      upsertMapping(address, intf, { name, service: draft.service, variant: draft.subtype || undefined });
+    } catch (err) {
+      toast('warning', err.message); return;
+    }
+    if (await saveDevices(mode === 'add' ? 'Channel added' : 'Channel updated')) popNav();
   });
   if (mode === 'edit') {
-    footer.querySelector('#ec-remove').addEventListener('click', () => {
-      removeChannel(address);
-      pushConfig();
-      toast('success', 'Channel removed', 'Channels');
-      popNav();
+    footer.querySelector('#ec-remove').addEventListener('click', async () => {
+      removeMapping(address);
+      if (await saveDevices('Channel removed')) popNav();
     });
   }
-}
-
-function removeChannel(address) {
-  const i = state.cfg.channels.findIndex((c) => c.address === address);
-  if (i !== -1) state.cfg.channels.splice(i, 1);
 }
 
 // ---------------------------------------------------------------- API actions
@@ -717,15 +851,17 @@ async function init() {
         bidcosRf: b.interfaces?.bidcosRf ?? def.interfaces.bidcosRf,
         hmIpRf: b.interfaces?.hmIpRf ?? def.interfaces.hmIpRf,
       },
+      rpcAuth: { ...def.rpcAuth, ...(b.rpcAuth ?? {}) },
       eventServer: { ...def.eventServer, ...(b.eventServer ?? {}) },
       interfacePorts: { ...(b.interfacePorts ?? {}) },
-      channels: b.channels ?? [],
     };
-    // Fields of removed features (JSON-RPC auth, variables, programs).
-    for (const k of ['ccuAuth', 'variables', 'programs', '_bridge']) delete state.cfg[k];
+    // Fields of removed features; channel mappings now live in devices.json.
+    for (const k of ['ccuAuth', 'variables', 'programs', '_bridge', 'channels']) delete state.cfg[k];
   } catch (err) {
     toast('error', `Could not load config: ${err.message}`);
   }
+
+  await loadDevices();
 
   try {
     const r = await homebridge.request('/services');

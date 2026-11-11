@@ -19,17 +19,19 @@ internet. The relevant threats it actively mitigates are:
    `onRequest` handlers in `homebridge-ui/server` validate their payloads
    (type, length, allowlist) before passing them to the CCU client.
    The frontend is treated as untrusted.
-3. **No CCU credentials.** The plugin uses the XML-RPC ports without a
-   CCU login, so there are no CCU secrets in `config.json`. If XML-RPC
-   Basic auth is added later, the credentials must never be logged or
-   sent to the iframe.
+3. **XML-RPC credentials.** Optional Basic-auth credentials (`rpcAuth`)
+   live in `config.json` (Homebridge's own file). They are scrubbed from
+   log arguments (`util/logger.ts`). The iframe reads and writes them
+   only through the official `getPluginConfig` / `updatePluginConfig`
+   API.
 4. **Filesystem writes.** All plugin-owned files (caches, mappings)
    are written under `<storagePath>/homebridge-hap-homematic/`. No path
    that originates from user input or CCU output is ever opened directly;
    all paths are normalized and confined to the storage root before use.
-5. **TLS to the CCU.** Not implemented for XML-RPC yet; traffic to
-   ports 2001 / 2010 is plain HTTP on the LAN. `useTls` is ignored with
-   a warning.
+5. **TLS to the CCU.** Opt-in (`useTls`, ports 42001 / 42010). The
+   CCU's self-signed certificate is accepted (unavoidable for default
+   installations); connections only ever go to the configured `ccuIp`.
+   The CCU's callback to the event server stays plain HTTP.
 
 ## Reporting a vulnerability
 

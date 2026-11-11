@@ -80,3 +80,8 @@ the upstream project. Modified files carry a "Modified by california444
                 VirtualDevices / CUxD interfaces; discovery via XML-RPC
                 listDevices. The tar and iconv-lite dependencies listed
                 in the upstream notice above are no longer used.
+  * 2026-11-11  Device mappings moved to devices.json (validated);
+                discovery and paramset caches; XML-RPC over TLS and with
+                Basic auth; homematic-xmlrpc 2.0.0 without the upstream
+                deserializer patch; accessory UUIDs per interface, serial,
+                channel and service.
