@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -23,10 +25,10 @@ class MotionHandler extends AccessoryBase implements ChannelService {
       service.updateCharacteristic(this.Characteristic.MotionDetected, this.detected);
     });
 
-    this.ccu.getValue(channel.address, 'MOTION').then((raw) => {
+    this.readOnRefresh(channel.address, 'MOTION', (raw) => {
       this.detected = Boolean(raw);
       service.updateCharacteristic(this.Characteristic.MotionDetected, this.detected);
-    }).catch(() => undefined);
+    });
 
     this.attachBattery(channel.address);
   }

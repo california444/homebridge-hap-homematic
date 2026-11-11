@@ -37,6 +37,8 @@ import { lockService } from './impl/LockAccessory.js';
 import { colorTempDimmerService } from './impl/ColorTempDimmerAccessory.js';
 import { rgbLightService } from './impl/RgbLightAccessory.js';
 import { powerMeterService } from './impl/PowerMeterAccessory.js';
+import { irrigationService } from './impl/IrrigationAccessory.js';
+import { doorbellService } from './impl/DoorbellAccessory.js';
 
 export const SERVICE_DEFINITIONS: ServiceDefinition[] = [
   switchService,
@@ -58,6 +60,8 @@ export const SERVICE_DEFINITIONS: ServiceDefinition[] = [
   colorTempDimmerService,
   rgbLightService,
   powerMeterService,
+  irrigationService,
+  doorbellService,
 ];
 
 /** Find candidate services for a channel type, sorted by priority asc. */

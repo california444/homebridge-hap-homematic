@@ -14,16 +14,18 @@ const INC = 1;
 const DEC = 0;
 const STOP = 2;
 
-function setup(type: string, address: string) {
+function setup(type: string, address: string, opts: { settings?: Record<string, unknown>; stateAddress?: string } = {}) {
   const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'blind') });
   const setValue = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);
-  const fire = (datapoint: string, value: unknown) => {
+  const fireAt = (channelAddress: string, datapoint: string, value: unknown) => {
     (ccu as unknown as { handleEvent(ev: object): void }).handleEvent({
-      callbackId: 'c', channelAddress: address, datapoint, value, receivedAt: 0,
+      callbackId: 'c', channelAddress, datapoint, value, receivedAt: 0,
     });
   };
+  const fire = (datapoint: string, value: unknown) => fireAt(opts.stateAddress ?? address, datapoint, value);
+  const readValues = vi.spyOn(ccu, 'readValues').mockResolvedValue({});
   const hap = makeHapStub();
   const mk = (name: string) => {
     class C { static UUID = `char:${name}`; UUID = `char:${name}`; }
@@ -35,7 +37,7 @@ function setup(type: string, address: string) {
   for (const n of ['CurrentPosition', 'TargetPosition', 'PositionState', 'Name']) {
     Characteristic[n] = mk(n);
   }
-  const accessory = makeAccessory({ kind: 'channel', id: address, service: 'BlindAccessory' });
+  const accessory = makeAccessory('uuid', 'Blind', { kind: 'channel' as const, id: address, service: 'BlindAccessory', settings: opts.settings });
   const ctx = {
     accessory: asPlatformAccessory(accessory),
     ccu,
@@ -43,13 +45,13 @@ function setup(type: string, address: string) {
     Service: { ...hap.Service, WindowCovering: S },
     Characteristic,
   } as unknown as ServiceContext;
-  const channel: CcuChannel = { address, name: 'Blind', index: 1, type };
+  const channel: CcuChannel = { address, name: 'Blind', index: 1, type, ...(opts.stateAddress ? { stateAddress: opts.stateAddress } : {}) };
   const handler = blindService.build(ctx);
   handler.attach(channel);
   const svc = accessory.services[0]!;
   const get = (n: string) => svc.characteristics.get(`char:${n}`)!;
   return {
-    fire, setValue, handler, get,
+    fire, fireAt, setValue, handler, get, readValues,
     pos: () => get('CurrentPosition').value,
     tgt: () => get('TargetPosition').onGetHandler!() as Promise<unknown>,
     state: () => get('PositionState').value,
@@ -180,5 +182,48 @@ describe('BlindAccessory movement', () => {
     expect(t.state()).toBe(INC);
     t.handler.dispose();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('HmIP pairing: LEVEL / ACTIVITY_STATE from the transmitter, commands to the receiver', async () => {
+    const t = setup('SHUTTER_VIRTUAL_RECEIVER', '0011:4', { stateAddress: '0011:3' });
+    t.fireAt('0011:4', 'LEVEL', 0.9); // receiver's own (virtual) level is ignored
+    await expect(t.tgt()).rejects.toThrow('value unknown');
+    t.fire('LEVEL', 0.3); // transmitter
+    expect(t.pos()).toBe(30);
+    await t.command(80);
+    expect(t.setValue).toHaveBeenCalledWith('0011:4', 'LEVEL', 0.8);
+    t.fire('ACTIVITY_STATE', 1);
+    expect(t.state()).toBe(INC);
+    t.fire('LEVEL', 0.8);
+    expect(t.state()).toBe(STOP);
+  });
+
+  it('invert (awning): HomeKit 100 = LEVEL 0, directions flip', async () => {
+    const t = setup('SHUTTER_VIRTUAL_RECEIVER', '0022:4', { stateAddress: '0022:3', settings: { invert: true } });
+    t.fire('LEVEL', 1);
+    expect(t.pos()).toBe(0);
+    await t.command(100);
+    expect(t.setValue).toHaveBeenCalledWith('0022:4', 'LEVEL', 0);
+    t.fire('ACTIVITY_STATE', 2); // CCU: down → HomeKit: increasing
+    expect(t.state()).toBe(INC);
+    t.fire('LEVEL', 0.5);
+    expect(t.pos()).toBe(50);
+    t.fire('ACTIVITY_STATE', 3);
+    expect(t.state()).toBe(STOP);
+  });
+
+  it('start value via refresh(): sets position at rest, not during a move', async () => {
+    const t = setup('BLIND', 'NEQ9:1');
+    t.readValues.mockResolvedValue({ LEVEL: 0.4 });
+    await t.handler.refresh!();
+    expect(t.pos()).toBe(40);
+    expect(await t.tgt()).toBe(40);
+    await t.command(100);
+    t.readValues.mockResolvedValue({ LEVEL: 0.6 });
+    await t.handler.refresh!(); // moving: ignored
+    expect(await t.tgt()).toBe(100);
+    t.readValues.mockResolvedValue({ LEVEL: 'junk' });
+    await t.handler.refresh!();
+    expect(t.pos()).toBe(40);
   });
 });

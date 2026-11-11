@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -21,10 +23,10 @@ class LeakHandler extends AccessoryBase implements ChannelService {
       service.updateCharacteristic(this.Characteristic.LeakDetected, this.toHapValue());
     });
 
-    this.ccu.getValue(channel.address, 'STATE').then((raw) => {
+    this.readOnRefresh(channel.address, 'STATE', (raw) => {
       this.detected = Boolean(raw);
       service.updateCharacteristic(this.Characteristic.LeakDetected, this.toHapValue());
-    }).catch(() => undefined);
+    });
 
     this.attachBattery(channel.address);
   }

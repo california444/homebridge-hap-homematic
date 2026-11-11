@@ -52,6 +52,9 @@ export interface CcuClientOptions {
 
 type DatapointListener = (value: unknown) => void;
 
+/** Paramset description lookup (Discovery's cache), see setDescriber(). */
+export type Describer = (address: string) => Record<string, ParameterDescription> | undefined;
+
 const ENABLED_INTERFACES: ReadonlyArray<{
   id: CcuInterfaceId;
   flag: keyof ResolvedConfig['interfaces'];
@@ -79,6 +82,9 @@ export class CcuClient extends EventEmitter {
   /** callback id (`homebridge-hap-homematic:<interface>`) → supervisor */
   private readonly byCallbackId: Map<string, InterfaceSupervisor> = new Map();
   private started = false;
+  private describer: Describer = () => undefined;
+  /** In-flight getParamset per channel, so handlers sharing a channel ask once. */
+  private readonly inflight = new Map<string, Promise<Record<string, unknown> | undefined>>();
   /** address → interface map, filled by listDevices(). */
   private readonly addressInterface: Map<string, CcuInterfaceId> = new Map();
 
@@ -271,14 +277,74 @@ export class CcuClient extends EventEmitter {
     return this.supervisors.get(id)?.state;
   }
 
-  /** Set a CCU datapoint via XML-RPC on the channel's interface. */
+  /** Paramset descriptions for typing (setValue) and the ACTION filter. */
+  setDescriber(fn: Describer): void {
+    this.describer = fn;
+  }
+
+  /** Description of one datapoint, if the paramset cache has it. */
+  describe(address: string, datapoint: string): ParameterDescription | undefined {
+    return this.describer(address)?.[datapoint];
+  }
+
+  /**
+   * Set a CCU datapoint via XML-RPC on the channel's interface, typed by
+   * the paramset description (plan 4.3): FLOAT as explicit double (the
+   * CCU rejects `1` as int for a FLOAT), INTEGER/ENUM rounded, BOOL and
+   * ACTION as boolean. Without a description the value is sent as is.
+   */
   async setValue(address: string, datapoint: string, value: unknown): Promise<void> {
-    await this.clientFor(address).setValue(address, datapoint, value);
+    const typed = toTyped(this.describe(address, datapoint)?.TYPE, value);
+    await this.clientFor(address).setValue(address, datapoint, typed);
   }
 
   /** Read a CCU datapoint via XML-RPC on the channel's interface. */
   async getValue(address: string, datapoint: string): Promise<unknown> {
     return this.clientFor(address).getValue(address, datapoint);
+  }
+
+  /**
+   * Current values of a channel via `getParamset(VALUES)` (no radio
+   * traffic). Concurrent calls for the same channel share one request.
+   * `undefined` when the CCU answered with an error (e.g. BidCos device
+   * without power, plan 3.1 finding 1); `{}` for unreachable HmIP devices.
+   * ACTION datapoints (PRESS_*) are never returned (plan 4.2).
+   */
+  readValues(address: string): Promise<Record<string, unknown> | undefined> {
+    const running = this.inflight.get(address);
+    if (running) {
+      return running;
+    }
+    const p = (async () => {
+      try {
+        const raw = await this.clientFor(address).getParamset(address);
+        const out: Record<string, unknown> = {};
+        for (const [dp, v] of Object.entries(raw)) {
+          if (!this.isAction(address, dp)) {
+            out[dp] = v;
+          }
+        }
+        return out;
+      } catch (err) {
+        this.log.debug('getParamset(%s) failed: %s', address, (err as Error).message);
+        return undefined;
+      } finally {
+        this.inflight.delete(address);
+      }
+    })();
+    this.inflight.set(address, p);
+    return p;
+  }
+
+  /** ACTION datapoints must never be applied as start values. */
+  isAction(address: string, datapoint: string): boolean {
+    const type = this.describe(address, datapoint)?.TYPE;
+    return type === 'ACTION' || (type === undefined && /^PRESS_/.test(datapoint));
+  }
+
+  /** Interface a channel / device address is routed to. */
+  interfaceOf(address: string): CcuInterfaceId {
+    return this.interfaceForAddress(address);
   }
 
   // --- internals -----------------------------------------------------
@@ -405,4 +471,24 @@ export function toDevices(raw: RpcDeviceDescription[], intf: CcuInterfaceId): Cc
     d.channels.sort((a, b) => a.index - b.index);
   }
   return [...devices.values()];
+}
+
+/** Shape a value for setValue by the datapoint's paramset TYPE. */
+export function toTyped(type: string | undefined, value: unknown): unknown {
+  switch (type) {
+    case 'FLOAT': {
+      const n = typeof value === 'number' ? value : Number(value);
+      return { explicitDouble: Number.isFinite(n) ? n : 0 };
+    }
+    case 'INTEGER':
+    case 'ENUM': {
+      const n = typeof value === 'boolean' ? Number(value) : Math.round(Number(value));
+      return Number.isFinite(n) ? n : 0;
+    }
+    case 'BOOL':
+    case 'ACTION':
+      return value === 'false' ? false : Boolean(value);
+    default:
+      return value;
+  }
 }

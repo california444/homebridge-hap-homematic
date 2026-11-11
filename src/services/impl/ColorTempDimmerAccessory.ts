@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -88,7 +90,7 @@ class ColorTempDimmerHandler extends AccessoryBase implements ChannelService {
         service.updateCharacteristic(this.Characteristic.ColorTemperature, this.cachedMired);
       });
 
-      this.ccu.getValue(this.coltempAddress, 'LEVEL').then((raw) => {
+      this.readOnRefresh(this.coltempAddress, 'LEVEL', (raw) => {
         const fraction = typeof raw === 'number'
           ? raw
           : Number.parseFloat(String(raw));
@@ -96,7 +98,7 @@ class ColorTempDimmerHandler extends AccessoryBase implements ChannelService {
         const clamped = Math.max(0, Math.min(1, fraction));
         this.cachedMired = HK_MIRED_MIN + clamped * HK_MIRED_RANGE;
         service.updateCharacteristic(this.Characteristic.ColorTemperature, this.cachedMired);
-      }).catch(() => undefined);
+      });
     }
 
     this.registerListener(this.brightnessAddress, 'LEVEL', (raw) => {
@@ -109,13 +111,13 @@ class ColorTempDimmerHandler extends AccessoryBase implements ChannelService {
       service.updateCharacteristic(this.Characteristic.Brightness, pct);
     });
 
-    this.ccu.getValue(this.brightnessAddress, 'LEVEL').then((raw) => {
+    this.readOnRefresh(this.brightnessAddress, 'LEVEL', (raw) => {
       const pct = normalizeLevelToPercent(raw);
       if (pct === undefined) return;
       this.cachedLevel = pct;
       service.updateCharacteristic(this.Characteristic.On, pct > 0);
       service.updateCharacteristic(this.Characteristic.Brightness, pct);
-    }).catch(() => undefined);
+    });
   }
 }
 

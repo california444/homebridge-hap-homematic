@@ -88,3 +88,8 @@ the upstream project. Modified files carry a "Modified by california444
   * 2026-11-11  Per-interface connection supervision (ping/PONG, stale
                 detection, backoff, re-subscribe after a CCU restart,
                 init handshake check) replaces the global watchdog.
+  * 2026-11-11  Start values via getParamset (no getValue), typed
+                setValue, "No Response" for unknown values, StatusFault,
+                value limits; HmIP transmitter/receiver pairing; smoke
+                detectors via SMOKE_DETECTOR_ALARM_STATUS; blind invert;
+                new IrrigationAccessory and DoorbellAccessory.

@@ -1,4 +1,6 @@
-import { AccessoryBase } from '../AccessoryBase.js';
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
+import { AccessoryBase, isTrue } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
 
@@ -9,57 +11,71 @@ const CONTACT_CHANNEL_TYPES = [
   'TILT_SENSOR',
 ];
 
+/** HM-Sec-SCo ERROR enum: 7 = SABOTAGE. */
+const ERROR_SABOTAGE = 7;
+
+/**
+ * Door / window contact. STATE true = open. Options: `invert` swaps
+ * open / closed (contacts mounted the other way round).
+ * Unknown state → "No Response"; ERROR = SABOTAGE → StatusTampered;
+ * UNREACH / interface down → StatusFault (ContactSensor only).
+ */
 class ContactHandler extends AccessoryBase implements ChannelService {
-  private state = false;
+  private open: boolean | undefined;
 
   attach(channel: CcuChannel): void {
-    const subtype = this.accessory.context.subtype ?? 'contact';
+    const subtype = (this.accessory.context.subtype ?? 'contact').toLowerCase();
+    const invert = this.accessory.context.settings?.invert === true;
     const svcType = subtype === 'door'
       ? this.Service.Door
       : subtype === 'window'
         ? this.Service.Window
         : this.Service.ContactSensor;
     const service = this.getOrAddService(svcType, channel.name);
+    const isSensor = svcType === this.Service.ContactSensor;
 
-    if (svcType === this.Service.ContactSensor) {
-      service.getCharacteristic(this.Characteristic.ContactSensorState)
-        .onGet(this.wrapGet<number>(() =>
-          this.state
-            ? this.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
-            : this.Characteristic.ContactSensorState.CONTACT_DETECTED,
-        ));
-    } else {
-      service.getCharacteristic(this.Characteristic.CurrentPosition)
-        .onGet(this.wrapGet<number>(() => (this.state ? 100 : 0)));
-      service.getCharacteristic(this.Characteristic.TargetPosition)
-        .onGet(this.wrapGet<number>(() => (this.state ? 100 : 0)));
-      service.getCharacteristic(this.Characteristic.PositionState)
-        .onGet(this.wrapGet<number>(() => 2));
-    }
-
-    const applyState = (s: boolean): void => {
-      this.state = s;
-      if (svcType === this.Service.ContactSensor) {
-        service.updateCharacteristic(
-          this.Characteristic.ContactSensorState,
-          s
-            ? this.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
-            : this.Characteristic.ContactSensorState.CONTACT_DETECTED,
-        );
-      } else {
-        const pct = s ? 100 : 0;
-        service.updateCharacteristic(this.Characteristic.CurrentPosition, pct);
-        service.updateCharacteristic(this.Characteristic.TargetPosition, pct);
+    const contactValue = (): number => {
+      if (this.open === undefined) {
+        return this.unknown();
       }
+      return this.open
+        ? this.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
+        : this.Characteristic.ContactSensorState.CONTACT_DETECTED;
+    };
+    const position = (): number => {
+      if (this.open === undefined) {
+        return this.unknown();
+      }
+      return this.open ? 100 : 0;
     };
 
-    this.registerListener(channel.address, 'STATE', (raw) => applyState(Boolean(raw)));
+    if (isSensor) {
+      service.getCharacteristic(this.Characteristic.ContactSensorState).onGet(this.wrapGet<number>(contactValue));
+    } else {
+      service.getCharacteristic(this.Characteristic.CurrentPosition).onGet(this.wrapGet<number>(position));
+      service.getCharacteristic(this.Characteristic.TargetPosition).onGet(this.wrapGet<number>(position));
+      service.getCharacteristic(this.Characteristic.PositionState).onGet(this.wrapGet<number>(() => 2));
+    }
 
-    // Best-effort initial pull so the sensor doesn't show "closed" until
-    // the next push event.
-    this.ccu.getValue(channel.address, 'STATE')
-      .then((raw) => applyState(Boolean(raw)))
-      .catch(() => undefined);
+    this.need(channel.address, 'STATE', (raw) => {
+      this.open = isTrue(raw) !== invert;
+      if (isSensor) {
+        this.update(service, this.Characteristic.ContactSensorState, contactValue());
+      } else {
+        this.update(service, this.Characteristic.CurrentPosition, position());
+        this.update(service, this.Characteristic.TargetPosition, position());
+      }
+    });
+
+    if (isSensor) {
+      this.need(channel.address, 'ERROR', (raw) => {
+        const tampered = Number(raw) === ERROR_SABOTAGE;
+        service.updateCharacteristic(this.Characteristic.StatusTampered, tampered
+          ? this.Characteristic.StatusTampered.TAMPERED
+          : this.Characteristic.StatusTampered.NOT_TAMPERED);
+      });
+      this.watchFault(service, channel.address);
+    }
 
     this.attachBattery(channel.address);
   }

@@ -23,16 +23,23 @@ interface TestEnv {
   ccu: CcuClient;
   setValueMock: ReturnType<typeof vi.spyOn>;
   getValueMock: ReturnType<typeof vi.spyOn>;
+  values(fn: (address: string, datapoint: string) => unknown): void;
   fireEvent(address: string, datapoint: string, value: unknown): void;
 }
 
 function makeEnv(): TestEnv {
   const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'sv') });
+  let valueFn: (address: string, datapoint: string) => unknown = () => undefined;
+  vi.spyOn(ccu, 'readValues').mockImplementation(async (address: string) => new Proxy({}, {
+    has: (_t, dp) => valueFn(address, String(dp)) !== undefined,
+    get: (_t, dp) => valueFn(address, String(dp)),
+  }));
   return {
     ccu,
     setValueMock: vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined),
     getValueMock: vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined),
+    values(fn: (address: string, datapoint: string) => unknown) { valueFn = fn; },
     fireEvent(address, datapoint, value) {
       (ccu as unknown as {
         handleEvent(ev: { callbackId: string; channelAddress: string; datapoint: string; value: unknown; receivedAt: number }): void;
@@ -126,7 +133,7 @@ describe('LockAccessory', () => {
   it('writes inverted STATE on lock command', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
-    lockService.build(ctx).attach(channel);
+    await attachAndRefresh(lockService.build(ctx), channel);
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;
     await target.onSetHandler!(1); // SECURED
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.L:1', 'STATE', false);
@@ -135,25 +142,25 @@ describe('LockAccessory', () => {
   it('writes inverted STATE on unlock command', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
-    lockService.build(ctx).attach(channel);
+    await attachAndRefresh(lockService.build(ctx), channel);
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;
     await target.onSetHandler!(0); // UNSECURED
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.L:1', 'STATE', true);
   });
 
-  it('reflects STATE=true (unlocked) push event as UNSECURED', () => {
+  it('reflects STATE=true (unlocked) push event as UNSECURED', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
-    lockService.build(ctx).attach(channel);
+    await attachAndRefresh(lockService.build(ctx), channel);
     env.fireEvent('HmIP.L:1', 'STATE', true);
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
     expect(current.value).toBe(0); // UNSECURED
   });
 
-  it('reflects STATE=false (locked) push event as SECURED', () => {
+  it('reflects STATE=false (locked) push event as SECURED', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
-    lockService.build(ctx).attach(channel);
+    await attachAndRefresh(lockService.build(ctx), channel);
     env.fireEvent('HmIP.L:1', 'STATE', false);
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;
@@ -164,18 +171,18 @@ describe('LockAccessory', () => {
   it('initial pull seeds SECURED / UNSECURED based on STATE', async () => {
     const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_a, dp) => dp === 'STATE' ? false : undefined);
+    env.values((_a, dp) => dp === 'STATE' ? false : undefined);
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
-    lockService.build(ctx).attach(channel);
+    await attachAndRefresh(lockService.build(ctx), channel);
     await flush();
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
     expect(current.value).toBe(1); // SECURED
   });
 
-  it('reflects ERROR>0 as JAMMED', () => {
+  it('reflects ERROR>0 as JAMMED', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
-    lockService.build(ctx).attach(channel);
+    await attachAndRefresh(lockService.build(ctx), channel);
     env.fireEvent('HmIP.L:1', 'ERROR', 1);
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
     expect(current.value).toBe(2); // JAMMED
@@ -183,12 +190,12 @@ describe('LockAccessory', () => {
 });
 
 describe('ColorTempDimmerAccessory.deriveColortempAddress', () => {
-  it('computes the next channel index', () => {
+  it('computes the next channel index', async () => {
     expect(colorTempTesting.deriveColortempAddress('HmIP.000ABC:1')).toBe('HmIP.000ABC:2');
     expect(colorTempTesting.deriveColortempAddress('HmIP.000ABC:5')).toBe('HmIP.000ABC:6');
   });
 
-  it('returns undefined for addresses without a colon suffix', () => {
+  it('returns undefined for addresses without a colon suffix', async () => {
     expect(colorTempTesting.deriveColortempAddress('HmIP.000ABC')).toBeUndefined();
   });
 });
@@ -201,7 +208,7 @@ describe('ColorTempDimmerAccessory', () => {
   it('writes brightness LEVEL to the bound channel', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory' });
-    colorTempDimmerService.build(ctx).attach(channel);
+    await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     const brightness = accessory.services[0]!.characteristics.get('char:Brightness')!;
     await brightness.onSetHandler!(60);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.D:1', 'LEVEL', 0.6);
@@ -210,7 +217,7 @@ describe('ColorTempDimmerAccessory', () => {
   it('writes color temperature LEVEL to the sibling channel (auto-derived)', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory' });
-    colorTempDimmerService.build(ctx).attach(channel);
+    await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     const ct = accessory.services[0]!.characteristics.get('char:ColorTemperature')!;
     // mired = 320 => fraction = (320-140)/360 ≈ 0.5
     await ct.onSetHandler!(320);
@@ -223,16 +230,16 @@ describe('ColorTempDimmerAccessory', () => {
       kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory',
       settings: { coltempAddress: 'HmIP.D:7' },
     });
-    colorTempDimmerService.build(ctx).attach(channel);
+    await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     const ct = accessory.services[0]!.characteristics.get('char:ColorTemperature')!;
     await ct.onSetHandler!(140); // coolest
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.D:7', 'LEVEL', 0);
   });
 
-  it('reflects sibling LEVEL events as a mired value', () => {
+  it('reflects sibling LEVEL events as a mired value', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory' });
-    colorTempDimmerService.build(ctx).attach(channel);
+    await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     env.fireEvent('HmIP.D:2', 'LEVEL', 1);
     const ct = accessory.services[0]!.characteristics.get('char:ColorTemperature')!;
     expect(ct.value).toBe(500);
@@ -244,7 +251,7 @@ describe('RgbLightAccessory', () => {
     address: 'HmIP.B:8', name: 'BSL', index: 8, type: 'DIMMER_VIRTUAL_RECEIVER',
   };
 
-  it('snapHueToBslIndex picks the closest discrete colour', () => {
+  it('snapHueToBslIndex picks the closest discrete colour', async () => {
     expect(rgbTesting.snapHueToBslIndex(0, 100)).toBe(4);     // red
     expect(rgbTesting.snapHueToBslIndex(120, 100)).toBe(2);   // green
     expect(rgbTesting.snapHueToBslIndex(240, 100)).toBe(1);   // blue
@@ -254,7 +261,7 @@ describe('RgbLightAccessory', () => {
   it('discrete subtype writes COLOR as integer enum 0..7', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'discrete' });
-    rgbLightService.build(ctx).attach(channel);
+    await attachAndRefresh(rgbLightService.build(ctx), channel);
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
     await sat.onSetHandler!(100);
@@ -265,7 +272,7 @@ describe('RgbLightAccessory', () => {
   it('continuous subtype writes COLOR as 0..199 hue ring', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous' });
-    rgbLightService.build(ctx).attach(channel);
+    await attachAndRefresh(rgbLightService.build(ctx), channel);
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
     await sat.onSetHandler!(100);
@@ -279,7 +286,7 @@ describe('RgbLightAccessory', () => {
   it('continuous subtype writes 200 (white) for saturation 0', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous' });
-    rgbLightService.build(ctx).attach(channel);
+    await attachAndRefresh(rgbLightService.build(ctx), channel);
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     await sat.onSetHandler!(0);
     expect(env.setValueMock).toHaveBeenLastCalledWith('HmIP.B:8', 'COLOR', 200);
@@ -287,12 +294,12 @@ describe('RgbLightAccessory', () => {
 
   it('initial pull: COLOR getValue applies discrete index back to Hue/Sat', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_a, dp) => dp === 'COLOR' ? 4 : undefined);
+    env.values((_a, dp) => dp === 'COLOR' ? 4 : undefined);
     const channel: CcuChannel = { address: 'HmIP.B:8', name: 'BSL', index: 8, type: 'RGBW' };
     const { ctx, accessory } = buildCtx(env, {
       kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'discrete',
     });
-    rgbLightService.build(ctx).attach(channel);
+    await attachAndRefresh(rgbLightService.build(ctx), channel);
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
     expect(hue.value).toBeDefined();
@@ -300,12 +307,12 @@ describe('RgbLightAccessory', () => {
 
   it('initial pull: continuous COLOR=200 maps to white (sat=0)', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_a, dp) => dp === 'COLOR' ? 200 : undefined);
+    env.values((_a, dp) => dp === 'COLOR' ? 200 : undefined);
     const channel: CcuChannel = { address: 'HmIP.B:8', name: 'RGBW', index: 8, type: 'RGBW' };
     const { ctx, accessory } = buildCtx(env, {
       kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous',
     });
-    rgbLightService.build(ctx).attach(channel);
+    await attachAndRefresh(rgbLightService.build(ctx), channel);
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     expect(sat.value).toBe(0);
@@ -313,12 +320,12 @@ describe('RgbLightAccessory', () => {
 
   it('initial pull: continuous COLOR=99 maps to mid-spectrum hue', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_a, dp) => dp === 'COLOR' ? 99 : undefined);
+    env.values((_a, dp) => dp === 'COLOR' ? 99 : undefined);
     const channel: CcuChannel = { address: 'HmIP.B:8', name: 'RGBW', index: 8, type: 'RGBW' };
     const { ctx, accessory } = buildCtx(env, {
       kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous',
     });
-    rgbLightService.build(ctx).attach(channel);
+    await attachAndRefresh(rgbLightService.build(ctx), channel);
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
     expect(hue.value).toBeCloseTo((99 / 199) * 360, 1);
@@ -333,7 +340,7 @@ describe('SlatBlindAccessory', () => {
   it('writes LEVEL_2 for tilt angle, mapped from -90..90 to 0..1', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
-    slatBlindService.build(ctx).attach(channel);
+    await attachAndRefresh(slatBlindService.build(ctx), channel);
     const target = accessory.services[0]!.characteristics.get('char:TargetHorizontalTiltAngle')!;
     await target.onSetHandler!(0);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.S:4', 'LEVEL_2', 0.5);
@@ -341,10 +348,10 @@ describe('SlatBlindAccessory', () => {
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.S:4', 'LEVEL_2', 0);
   });
 
-  it('reflects LEVEL_2 events as a tilt angle', () => {
+  it('reflects LEVEL_2 events as a tilt angle', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
-    slatBlindService.build(ctx).attach(channel);
+    await attachAndRefresh(slatBlindService.build(ctx), channel);
     env.fireEvent('HmIP.S:4', 'LEVEL_2', 1);
     const current = accessory.services[0]!.characteristics.get('char:CurrentHorizontalTiltAngle')!;
     expect(current.value).toBe(90);
@@ -352,9 +359,9 @@ describe('SlatBlindAccessory', () => {
 
   it('seeds LEVEL_2 from getValue at attach (initial pull)', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_a, dp) => dp === 'LEVEL_2' ? 0 : undefined);
+    env.values((_a, dp) => dp === 'LEVEL_2' ? 0 : undefined);
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
-    slatBlindService.build(ctx).attach(channel);
+    await attachAndRefresh(slatBlindService.build(ctx), channel);
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     const current = accessory.services[0]!.characteristics.get('char:CurrentHorizontalTiltAngle')!;
     expect(current.value).toBe(-90); // -90 + 0*180 = -90
@@ -363,7 +370,7 @@ describe('SlatBlindAccessory', () => {
   it('PositionState reflects target>current (increasing) and target<current (decreasing)', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
-    slatBlindService.build(ctx).attach(channel);
+    await attachAndRefresh(slatBlindService.build(ctx), channel);
     const positionState = accessory.services[0]!.characteristics.get('char:PositionState')!;
     const target = accessory.services[0]!.characteristics.get('char:TargetPosition')!;
 
@@ -391,10 +398,10 @@ describe('PowerMeterAccessory', () => {
     address: 'HmIP.P:6', name: 'PSM Meter', index: 6, type: 'ENERGIE_METER_TRANSMITTER',
   };
 
-  it('subscribes and exposes Eve custom characteristics on the Outlet service', () => {
+  it('subscribes and exposes Eve custom characteristics on the Outlet service', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'PowerMeterAccessory' });
-    powerMeterService.build(ctx).attach(channel);
+    await attachAndRefresh(powerMeterService.build(ctx), channel);
     expect(accessory.services[0]!.UUID).toBe('srv:Outlet');
     // Push a POWER event and verify the OutletInUse characteristic flips on.
     env.fireEvent('HmIP.P:6', 'POWER', 12.5);
@@ -402,3 +409,9 @@ describe('PowerMeterAccessory', () => {
     expect(outletInUse.value).toBe(true);
   });
 });
+
+/** attach() and then refresh(): start values come from getParamset now. */
+async function attachAndRefresh(h: { attach(c: CcuChannel): void; refresh?(): void | Promise<void> }, c: CcuChannel): Promise<void> {
+  h.attach(c);
+  await h.refresh?.();
+}

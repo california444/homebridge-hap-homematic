@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import type { CharacteristicProps, Service } from 'homebridge';
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
@@ -62,10 +64,10 @@ class PowerMeterHandler extends AccessoryBase implements ChannelService {
         const v = toFiniteNumber(raw);
         if (v !== undefined) apply(v);
       });
-      this.ccu.getValue(this.channelAddress, datapoint).then((raw) => {
+      this.readOnRefresh(this.channelAddress, datapoint, (raw) => {
         const v = toFiniteNumber(raw);
         if (v !== undefined) apply(v);
-      }).catch(() => undefined);
+      });
     };
 
     subscribe('VOLTAGE', (v) => voltage.updateValue(round(v, 1)));

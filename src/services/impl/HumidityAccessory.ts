@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -34,7 +36,7 @@ class HumidityHandler extends AccessoryBase implements ChannelService {
 
     this.registerListener(channel.address, 'HUMIDITY', apply);
 
-    this.ccu.getValue(channel.address, 'HUMIDITY').then(apply).catch(() => undefined);
+    this.readOnRefresh(channel.address, 'HUMIDITY', apply);
 
     this.attachBattery(channel.address);
   }

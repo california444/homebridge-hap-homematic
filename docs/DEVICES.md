@@ -63,6 +63,33 @@ name.
 | `options` | object | Service options for this channel (override the device's). |
 | *other* | string / number / boolean | Service-specific extras, e.g. `valveType`. |
 
+## Service options
+
+Set in `options` (device or channel) or, for per-channel extras, directly
+in the channel entry.
+
+| Service | Option | Default | Meaning |
+| --- | --- | --- | --- |
+| `SwitchAccessory` | `variant` | `switch` | `switch`, `outlet` or `lightbulb` (case-insensitive) |
+| `BlindAccessory` | `invert` | `false` | HomeKit 100 % = LEVEL 0 (awnings) |
+| `ContactAccessory` | `invert` | `false` | swap open / closed; `variant` `contact`, `door`, `window` |
+| `SmokeAccessory` | `secondaryAlarm` | `true` | `false`: an alarm of another detector of the group does not show smoke on this one |
+| `DoorbellAccessory` | `trigger` | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge) |
+| `DoorbellAccessory` | `debounceSeconds` | `2` | repeats within this time are ignored |
+| `IrrigationAccessory` | `defaultDuration` | `600` | seconds, used until a duration is set in Home (0 = no auto-off) |
+| `IrrigationAccessory` | channel `valveType` | `Irrigation` | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet` |
+| `IrrigationAccessory` | channel `name` | `Valve N` | name of the valve |
+
+`IrrigationAccessory` is a whole-device mapping: one valve per `SWITCH`
+channel of the device (e.g. HM-LC-Sw4-DR-2, channels 1–4).
+
+### HmIP actuators
+
+For HmIP-PS, HmIP-DRSI4, HmIP-BROLL / FROLL map the channel you want
+(transmitter or any receiver of the group, e.g. DRSI4 lamp 1 = channel
+6). The plugin reads the state from the group's `*_TRANSMITTER` and sends
+commands to the first `*_VIRTUAL_RECEIVER`.
+
 ## Accessory identity (decision D6)
 
 Each accessory's UUID is derived from

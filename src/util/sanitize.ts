@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Defensive value coercion helpers used at every CCU → HomeKit boundary.
  *
@@ -84,4 +86,37 @@ export function normalizeLevelToPercent(value: unknown): number | undefined {
  */
 export function percentToLevelFraction(percent: number): number {
   return clamp(percent, 0, 100) / 100;
+}
+
+/** The subset of HAP characteristic props that bounds a value. */
+export interface ValueProps {
+  minValue?: number;
+  maxValue?: number;
+  validValues?: number[];
+}
+
+/**
+ * Make a value acceptable for a characteristic (plan 8.5): numbers are
+ * clamped to minValue / maxValue; with validValues only listed values
+ * pass. Returns undefined when the value must not be pushed (non-finite,
+ * or not a valid enum value). Booleans and strings pass unchanged.
+ */
+export function clampToProps(value: unknown, props: ValueProps | undefined): unknown {
+  if (typeof value !== 'number') {
+    return value;
+  }
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+  if (props?.validValues && props.validValues.length > 0) {
+    return props.validValues.includes(value) ? value : undefined;
+  }
+  let v = value;
+  if (typeof props?.minValue === 'number') {
+    v = Math.max(props.minValue, v);
+  }
+  if (typeof props?.maxValue === 'number') {
+    v = Math.min(props.maxValue, v);
+  }
+  return v;
 }

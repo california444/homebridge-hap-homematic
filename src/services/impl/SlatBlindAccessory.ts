@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -91,7 +93,7 @@ class SlatBlindHandler extends AccessoryBase implements ChannelService {
     // Best-effort initial pulls — same apply paths as the LEVEL /
     // LEVEL_2 listeners above; tested via fireEvent there.
     /* v8 ignore start */
-    this.ccu.getValue(this.channelAddress, 'LEVEL').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'LEVEL', (raw) => {
       const pct = normalizeLevelToPercent(raw);
       if (pct === undefined) return;
       this.current = pct;
@@ -99,9 +101,9 @@ class SlatBlindHandler extends AccessoryBase implements ChannelService {
       service.updateCharacteristic(this.Characteristic.CurrentPosition, pct);
       service.updateCharacteristic(this.Characteristic.TargetPosition, pct);
       service.updateCharacteristic(this.Characteristic.PositionState, STATE_STOPPED);
-    }).catch(() => undefined);
+    });
 
-    this.ccu.getValue(this.channelAddress, 'LEVEL_2').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'LEVEL_2', (raw) => {
       const f = toFiniteNumber(raw);
       if (f === undefined) return;
       const angle = HK_TILT_MIN + Math.max(0, Math.min(1, f)) * HK_TILT_RANGE;
@@ -109,7 +111,7 @@ class SlatBlindHandler extends AccessoryBase implements ChannelService {
       this.targetTilt = this.currentTilt;
       service.updateCharacteristic(this.Characteristic.CurrentHorizontalTiltAngle, this.currentTilt);
       service.updateCharacteristic(this.Characteristic.TargetHorizontalTiltAngle, this.targetTilt);
-    }).catch(() => undefined);
+    });
     /* v8 ignore stop */
   }
 

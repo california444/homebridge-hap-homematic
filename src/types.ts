@@ -129,8 +129,14 @@ export interface CcuDevice {
 }
 
 export interface CcuChannel {
-  address: string;     // e.g. 000123:1
+  /** Address commands go to, e.g. 000123:3. */
+  address: string;
   index: number;
   type: string;        // e.g. SWITCH_VIRTUAL_RECEIVER
   name: string;
+  /**
+   * HmIP transmitter whose state (STATE / LEVEL / ACTIVITY_STATE) to read,
+   * when it differs from `address` (ccu/pairing.ts).
+   */
+  stateAddress?: string;
 }

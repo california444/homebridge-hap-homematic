@@ -281,6 +281,20 @@ export class RpcClient {
       : {};
   }
 
+  /**
+   * XML-RPC `getParamset(address, 'VALUES')`: current values of a channel
+   * from the CCU's cache, without radio traffic (plan 3.1, finding 11).
+   * Unreachable HmIP devices answer `{}` (finding 2).
+   */
+  async getParamset(address: string): Promise<Record<string, unknown>> {
+    const t = await this.ensureTransport();
+    const result = await t.call('getParamset', [address, 'VALUES']);
+    return result && typeof result === 'object' && !Array.isArray(result)
+      ? (result as Record<string, unknown>)
+      : {};
+  }
+
+  /** Prefer getParamset: getValue can trigger radio traffic on BidCos. */
   async getValue(channel: string, datapoint: string): Promise<unknown> {
     const t = await this.ensureTransport();
     return t.call('getValue', [channel, datapoint]);

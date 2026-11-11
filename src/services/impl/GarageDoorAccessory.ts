@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Garage door opener (HmIP-MOD-HO and friends).
  *
@@ -112,7 +114,7 @@ class GarageDoorHandler extends AccessoryBase implements ChannelService {
     // here is ignored from coverage to avoid flaky promise-timing
     // tests.
     /* v8 ignore start */
-    this.ccu.getValue(this.channelAddress, 'DOOR_STATE').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'DOOR_STATE', (raw) => {
       const v = typeof raw === 'number' ? raw : parseInt(String(raw ?? '-1'), 10);
       const next = this.mapCcuToHap(v);
       if (next !== undefined) {
@@ -123,7 +125,7 @@ class GarageDoorHandler extends AccessoryBase implements ChannelService {
         service.updateCharacteristic(this.Characteristic.CurrentDoorState, this.current);
         service.updateCharacteristic(this.Characteristic.TargetDoorState, this.target);
       }
-    }).catch(() => undefined);
+    });
     /* v8 ignore stop */
   }
 

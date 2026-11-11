@@ -33,6 +33,8 @@ interface TestEnv {
   ccu: CcuClient;
   setValueMock: ReturnType<typeof vi.spyOn>;
   getValueMock: ReturnType<typeof vi.spyOn>;
+  /** Start values for refresh(): readValues answers from fn(address, datapoint). */
+  values(fn: (address: string, datapoint: string) => unknown): void;
   fireEvent(address: string, datapoint: string, value: unknown): void;
 }
 
@@ -41,10 +43,16 @@ function makeEnv(): TestEnv {
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'svc-test') });
   const setValueMock = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   const getValueMock = vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);
+  let valueFn: (address: string, datapoint: string) => unknown = () => undefined;
+  vi.spyOn(ccu, 'readValues').mockImplementation(async (address: string) => new Proxy({}, {
+    has: (_t, dp) => valueFn(address, String(dp)) !== undefined,
+    get: (_t, dp) => valueFn(address, String(dp)),
+  }));
   return {
     ccu,
     setValueMock,
     getValueMock,
+    values(fn) { valueFn = fn; },
     fireEvent(address, datapoint, value) {
       (ccu as unknown as { handleEvent(ev: { callbackId: string; channelAddress: string; datapoint: string; value: unknown; receivedAt: number }): void }).handleEvent({
         callbackId: 'c', channelAddress: address, datapoint, value, receivedAt: 0,
@@ -84,7 +92,8 @@ describe('SwitchAccessory', () => {
     expect(service.UUID).toBe('srv:Switch');
 
     const onChar = getChar(service, 'On');
-    expect(await onChar.onGetHandler!()).toBe(false);
+    // Unknown until the CCU reported a value → "No Response".
+    await expect(onChar.onGetHandler!()).rejects.toThrow('value unknown');
 
     await onChar.onSetHandler!(true);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'STATE', true);
@@ -94,17 +103,17 @@ describe('SwitchAccessory', () => {
     expect(onChar.value).toBe(false);
   });
 
-  it('Outlet variant uses Outlet service', () => {
+  it('Outlet variant uses Outlet service', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SwitchAccessory', subtype: 'outlet' });
-    switchService.build(ctx).attach(channel);
+    await attachAndRefresh(switchService.build(ctx), channel);
     expect(accessory.services[0]!.UUID).toBe('srv:Outlet');
   });
 
-  it('Lightbulb variant uses Lightbulb service', () => {
+  it('Lightbulb variant uses Lightbulb service', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SwitchAccessory', subtype: 'lightbulb' });
-    switchService.build(ctx).attach(channel);
+    await attachAndRefresh(switchService.build(ctx), channel);
     expect(accessory.services[0]!.UUID).toBe('srv:Lightbulb');
   });
 });
@@ -113,7 +122,7 @@ describe('DimmerAccessory', () => {
   it('reflects LEVEL events to Brightness + On', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'DimmerAccessory' });
-    dimmerService.build(ctx).attach(channel);
+    await attachAndRefresh(dimmerService.build(ctx), channel);
     const service = accessory.services[0]!;
 
     env.fireEvent('HmIP.000123:1', 'LEVEL', 0.5);
@@ -133,7 +142,7 @@ describe('DimmerAccessory', () => {
   it('On=true with cachedLevel=0 resolves to LEVEL=0.01', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'DimmerAccessory' });
-    dimmerService.build(ctx).attach(channel);
+    await attachAndRefresh(dimmerService.build(ctx), channel);
     const service = accessory.services[0]!;
     await getChar(service, 'On').onSetHandler!(true);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'LEVEL', 0.01);
@@ -141,10 +150,10 @@ describe('DimmerAccessory', () => {
 });
 
 describe('BlindAccessory', () => {
-  it('LEVEL event updates current/target/positionState', () => {
+  it('LEVEL event updates current/target/positionState', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'BlindAccessory' });
-    blindService.build(ctx).attach(channel);
+    await attachAndRefresh(blindService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'LEVEL', 0.4);
     expect(getChar(service, 'CurrentPosition').value).toBe(40);
@@ -157,16 +166,16 @@ describe('BlindAccessory', () => {
   it('TargetPosition setter calls setValue with /100', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'BlindAccessory' });
-    blindService.build(ctx).attach(channel);
+    await attachAndRefresh(blindService.build(ctx), channel);
     const service = accessory.services[0]!;
     await getChar(service, 'TargetPosition').onSetHandler!(80);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'LEVEL', 0.8);
   });
 
-  it('WORKING event updates PositionState', () => {
+  it('WORKING event updates PositionState', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'BlindAccessory' });
-    blindService.build(ctx).attach(channel);
+    await attachAndRefresh(blindService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'WORKING', false);
     expect(getChar(service, 'PositionState').value).toBe(2);
@@ -177,7 +186,7 @@ describe('BlindAccessory', () => {
   it('PositionState reflects increasing/decreasing target', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'BlindAccessory' });
-    blindService.build(ctx).attach(channel);
+    await attachAndRefresh(blindService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'LEVEL', 0.5);
     // Now current=50, set target higher.
@@ -193,7 +202,7 @@ describe('ThermostatAccessory', () => {
   it('reflects ACTUAL_TEMPERATURE and SET_TEMPERATURE events', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ThermostatAccessory' });
-    thermostatService.build(ctx).attach(channel);
+    await attachAndRefresh(thermostatService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'ACTUAL_TEMPERATURE', 21.5);
     expect(getChar(service, 'CurrentTemperature').value).toBe(21.5);
@@ -206,7 +215,7 @@ describe('ThermostatAccessory', () => {
   it('CurrentHeatingCoolingState reflects target vs current temp', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ThermostatAccessory' });
-    thermostatService.build(ctx).attach(channel);
+    await attachAndRefresh(thermostatService.build(ctx), channel);
     const service = accessory.services[0]!;
     // Default: target=20, current=20 → not heating.
     expect(await getChar(service, 'CurrentHeatingCoolingState').onGetHandler!()).toBe(0);
@@ -224,7 +233,7 @@ describe('ThermostatAccessory', () => {
   it('TargetHeatingCoolingState off / heat / auto each emit the right datapoint', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ThermostatAccessory' });
-    thermostatService.build(ctx).attach(channel);
+    await attachAndRefresh(thermostatService.build(ctx), channel);
     const service = accessory.services[0]!;
     await getChar(service, 'TargetHeatingCoolingState').onSetHandler!(0);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'SET_TEMPERATURE', 4.5);
@@ -237,17 +246,17 @@ describe('ThermostatAccessory', () => {
   it('Display units returns CELSIUS', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ThermostatAccessory' });
-    thermostatService.build(ctx).attach(channel);
+    await attachAndRefresh(thermostatService.build(ctx), channel);
     const service = accessory.services[0]!;
     expect(await getChar(service, 'TemperatureDisplayUnits').onGetHandler!()).toBe(0);
   });
 });
 
 describe('ContactAccessory', () => {
-  it('contact variant uses ContactSensorState', () => {
+  it('contact variant uses ContactSensorState', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ContactAccessory', subtype: 'contact' });
-    contactService.build(ctx).attach(channel);
+    await attachAndRefresh(contactService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'STATE', true);
     expect(getChar(service, 'ContactSensorState').value).toBe(1); // NOT_DETECTED
@@ -255,29 +264,29 @@ describe('ContactAccessory', () => {
     expect(getChar(service, 'ContactSensorState').value).toBe(0);
   });
 
-  it('door variant uses position characteristics', () => {
+  it('door variant uses position characteristics', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ContactAccessory', subtype: 'door' });
-    contactService.build(ctx).attach(channel);
+    await attachAndRefresh(contactService.build(ctx), channel);
     const service = accessory.services[0]!;
     expect(service.UUID).toBe('srv:Door');
     env.fireEvent('HmIP.000123:1', 'STATE', true);
     expect(getChar(service, 'CurrentPosition').value).toBe(100);
   });
 
-  it('window variant uses Window service', () => {
+  it('window variant uses Window service', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ContactAccessory', subtype: 'window' });
-    contactService.build(ctx).attach(channel);
+    await attachAndRefresh(contactService.build(ctx), channel);
     expect(accessory.services[0]!.UUID).toBe('srv:Window');
   });
 });
 
 describe('MotionAccessory', () => {
-  it('MOTION events update MotionDetected', () => {
+  it('MOTION events update MotionDetected', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'MotionAccessory' });
-    motionService.build(ctx).attach(channel);
+    await attachAndRefresh(motionService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'MOTION', true);
     expect(getChar(service, 'MotionDetected').value).toBe(true);
@@ -285,10 +294,10 @@ describe('MotionAccessory', () => {
 });
 
 describe('SmokeAccessory', () => {
-  it('STATE events map to SmokeDetected', () => {
+  it('STATE events map to SmokeDetected', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SmokeAccessory' });
-    smokeService.build(ctx).attach(channel);
+    await attachAndRefresh(smokeService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'STATE', true);
     expect(getChar(service, 'SmokeDetected').value).toBe(1);
@@ -296,10 +305,10 @@ describe('SmokeAccessory', () => {
 });
 
 describe('TemperatureAccessory', () => {
-  it('updates from TEMPERATURE and ACTUAL_TEMPERATURE', () => {
+  it('updates from TEMPERATURE and ACTUAL_TEMPERATURE', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(channel);
+    await attachAndRefresh(temperatureService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'TEMPERATURE', 19.5);
     expect(getChar(service, 'CurrentTemperature').value).toBe(19.5);
@@ -310,7 +319,7 @@ describe('TemperatureAccessory', () => {
   it('ignores non-numeric values', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(channel);
+    await attachAndRefresh(temperatureService.build(ctx), channel);
     const service = accessory.services[0]!;
     // No update happened, so internal default of 20 is still returned by onGet.
     env.fireEvent('HmIP.000123:1', 'TEMPERATURE', 'NaN');
@@ -319,10 +328,10 @@ describe('TemperatureAccessory', () => {
 });
 
 describe('HumidityAccessory', () => {
-  it('rounds and clamps humidity values', () => {
+  it('rounds and clamps humidity values', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'HumidityAccessory' });
-    humidityService.build(ctx).attach(channel);
+    await attachAndRefresh(humidityService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'HUMIDITY', 55.4);
     expect(getChar(service, 'CurrentRelativeHumidity').value).toBe(55);
@@ -336,7 +345,7 @@ describe('LeakAccessory', () => {
   it('STATE → LeakDetected', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LeakAccessory' });
-    leakService.build(ctx).attach(channel);
+    await attachAndRefresh(leakService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'STATE', true);
     expect(getChar(service, 'LeakDetected').value).toBe(1);
@@ -350,7 +359,7 @@ describe('SmokeAccessory edge', () => {
   it('reset path', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SmokeAccessory' });
-    smokeService.build(ctx).attach(channel);
+    await attachAndRefresh(smokeService.build(ctx), channel);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'STATE', true);
     env.fireEvent('HmIP.000123:1', 'STATE', false);
@@ -361,10 +370,10 @@ describe('SmokeAccessory edge', () => {
 describe('WeatherStationAccessory', () => {
   const wchannel: CcuChannel = { address: 'HmIP.000WTH:1', name: 'Garden', index: 1, type: 'WEATHER_TRANSMIT' };
 
-  it('exposes Temperature / Humidity / LightSensor / LeakSensor sub-services', () => {
+  it('exposes Temperature / Humidity / LightSensor / LeakSensor sub-services', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: wchannel.address, service: 'WeatherStationAccessory' });
-    weatherStationService.build(ctx).attach(wchannel);
+    await attachAndRefresh(weatherStationService.build(ctx), wchannel);
     const subtypes = accessory.services.map((s) => s.subtype);
     expect(subtypes).toContain('weather-temp');
     expect(subtypes).toContain('weather-hum');
@@ -372,10 +381,10 @@ describe('WeatherStationAccessory', () => {
     expect(subtypes).toContain('weather-rain');
   });
 
-  it('TEMPERATURE / HUMIDITY / ILLUMINATION / RAINING events update the right sub-services', () => {
+  it('TEMPERATURE / HUMIDITY / ILLUMINATION / RAINING events update the right sub-services', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: wchannel.address, service: 'WeatherStationAccessory' });
-    weatherStationService.build(ctx).attach(wchannel);
+    await attachAndRefresh(weatherStationService.build(ctx), wchannel);
     const tempSvc  = accessory.services.find((s) => s.subtype === 'weather-temp')!;
     const humSvc   = accessory.services.find((s) => s.subtype === 'weather-hum')!;
     const lightSvc = accessory.services.find((s) => s.subtype === 'weather-light')!;
@@ -399,7 +408,7 @@ describe('WeatherStationAccessory', () => {
   it('clamps illumination to HAP range and ignores junk temperature', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: wchannel.address, service: 'WeatherStationAccessory' });
-    weatherStationService.build(ctx).attach(wchannel);
+    await attachAndRefresh(weatherStationService.build(ctx), wchannel);
     const lightSvc = accessory.services.find((s) => s.subtype === 'weather-light')!;
     const tempSvc  = accessory.services.find((s) => s.subtype === 'weather-temp')!;
 
@@ -423,7 +432,7 @@ describe('GarageDoorAccessory', () => {
     try {
       const env = makeEnv();
       const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: gchannel.address, service: 'GarageDoorAccessory' });
-      garageDoorService.build(ctx).attach(gchannel);
+      await attachAndRefresh(garageDoorService.build(ctx), gchannel);
       const service = accessory.services[0]!;
       await getChar(service, 'TargetDoorState').onSetHandler!(0); // OPEN
       expect(env.setValueMock).toHaveBeenCalledWith(gchannel.address, 'DOOR_COMMAND', 1);
@@ -445,7 +454,7 @@ describe('GarageDoorAccessory', () => {
         kind: 'channel', id: gchannel.address, service: 'GarageDoorAccessory',
         settings: { travelSeconds: 5 },
       });
-      garageDoorService.build(ctx).attach(gchannel);
+      await attachAndRefresh(garageDoorService.build(ctx), gchannel);
       const service = accessory.services[0]!;
       await getChar(service, 'TargetDoorState').onSetHandler!(1); // CLOSE
       expect(env.setValueMock).toHaveBeenCalledWith(gchannel.address, 'DOOR_COMMAND', 3);
@@ -458,10 +467,10 @@ describe('GarageDoorAccessory', () => {
     }
   });
 
-  it('maps CCU DOOR_STATE values: 0=closed, 1=open, 2=ventilation, 3=ignored', () => {
+  it('maps CCU DOOR_STATE values: 0=closed, 1=open, 2=ventilation, 3=ignored', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: gchannel.address, service: 'GarageDoorAccessory' });
-    garageDoorService.build(ctx).attach(gchannel);
+    await attachAndRefresh(garageDoorService.build(ctx), gchannel);
     const service = accessory.services[0]!;
 
     env.fireEvent(gchannel.address, 'DOOR_STATE', 0);
@@ -478,10 +487,10 @@ describe('GarageDoorAccessory', () => {
 describe('Battery mixin', () => {
   const bchannel: CcuChannel = { address: 'HmIP.000BAT:2', name: 'Sensor', index: 2, type: 'TEMPERATURE_SENSOR' };
 
-  it('temperature accessory exposes a Battery service driven by LOW_BAT on the device :0 channel', () => {
+  it('temperature accessory exposes a Battery service driven by LOW_BAT on the device :0 channel', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: bchannel.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(bchannel);
+    await attachAndRefresh(temperatureService.build(ctx), bchannel);
     const battery = accessory.services.find((s) => s.subtype === 'battery');
     expect(battery).toBeDefined();
     env.fireEvent('HmIP.000BAT:0', 'LOW_BAT', true);
@@ -490,10 +499,10 @@ describe('Battery mixin', () => {
     expect(getChar(battery!, 'StatusLowBattery').value).toBe(0);
   });
 
-  it('also accepts the legacy LOWBAT spelling', () => {
+  it('also accepts the legacy LOWBAT spelling', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: bchannel.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(bchannel);
+    await attachAndRefresh(temperatureService.build(ctx), bchannel);
     const battery = accessory.services.find((s) => s.subtype === 'battery')!;
     env.fireEvent('HmIP.000BAT:0', 'LOWBAT', true);
     expect(getChar(battery, 'StatusLowBattery').value).toBe(1);
@@ -502,16 +511,16 @@ describe('Battery mixin', () => {
   it('StatusLowBattery onGet returns LOW after a LOW_BAT=true event', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: bchannel.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(bchannel);
+    await attachAndRefresh(temperatureService.build(ctx), bchannel);
     const battery = accessory.services.find((s) => s.subtype === 'battery')!;
     env.fireEvent('HmIP.000BAT:0', 'LOW_BAT', true);
     expect(await getChar(battery, 'StatusLowBattery').onGetHandler!()).toBe(1);
   });
 
-  it('OPERATING_VOLTAGE maps to a 0..100 % BatteryLevel and ignores junk', () => {
+  it('OPERATING_VOLTAGE maps to a 0..100 % BatteryLevel and ignores junk', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: bchannel.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(bchannel);
+    await attachAndRefresh(temperatureService.build(ctx), bchannel);
     const battery = accessory.services.find((s) => s.subtype === 'battery')!;
     env.fireEvent('HmIP.000BAT:0', 'OPERATING_VOLTAGE', 3.2);
     expect(getChar(battery, 'BatteryLevel').value).toBe(100);
@@ -523,11 +532,11 @@ describe('Battery mixin', () => {
     expect(getChar(battery, 'BatteryLevel').value).toBe(50); // unchanged
   });
 
-  it('addresses without a colon suffix derive :0 from the bare address', () => {
+  it('addresses without a colon suffix derive :0 from the bare address', async () => {
     const env = makeEnv();
     const flat: CcuChannel = { address: 'HmIP.flat', name: 'F', index: 0, type: 'TEMPERATURE_SENSOR' };
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: flat.address, service: 'TemperatureAccessory' });
-    temperatureService.build(ctx).attach(flat);
+    await attachAndRefresh(temperatureService.build(ctx), flat);
     const battery = accessory.services.find((s) => s.subtype === 'battery')!;
     env.fireEvent('HmIP.flat:0', 'LOW_BAT', true);
     expect(getChar(battery, 'StatusLowBattery').value).toBe(1);
@@ -537,7 +546,7 @@ describe('Battery mixin', () => {
 describe('WeatherStation initial pull', () => {
   it('seeds temperature / humidity / illumination from getValue at attach time', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_addr, dp) => {
+    env.values((_addr, dp) => {
       if (dp === 'TEMPERATURE')  return 18.2;
       if (dp === 'HUMIDITY')     return 71;
       if (dp === 'ILLUMINATION') return 4500;
@@ -546,7 +555,7 @@ describe('WeatherStation initial pull', () => {
     });
     const wchannel: CcuChannel = { address: 'HmIP.000WTH:1', name: 'Garden', index: 1, type: 'WEATHER_TRANSMIT' };
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: wchannel.address, service: 'WeatherStationAccessory' });
-    weatherStationService.build(ctx).attach(wchannel);
+    await attachAndRefresh(weatherStationService.build(ctx), wchannel);
     // Let the initial-pull promise chain settle.
     await Promise.resolve(); await Promise.resolve();
     const tempSvc  = accessory.services.find((s) => s.subtype === 'weather-temp')!;
@@ -566,10 +575,10 @@ const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
 describe('GarageDoor initial pull', () => {
   it('seeds CurrentDoorState from DOOR_STATE at attach time (open)', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_addr, dp) => dp === 'DOOR_STATE' ? 1 : undefined);
+    env.values((_addr, dp) => dp === 'DOOR_STATE' ? 1 : undefined);
     const gchannel: CcuChannel = { address: 'HmIP.000GRG:1', name: 'Garage', index: 1, type: 'DOOR_OPENER' };
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: gchannel.address, service: 'GarageDoorAccessory' });
-    garageDoorService.build(ctx).attach(gchannel);
+    await attachAndRefresh(garageDoorService.build(ctx), gchannel);
     await flush();
     const service = accessory.services[0]!;
     expect(getChar(service, 'CurrentDoorState').value).toBe(0); // OPEN
@@ -578,10 +587,10 @@ describe('GarageDoor initial pull', () => {
 
   it('seeds CurrentDoorState from DOOR_STATE at attach time (closed)', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_addr, dp) => dp === 'DOOR_STATE' ? 0 : undefined);
+    env.values((_addr, dp) => dp === 'DOOR_STATE' ? 0 : undefined);
     const gchannel: CcuChannel = { address: 'HmIP.000GRG:1', name: 'Garage', index: 1, type: 'DOOR_OPENER' };
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: gchannel.address, service: 'GarageDoorAccessory' });
-    garageDoorService.build(ctx).attach(gchannel);
+    await attachAndRefresh(garageDoorService.build(ctx), gchannel);
     await flush();
     const service = accessory.services[0]!;
     expect(getChar(service, 'CurrentDoorState').value).toBe(1); // CLOSED
@@ -590,10 +599,10 @@ describe('GarageDoor initial pull', () => {
 
   it('initial pull ignores garbage DOOR_STATE', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_addr, dp) => dp === 'DOOR_STATE' ? 'nope' : undefined);
+    env.values((_addr, dp) => dp === 'DOOR_STATE' ? 'nope' : undefined);
     const gchannel: CcuChannel = { address: 'HmIP.000GRG:1', name: 'Garage', index: 1, type: 'DOOR_OPENER' };
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: gchannel.address, service: 'GarageDoorAccessory' });
-    garageDoorService.build(ctx).attach(gchannel);
+    await attachAndRefresh(garageDoorService.build(ctx), gchannel);
     await flush();
     const service = accessory.services[0]!;
     // Stays at the constructor default; updateCharacteristic was never called.
@@ -604,7 +613,7 @@ describe('GarageDoor initial pull', () => {
 describe('WeatherStation initial pull (microtask-flushed)', () => {
   it('seeds Temperature / Humidity / Light / Rain', async () => {
     const env = makeEnv();
-    env.getValueMock.mockImplementation(async (_addr, dp) => {
+    env.values((_addr, dp) => {
       if (dp === 'TEMPERATURE')  return 19.1;
       if (dp === 'HUMIDITY')     return 55;
       if (dp === 'ILLUMINATION') return 800;
@@ -613,7 +622,7 @@ describe('WeatherStation initial pull (microtask-flushed)', () => {
     });
     const wchannel: CcuChannel = { address: 'HmIP.000WTH:1', name: 'Garden', index: 1, type: 'WEATHER_TRANSMIT' };
     const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: wchannel.address, service: 'WeatherStationAccessory' });
-    weatherStationService.build(ctx).attach(wchannel);
+    await attachAndRefresh(weatherStationService.build(ctx), wchannel);
     await flush();
     const tempSvc  = accessory.services.find((s) => s.subtype === 'weather-temp')!;
     const humSvc   = accessory.services.find((s) => s.subtype === 'weather-hum')!;
@@ -623,3 +632,9 @@ describe('WeatherStation initial pull (microtask-flushed)', () => {
     expect(getChar(lightSvc, 'CurrentAmbientLightLevel').value).toBe(800);
   });
 });
+
+/** attach() and then refresh(): start values come from getParamset now. */
+async function attachAndRefresh(h: { attach(c: CcuChannel): void; refresh?(): void | Promise<void> }, c: CcuChannel): Promise<void> {
+  h.attach(c);
+  await h.refresh?.();
+}

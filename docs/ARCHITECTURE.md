@@ -148,6 +148,27 @@ then import + push it into `registry.ts`. There is no auto-discovery
 (no `fs.readdir`-based loader) — a static list keeps the dependency
 graph analysable.
 
+## Values: start values, unknown values, limits
+
+- **Start values** come from `getParamset(channel, 'VALUES')` — never
+  `getValue`, which triggers radio traffic on BidCos (plan 3.1,
+  finding 11). Handlers declare what they depend on with
+  `need(address, datapoint, apply)`; `refresh()` (at start and after
+  every re-subscribe) reads each channel once and applies the values that
+  are present. ACTION datapoints (`PRESS_*`) are never applied.
+- **Unknown values** (device without power → Failure; HmIP device
+  without cached values → `{}`) stay unknown: `onGet` throws
+  `SERVICE_COMMUNICATION_FAILURE` ("No Response"). Exception: smoke
+  detectors report "no smoke" plus StatusFault (decision D12).
+- **Writes** are typed by the paramset description: FLOAT as explicit
+  double, INTEGER / ENUM rounded, BOOL / ACTION boolean.
+- **Limits**: `update()` clamps to the characteristic's
+  `minValue` / `maxValue` / `validValues` and drops invalid values.
+- **StatusFault** (where the HAP service supports it): device `UNREACH`,
+  interface not connected, or service-specific faults.
+- **HmIP pairing** (`ccu/pairing.ts`): state from `*_TRANSMITTER`,
+  commands to the first `*_VIRTUAL_RECEIVER` of the group.
+
 ## Per-accessory handler contract
 
 A handler is built once per accessory and lives for the process
@@ -155,9 +176,9 @@ lifetime. It must:
 
 - Call `getOrAddService(...)` to set up its HAP service and
   characteristics.
-- Use `registerListener(channelAddress, datapoint, callback)` for any
-  CCU datapoint it cares about. The base class tracks the disposer so
-  `dispose()` can remove the listener cleanly.
+- Use `need(address, datapoint, apply)` for state datapoints (event +
+  start value) and `registerListener(...)` for pure events. The base
+  class tracks the disposers so `dispose()` removes them cleanly.
 - Implement `onGet` handlers that return a **cached** value
   immediately — never block on the network. Push fresh values to
   HomeKit through `service.updateCharacteristic(...)` in the

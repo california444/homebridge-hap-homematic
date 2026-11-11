@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Weather station accessory: combines TemperatureSensor +
  * HumiditySensor + LightSensor + LeakSensor (rain) on a single
@@ -97,10 +99,10 @@ class WeatherStationHandler extends AccessoryBase implements ChannelService {
     // immediately rather than waiting for the next CCU push. Same
     // apply* functions as above — tested via fireEvent.
     /* v8 ignore start */
-    this.ccu.getValue(channel.address, 'TEMPERATURE').then(applyTemp).catch(() => undefined);
-    this.ccu.getValue(channel.address, 'HUMIDITY').then(applyHum).catch(() => undefined);
-    this.ccu.getValue(channel.address, 'ILLUMINATION').then(applyLux).catch(() => undefined);
-    this.ccu.getValue(channel.address, 'RAINING').then(applyRain).catch(() => undefined);
+    this.readOnRefresh(channel.address, 'TEMPERATURE', applyTemp);
+    this.readOnRefresh(channel.address, 'HUMIDITY', applyHum);
+    this.readOnRefresh(channel.address, 'ILLUMINATION', applyLux);
+    this.readOnRefresh(channel.address, 'RAINING', applyRain);
     /* v8 ignore stop */
 
     this.attachBattery(channel.address);

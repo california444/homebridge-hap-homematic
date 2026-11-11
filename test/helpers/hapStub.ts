@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Hand-rolled stubs for the homebridge api / hap surface — small enough
  * that tests don't pull in the whole hap-nodejs runtime (and its
@@ -177,6 +179,9 @@ export function makeHapStub() {
       GarageDoorOpener: makeServiceClass('GarageDoorOpener'),
       StatelessProgrammableSwitch: makeServiceClass('StatelessProgrammableSwitch'),
       Battery: makeServiceClass('Battery'),
+      Doorbell: makeServiceClass('Doorbell'),
+      IrrigationSystem: makeServiceClass('IrrigationSystem'),
+      Valve: makeServiceClass('Valve'),
     } as unknown as typeof Service,
     Characteristic: {
       On: makeCharacteristicClass('On'),
@@ -205,7 +210,24 @@ export function makeHapStub() {
       StatusLowBattery: makeCharacteristicClass('StatusLowBattery', { BATTERY_LEVEL_NORMAL: 0, BATTERY_LEVEL_LOW: 1 }),
       BatteryLevel: makeCharacteristicClass('BatteryLevel'),
       ChargingState: makeCharacteristicClass('ChargingState', { NOT_CHARGING: 0, CHARGING: 1, NOT_CHARGEABLE: 2 }),
+      StatusFault: makeCharacteristicClass('StatusFault', { NO_FAULT: 0, GENERAL_FAULT: 1 }),
+      StatusTampered: makeCharacteristicClass('StatusTampered', { NOT_TAMPERED: 0, TAMPERED: 1 }),
+      Active: makeCharacteristicClass('Active', { INACTIVE: 0, ACTIVE: 1 }),
+      InUse: makeCharacteristicClass('InUse', { NOT_IN_USE: 0, IN_USE: 1 }),
+      ValveType: makeCharacteristicClass('ValveType', { GENERIC_VALVE: 0, IRRIGATION: 1, SHOWER_HEAD: 2, WATER_FAUCET: 3 }),
+      SetDuration: makeCharacteristicClass('SetDuration'),
+      RemainingDuration: makeCharacteristicClass('RemainingDuration'),
+      IsConfigured: makeCharacteristicClass('IsConfigured', { NOT_CONFIGURED: 0, CONFIGURED: 1 }),
+      ServiceLabelIndex: makeCharacteristicClass('ServiceLabelIndex'),
+      ProgramMode: makeCharacteristicClass('ProgramMode', { NO_PROGRAM_SCHEDULED: 0, PROGRAM_SCHEDULED: 1, PROGRAM_SCHEDULED_MANUAL_MODE_: 2 }),
     } as unknown as typeof Characteristic,
+    /** Like hap-nodejs: HapStatusError(status) with `hapStatus`. */
+    HapStatusError: class HapStatusError extends Error {
+      constructor(public readonly hapStatus: number) {
+        super(`HAP status ${hapStatus}`);
+      }
+    },
+    HAPStatus: { SERVICE_COMMUNICATION_FAILURE: -70402 },
   };
 }
 

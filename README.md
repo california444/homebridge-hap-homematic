@@ -33,12 +33,14 @@ support are removed (see NOTICE). Discovery runs over XML-RPC
 `listDevices` with a cache, mappings live in
 `<storagePath>/homebridge-hap-homematic/devices.json`
 ([docs/DEVICES.md](docs/DEVICES.md)), TLS and Basic auth on the XML-RPC
-ports are supported. Planned:
+ports are supported. Each interface is supervised with ping/PONG and
+re-subscribed after a CCU restart. Start values come from `getParamset`;
+new services: irrigation (IrrigationSystem + Valves), doorbell
+(HmIP-DSD-PCB); HmIP smoke detector via `SMOKE_DETECTOR_ALARM_STATUS`;
+HmIP transmitter/receiver channel pairing. Planned:
 
-- per-interface reconnect after a CCU restart (ping/PONG watchdog)
-- new services: irrigation (IrrigationSystem + Valves), doorbell
-  (HmIP-DSD-PCB); HmIP smoke detector via `SMOKE_DETECTOR_ALARM_STATUS`;
-  HmIP transmitter/receiver channel pairing
+- UI: whole-device mappings, service options, callback IP picker
+- release pipeline, installation and acceptance on the real system
 
 ## Requirements
 

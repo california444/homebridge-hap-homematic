@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -114,21 +116,21 @@ class RgbLightHandler extends AccessoryBase implements ChannelService {
 
     // Initial pulls — same apply paths as the listeners above.
     /* v8 ignore start */
-    this.ccu.getValue(this.channelAddress, 'LEVEL').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'LEVEL', (raw) => {
       const pct = normalizeLevelToPercent(raw);
       if (pct === undefined) return;
       this.cachedLevel = pct;
       service.updateCharacteristic(this.Characteristic.On, pct > 0);
       service.updateCharacteristic(this.Characteristic.Brightness, pct);
-    }).catch(() => undefined);
+    });
 
-    this.ccu.getValue(this.channelAddress, 'COLOR').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'COLOR', (raw) => {
       const num = Number(raw);
       if (!Number.isFinite(num)) return;
       this.applyColorFromCcu(num);
       service.updateCharacteristic(this.Characteristic.Hue, this.cachedHue);
       service.updateCharacteristic(this.Characteristic.Saturation, this.cachedSat);
-    }).catch(() => undefined);
+    });
     /* v8 ignore stop */
   }
 

@@ -24,6 +24,7 @@ import {
 } from 'homebridge';
 import { CcuClient } from './ccu/CcuClient.js';
 import { Discovery } from './ccu/Discovery.js';
+import { pairChannel } from './ccu/pairing.js';
 import { findServiceByKey, SERVICE_DEFINITIONS } from './services/registry.js';
 import type { ChannelService, ServiceContext } from './services/types.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
@@ -87,6 +88,8 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
 
     this.ccu = new CcuClient({ config: this.resolved, log: this.log.child('ccu') });
     this.discovery = new Discovery({ ccu: this.ccu, storage: this.storage, log: this.log.child('discovery') });
+    const discovery = this.discovery;
+    this.ccu.setDescriber((address) => discovery.getParamsetDescription(address));
     this.ccu.on('subscribed', (id: CcuInterfaceId, reason: string) => {
       if (reason !== 'initial') {
         this.refreshQueue = this.refreshQueue
@@ -156,6 +159,9 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       }
     }
 
+    // Start values via getParamset, after every handler declared its needs.
+    await this.refreshHandlers(() => true);
+
     // Drop cached accessories that are no longer mapped.
     const toRemove: PlatformAccessory[] = [];
     for (const [uuid, acc] of this.cachedAccessories) {
@@ -211,7 +217,8 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       throw new Error(`Unknown service: ${mapping.service}`);
     }
 
-    const channel = this.resolveChannel(mapping, def.channelTypes);
+    const device = this.discovery.findDevice(mapping.interface, mapping.device);
+    const channel = pairChannel(device, this.resolveChannel(mapping, def.channelTypes));
     // mapping.name is the user-chosen HomeKit display name. Falls back to
     // the placeholder name from discovery (type + address).
     const displayName = mapping.name || channel.name;
@@ -233,9 +240,14 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       log: this.log.child(`svc:${def.key}:${channel.address}`),
       Service: this.Service,
       Characteristic: this.Characteristic,
+      hap: {
+        HapStatusError: this.api.hap.HapStatusError as unknown as new (status: number) => Error,
+        HAPStatus: this.api.hap.HAPStatus as unknown as { SERVICE_COMMUNICATION_FAILURE: number },
+      },
+      persist: () => this.api.updatePlatformAccessories([accessory]),
     };
     const handler = def.build(ctx);
-    handler.attach(channel);
+    handler.attach(channel, device);
     this.managed.set(uuid, { accessory, handler, interface: mapping.interface });
   }
 
@@ -262,18 +274,21 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
         this.log.warn('Mapped device %s:%s is no longer on the CCU', id, m.device);
       }
     }
-    let n = 0;
-    for (const m of this.managed.values()) {
-      if (m.interface === id && m.handler.refresh) {
-        try {
-          m.handler.refresh();
-          n++;
-        } catch (err) {
-          this.log.warn('refresh failed: %s', (err as Error).message);
-        }
-      }
-    }
+    const n = await this.refreshHandlers((m) => m.interface === id);
     this.log.debug('%s: refreshed %d accessories after re-subscribe', id, n);
+  }
+
+  /** Re-read start values (getParamset) of the selected handlers. */
+  private async refreshHandlers(select: (m: ManagedAccessory) => boolean): Promise<number> {
+    const chosen = [...this.managed.values()].filter((m) => select(m) && m.handler.refresh);
+    await Promise.all(chosen.map(async (m) => {
+      try {
+        await m.handler.refresh!();
+      } catch (err) {
+        this.log.warn('refresh failed: %s', (err as Error).message);
+      }
+    }));
+    return chosen.length;
   }
 
   /**

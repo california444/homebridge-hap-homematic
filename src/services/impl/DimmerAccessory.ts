@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -31,7 +33,8 @@ class DimmerHandler extends AccessoryBase implements ChannelService {
         await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
       }));
 
-    this.registerListener(this.channelAddress, 'LEVEL', (raw) => {
+    const stateAddress = channel.stateAddress ?? channel.address; // HmIP: DIMMER_TRANSMITTER
+    this.registerListener(stateAddress, 'LEVEL', (raw) => {
       const pct = normalizeLevelToPercent(raw);
       if (pct === undefined) {
         return;
@@ -41,7 +44,7 @@ class DimmerHandler extends AccessoryBase implements ChannelService {
       service.updateCharacteristic(this.Characteristic.Brightness, pct);
     });
 
-    this.ccu.getValue(this.channelAddress, 'LEVEL').then((raw) => {
+    this.readOnRefresh(stateAddress, 'LEVEL', (raw) => {
       const pct = normalizeLevelToPercent(raw);
       if (pct === undefined) {
         return;
@@ -49,7 +52,7 @@ class DimmerHandler extends AccessoryBase implements ChannelService {
       this.cachedLevel = pct;
       service.updateCharacteristic(this.Characteristic.On, pct > 0);
       service.updateCharacteristic(this.Characteristic.Brightness, pct);
-    }).catch(() => undefined);
+    });
   }
 }
 

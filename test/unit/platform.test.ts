@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import { makeHapStub, makeLog } from '../helpers/hapStub.js';
 import type { CcuInterfaceId } from '../../src/types.js';
 import type { RpcDeviceDescription } from '../../src/ccu/RpcClient.js';
+import { switchService } from '../../src/services/impl/SwitchAccessory.js';
 import { APIEvent, type API, type PlatformAccessory } from 'homebridge';
 
 class FakeApi extends EventEmitter {
@@ -57,6 +58,7 @@ class FakeApi extends EventEmitter {
 
 let tmpDir = '';
 beforeEach(async () => {
+  vi.restoreAllMocks();
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hb-platform-'));
 });
 
@@ -393,5 +395,50 @@ describe('HomematicPlatform', () => {
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
     expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('not reachable yet'))).toBe(true);
+  });
+
+  it('phase 5 wiring: HmIP pairing, device to attach, start values via refresh, persist, describer', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '4': { service: 'SwitchAccessory' } } } } });
+    const api = makeApi();
+    const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+    const list: RpcDeviceDescription[] = [
+      { ADDRESS: PS, TYPE: 'HMIP-PS', PARENT: '', FIRMWARE: '2.24.8' },
+      { ADDRESS: `${PS}:2`, TYPE: 'SWITCH_TRANSMITTER', PARENT: PS, INDEX: 2 },
+      { ADDRESS: `${PS}:3`, TYPE: 'SWITCH_VIRTUAL_RECEIVER', PARENT: PS, INDEX: 3 },
+      { ADDRESS: `${PS}:4`, TYPE: 'SWITCH_VIRTUAL_RECEIVER', PARENT: PS, INDEX: 4 },
+    ];
+    const { ccu, paramsets } = stubCcu(platform, { 'HmIP-RF': list });
+    paramsets.mockResolvedValue({ STATE: { TYPE: 'BOOL' } });
+    const attach = vi.fn();
+    const refresh = vi.fn(async () => undefined);
+    let ctxSeen: { persist?: () => void; hap?: unknown } = {};
+    vi.spyOn(switchService, 'build').mockImplementation((ctx) => {
+      ctxSeen = ctx;
+      return { attach, refresh };
+    });
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    const [channel, device] = attach.mock.calls[0]!;
+    expect(channel).toMatchObject({ address: `${PS}:3`, stateAddress: `${PS}:2`, type: 'SWITCH_VIRTUAL_RECEIVER' });
+    expect(device.address).toBe(PS);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(ctxSeen.hap).toBeDefined();
+    ctxSeen.persist!();
+    expect(api.updated.length).toBeGreaterThan(0);
+    expect(ccu.describe(`${PS}:3`, 'STATE')).toEqual({ TYPE: 'BOOL' });
+  });
+
+  it('a failing refresh is logged and does not stop the start', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory' } } } } });
+    const log = makeLog();
+    const api = makeApi();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
+    stubCcu(platform, { 'HmIP-RF': PS_LIST });
+    vi.spyOn(switchService, 'build').mockImplementation(() => ({
+      attach: vi.fn(), refresh: async () => { throw new Error('refresh boom'); },
+    }));
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[1]).includes('refresh boom'))).toBe(true);
   });
 });

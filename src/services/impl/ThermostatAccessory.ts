@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -88,21 +90,21 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
 
     // Pull initial state so the accessory reflects current values
     // immediately rather than waiting for the next push event.
-    this.ccu.getValue(this.channelAddress, 'ACTUAL_TEMPERATURE').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'ACTUAL_TEMPERATURE', (raw) => {
       const v = toFiniteNumber(raw);
       if (v !== undefined) {
         this.currentTemp = v;
         service.updateCharacteristic(this.Characteristic.CurrentTemperature, v);
       }
-    }).catch(() => undefined);
-    this.ccu.getValue(this.channelAddress, 'SET_TEMPERATURE').then((raw) => {
+    });
+    this.readOnRefresh(this.channelAddress, 'SET_TEMPERATURE', (raw) => {
       const v = toFiniteNumber(raw);
       if (v !== undefined) {
         this.targetTemp = v;
         service.updateCharacteristic(this.Characteristic.TargetTemperature, v);
         service.updateCharacteristic(this.Characteristic.CurrentHeatingCoolingState, this.deriveCurrentMode());
       }
-    }).catch(() => undefined);
+    });
 
     // Thermostats are battery-powered (HmIP-eTRV-*, HmIP-WTH-*, etc.).
     // Surface LOW_BAT as a HomeKit BatteryService.

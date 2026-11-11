@@ -13,7 +13,14 @@
 import type { Characteristic, PlatformAccessory, Service } from 'homebridge';
 import type { CcuClient } from '../ccu/CcuClient.js';
 import type { PrefixedLogger } from '../util/logger.js';
-import type { AccessoryContext, CcuChannel } from '../types.js';
+import type { AccessoryContext, CcuChannel, CcuDevice } from '../types.js';
+
+/** The parts of `api.hap` the handlers need for HAP status errors. */
+export interface HapStatus {
+  HapStatusError: new (status: number) => Error;
+  /** SERVICE_COMMUNICATION_FAILURE = -70402 */
+  HAPStatus: { SERVICE_COMMUNICATION_FAILURE: number };
+}
 
 export interface ServiceContext {
   accessory: PlatformAccessory<AccessoryContext>;
@@ -21,6 +28,10 @@ export interface ServiceContext {
   log: PrefixedLogger;
   Service: typeof Service;
   Characteristic: typeof Characteristic;
+  /** For "No Response" on unknown values; tests may omit it. */
+  hap?: HapStatus;
+  /** Persist `accessory.context` (Homebridge accessory cache). */
+  persist?: () => void;
 }
 
 export interface ServiceVariant {
@@ -49,8 +60,12 @@ export interface ServiceDefinition {
 
 /** Implemented by per-accessory channel handlers. */
 export interface ChannelService {
-  /** Wire HAP services + characteristics. Called once after construction. */
-  attach(channel: CcuChannel): void;
+  /**
+   * Wire HAP services + characteristics. Called once after construction.
+   * `device` is the discovered device (all channels), if known; whole-
+   * device services such as irrigation use it.
+   */
+  attach(channel: CcuChannel, device?: CcuDevice): void;
   /** Disconnect listeners; called when the accessory is removed. */
   dispose?(): void;
   /**
@@ -58,5 +73,5 @@ export interface ChannelService {
    * of the channel's interface (CCU restart, stale subscription), because
    * events during the outage are lost (plan 7.3, 4.2).
    */
-  refresh?(): void;
+  refresh?(): void | Promise<void>;
 }

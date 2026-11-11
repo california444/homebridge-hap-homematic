@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -32,14 +34,10 @@ class TemperatureHandler extends AccessoryBase implements ChannelService {
     this.registerListener(channel.address, 'TEMPERATURE', handle);
     this.registerListener(channel.address, 'ACTUAL_TEMPERATURE', handle);
 
-    // Try ACTUAL_TEMPERATURE first (climate-control devices), fall back to
-    // TEMPERATURE (weather sensors). Best-effort: if both fail, the
-    // accessory just stays at its default until the first push event.
-    this.ccu.getValue(channel.address, 'ACTUAL_TEMPERATURE')
-      .then(handle)
-      .catch(() => this.ccu.getValue(channel.address, 'TEMPERATURE')
-        .then(handle)
-        .catch(() => undefined));
+    // Start value from getParamset: climate-control devices report
+    // ACTUAL_TEMPERATURE, weather sensors TEMPERATURE; whichever exists.
+    this.readOnRefresh(channel.address, 'TEMPERATURE', handle);
+    this.readOnRefresh(channel.address, 'ACTUAL_TEMPERATURE', handle);
 
     this.attachBattery(channel.address);
   }

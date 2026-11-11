@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
@@ -58,7 +60,7 @@ class LockHandler extends AccessoryBase implements ChannelService {
       }
     });
 
-    this.ccu.getValue(this.channelAddress, 'STATE').then((raw) => {
+    this.readOnRefresh(this.channelAddress, 'STATE', (raw) => {
       const unlocked = Boolean(raw);
       this.current = unlocked
         ? this.Characteristic.LockCurrentState.UNSECURED
@@ -68,7 +70,7 @@ class LockHandler extends AccessoryBase implements ChannelService {
         : this.Characteristic.LockTargetState.SECURED;
       service.updateCharacteristic(this.Characteristic.LockCurrentState, this.current);
       service.updateCharacteristic(this.Characteristic.LockTargetState, this.target);
-    }).catch(() => undefined);
+    });
   }
 }
 

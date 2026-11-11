@@ -1,6 +1,7 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 // Taken from upstream commit 2011787 (2026-11-11); see NOTICE.
+// Changed for plan 8.4 / 8.6: transmitter state, invert, unknown values.
 import type { Service } from 'homebridge';
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
@@ -11,6 +12,8 @@ const BLIND_CHANNEL_TYPES = [
   'BLIND',
   'BLIND_VIRTUAL_RECEIVER',
   'SHUTTER_VIRTUAL_RECEIVER',
+  'BLIND_TRANSMITTER',
+  'SHUTTER_TRANSMITTER',
 ];
 
 const STATE_STOPPED = 2;
@@ -37,10 +40,16 @@ type Direction = -1 | 0 | 1;
  *   (target reached, CCU reports stable, or the level stops changing); a
  *   move stopped midway then sets target = current. Moves started outside
  *   HomeKit (wall button) have no known target, so target follows current.
- * HomeKit 100 equals CCU LEVEL 1.0 (open); no inversion is applied.
+ * HomeKit 100 equals CCU LEVEL 1.0 (open). Option `invert` (awnings)
+ * maps HomeKit p to LEVEL 1 - p/100; directions flip accordingly.
+ * HmIP: LEVEL and ACTIVITY_STATE are read from the *_TRANSMITTER
+ * (`stateAddress`), commands go to the first receiver (`address`).
+ * Unknown position (device unreachable at start) → "No Response".
  */
 class BlindHandler extends AccessoryBase implements ChannelService {
   private channelAddress = '';
+  private invert = false;
+  private known = false;
   private current = 0;
   private target = 0;
   private commanded = false;
@@ -53,31 +62,49 @@ class BlindHandler extends AccessoryBase implements ChannelService {
 
   attach(channel: CcuChannel): void {
     this.channelAddress = channel.address;
+    this.invert = this.accessory.context.settings?.invert === true;
+    const stateAddress = channel.stateAddress ?? channel.address;
     const service = this.getOrAddService(this.Service.WindowCovering, channel.name);
     this.service = service;
+    const dir = (d: Direction): Direction => (this.invert ? (-d as Direction) : d);
 
     service.getCharacteristic(this.Characteristic.CurrentPosition)
-      .onGet(this.wrapGet<number>(() => this.current));
+      .onGet(this.wrapGet<number>(() => (this.known ? this.current : this.unknown())));
 
     service.getCharacteristic(this.Characteristic.TargetPosition)
-      .onGet(this.wrapGet<number>(() => this.target))
+      .onGet(this.wrapGet<number>(() => (this.known ? this.target : this.unknown())))
       .onSet(this.wrapSet<number>(async (value) => {
         const pct = normalizeLevelToPercent(value) ?? 0;
         this.onCommand(pct);
-        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
+        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(this.invert ? 100 - pct : pct));
       }));
 
     service.getCharacteristic(this.Characteristic.PositionState)
       .onGet(this.wrapGet<number>(() => this.positionState()));
 
-    this.registerListener(this.channelAddress, 'LEVEL', (raw) => {
-      const pct = normalizeLevelToPercent(raw);
+    // Start value and events; the start value just sets the position.
+    this.registerListener(stateAddress, 'LEVEL', (raw) => {
+      const pct = this.toHomeKit(raw);
       if (pct !== undefined) {
+        this.known = true;
         this.onLevel(pct);
       }
     });
+    this.readOnRefresh(stateAddress, 'LEVEL', (raw) => {
+      const pct = this.toHomeKit(raw);
+      if (pct === undefined) return;
+      const first = !this.known;
+      this.known = true;
+      if (first || !this.moving) {
+        this.current = pct;
+        this.target = pct;
+        service.updateCharacteristic(this.Characteristic.CurrentPosition, pct);
+        service.updateCharacteristic(this.Characteristic.TargetPosition, pct);
+        service.updateCharacteristic(this.Characteristic.PositionState, STATE_STOPPED);
+      }
+    });
 
-    this.registerListener(this.channelAddress, 'WORKING', (raw) => {
+    this.registerListener(stateAddress, 'WORKING', (raw) => {
       if (raw) {
         this.onExplicitMoving(this.direction);
       } else {
@@ -86,12 +113,12 @@ class BlindHandler extends AccessoryBase implements ChannelService {
     });
 
     // HmIP: 0 unknown, 1 up, 2 down, 3 stable.
-    this.registerListener(this.channelAddress, 'ACTIVITY_STATE', (raw) => {
+    this.registerListener(stateAddress, 'ACTIVITY_STATE', (raw) => {
       const n = Number(raw);
       if (n === 1) {
-        this.onExplicitMoving(1);
+        this.onExplicitMoving(dir(1));
       } else if (n === 2) {
-        this.onExplicitMoving(-1);
+        this.onExplicitMoving(dir(-1));
       } else if (n === 3) {
         this.explicitStable = true;
         this.finish();
@@ -99,29 +126,21 @@ class BlindHandler extends AccessoryBase implements ChannelService {
     });
 
     // Classic: 0 none, 1 up, 2 down, 3 undefined.
-    this.registerListener(this.channelAddress, 'DIRECTION', (raw) => {
+    this.registerListener(stateAddress, 'DIRECTION', (raw) => {
       const n = Number(raw);
       if (n === 1 || n === 2) {
-        this.direction = n === 1 ? 1 : -1;
+        this.direction = dir(n === 1 ? 1 : -1);
         if (this.moving) {
           this.pushState();
         }
       }
     });
+  }
 
-    // Pull initial position. Without this, the accessory shows 0 (closed)
-    // until the next CCU push event arrives, which for blinds may be
-    // hours away. Best-effort; we ignore errors so a missing-channel
-    // doesn't poison startup.
-    this.ccu.getValue(this.channelAddress, 'LEVEL').then((raw) => {
-      const pct = normalizeLevelToPercent(raw);
-      if (pct === undefined) return;
-      this.current = pct;
-      this.target = pct;
-      service.updateCharacteristic(this.Characteristic.CurrentPosition, pct);
-      service.updateCharacteristic(this.Characteristic.TargetPosition, pct);
-      service.updateCharacteristic(this.Characteristic.PositionState, STATE_STOPPED);
-    }).catch(() => undefined);
+  /** CCU LEVEL → HomeKit position, honouring `invert`. */
+  private toHomeKit(raw: unknown): number | undefined {
+    const pct = normalizeLevelToPercent(raw);
+    return pct === undefined ? undefined : this.invert ? 100 - pct : pct;
   }
 
   override dispose(): void {
