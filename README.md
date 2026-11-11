@@ -26,13 +26,12 @@ taken from it.
 
 ## Status
 
-Work in progress. The fork currently matches upstream v1.2.12 apart from
-the renaming and the window-covering movement reporting (see NOTICE).
-Planned:
+Work in progress. Based on upstream v1.2.12; JSON-RPC, system
+variables, programs, rooms, the hap-homematic import and multi-bridge
+support are removed, discovery runs over XML-RPC `listDevices` (see
+NOTICE). Planned:
 
-- remove JSON-RPC, system variables, programs, rooms, the hap-homematic
-  import and multi-bridge support
-- device discovery via XML-RPC `listDevices`, mappings in
+- discovery and paramset caches, mappings in
   `<storagePath>/…/devices.json`
 - per-interface reconnect after a CCU restart (ping/PONG watchdog)
 - new services: irrigation (IrrigationSystem + Valves), doorbell

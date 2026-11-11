@@ -86,11 +86,6 @@
   .hgui-pill.warning  { color: var(--bs-warning);  border-color: var(--bs-warning); }
   .hgui-pill.muted    { border-style: dashed; color: var(--bs-secondary-color); }
 
-  /* Bridge tile: actions live on their own row below the body so they
-     don't squeeze the name into a narrow column when the tile is at
-     the smaller end of the auto-fill range. */
-  .hgui-bridge-buttons { display: flex; gap: 0.35rem; flex-wrap: wrap; padding-top: 0.35rem; border-top: 1px solid var(--bs-border-color-translucent); }
-
   /* Empty / pager -------------------------------------------------- */
   .hgui-empty { color: var(--bs-secondary-color); font-style: italic; padding: 2rem; text-align: center; border: 1px dashed var(--bs-border-color-translucent); border-radius: 8px; margin-top: 1rem; }
   .hgui-pager { display: flex; gap: 0.25rem; align-items: center; justify-content: center; padding: 0.75rem 0; flex-wrap: wrap; }
@@ -114,10 +109,6 @@
     <select id="hgui-view-select" class="form-select form-select-sm" style="min-width: 200px; max-width: 220px">
       <option value="dashboard">📊 Dashboard</option>
       <option value="channels">💡 Channels</option>
-      <option value="variables">🔢 Variables</option>
-      <option value="programs">▶️ Programs</option>
-      <option value="bridges">🌉 Bridges</option>
-      <option value="import">📥 Import</option>
       <option value="settings">⚙️ Settings</option>
     </select>
     <button id="hgui-discover-btn" class="btn btn-primary btn-sm">Discover</button>

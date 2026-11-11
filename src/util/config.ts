@@ -27,10 +27,9 @@ export class ConfigError extends Error {
 const DEFAULT_INTERFACES: InterfaceToggles = {
   bidcosRf: true,
   hmIpRf: true,
-  bidcosWired: false,
-  virtualDevices: true,
-  cuxd: false,
 };
+
+const VALID_INTERFACE_IDS: ReadonlySet<CcuInterfaceId> = new Set(['BidCos-RF', 'HmIP-RF']);
 
 const DEFAULT_EVENT_SERVER: EventServerConfig = {
   host: '0.0.0.0',
@@ -60,20 +59,11 @@ export function resolveConfig(raw: RawConfig): ResolvedConfig {
   }
 
   const interfaces: InterfaceToggles = {
-    ...DEFAULT_INTERFACES,
-    ...(raw.interfaces ?? {}),
+    bidcosRf: Boolean(raw.interfaces?.bidcosRf ?? DEFAULT_INTERFACES.bidcosRf),
+    hmIpRf: Boolean(raw.interfaces?.hmIpRf ?? DEFAULT_INTERFACES.hmIpRf),
   };
 
   const useTls = Boolean(raw.useTls ?? false);
-
-  const ccuAuth = {
-    enabled: Boolean(raw.ccuAuth?.enabled ?? false),
-    username: typeof raw.ccuAuth?.username === 'string' ? raw.ccuAuth.username : undefined,
-    password: typeof raw.ccuAuth?.password === 'string' ? raw.ccuAuth.password : undefined,
-  };
-  if (ccuAuth.enabled && (!ccuAuth.username || !ccuAuth.password)) {
-    throw new ConfigError('ccuAuth.enabled is true but username/password are missing');
-  }
 
   const evHost = raw.eventServer?.host ?? DEFAULT_EVENT_SERVER.host;
   if (typeof evHost !== 'string' || evHost.length === 0) {
@@ -89,16 +79,11 @@ export function resolveConfig(raw: RawConfig): ResolvedConfig {
   }
 
   const channels = Array.isArray(raw.channels) ? raw.channels.filter(Boolean) : [];
-  const variables = Array.isArray(raw.variables) ? raw.variables.filter(Boolean) : [];
-  const programs = Array.isArray(raw.programs) ? raw.programs.filter(Boolean) : [];
 
-  const validInterfaceIds: ReadonlySet<CcuInterfaceId> = new Set([
-    'BidCos-RF', 'HmIP-RF', 'BidCos-Wired', 'VirtualDevices', 'CUxD',
-  ]);
   const interfacePorts: Partial<Record<CcuInterfaceId, number>> = {};
   if (raw.interfacePorts && typeof raw.interfacePorts === 'object') {
     for (const [k, v] of Object.entries(raw.interfacePorts)) {
-      if (!validInterfaceIds.has(k as CcuInterfaceId)) {
+      if (!VALID_INTERFACE_IDS.has(k as CcuInterfaceId)) {
         throw new ConfigError(`interfacePorts: unknown interface "${k}"`);
       }
       const port = Number(v);
@@ -115,10 +100,7 @@ export function resolveConfig(raw: RawConfig): ResolvedConfig {
     interfaces,
     interfacePorts,
     useTls,
-    ccuAuth,
     eventServer: { host: evHost, port: evPort, watchdogSeconds: evWatchdog },
     channels,
-    variables,
-    programs,
   };
 }

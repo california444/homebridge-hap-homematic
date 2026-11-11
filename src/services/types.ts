@@ -1,6 +1,8 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Shared types for service classes. A service is a small adapter that
- * binds one CCU channel/variable/program to one or more HAP services.
+ * binds one CCU channel to one or more HAP services.
  *
  * Services are registered in `registry.ts` and selected by:
  *   1. The user's `subtype` in config.channels[i].subtype, if any.
@@ -11,7 +13,7 @@
 import type { Characteristic, PlatformAccessory, Service } from 'homebridge';
 import type { CcuClient } from '../ccu/CcuClient.js';
 import type { PrefixedLogger } from '../util/logger.js';
-import type { AccessoryContext, CcuChannel, CcuVariable } from '../types.js';
+import type { AccessoryContext, CcuChannel } from '../types.js';
 
 export interface ServiceContext {
   accessory: PlatformAccessory<AccessoryContext>;
@@ -45,35 +47,10 @@ export interface ServiceDefinition {
   build(ctx: ServiceContext): ChannelService;
 }
 
-export interface VariableServiceDefinition {
-  key: string;
-  description: string;
-  /** True if this service handles boolean variables, false for numeric, undefined for any. */
-  forValueType?: number;
-  priority: number;
-  build(ctx: ServiceContext): VariableService;
-}
-
-export interface ProgramServiceDefinition {
-  key: string;
-  description: string;
-  build(ctx: ServiceContext): ProgramService;
-}
-
 /** Implemented by per-accessory channel handlers. */
 export interface ChannelService {
   /** Wire HAP services + characteristics. Called once after construction. */
   attach(channel: CcuChannel): void;
   /** Disconnect listeners; called when the accessory is removed. */
-  dispose?(): void;
-}
-
-export interface VariableService {
-  attach(variable: CcuVariable): void;
-  dispose?(): void;
-}
-
-export interface ProgramService {
-  attach(programName: string): void;
   dispose?(): void;
 }

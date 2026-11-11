@@ -1,69 +1,122 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
- * Covers start/stop/list-* and watchdog branches of CcuClient by stubbing
- * the JSON-RPC client and the event server so we never open sockets.
+ * Covers start/stop, XML-RPC discovery, routing and port selection of
+ * CcuClient by stubbing RpcClient and the event server so we never open
+ * sockets.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CcuClient } from '../../src/ccu/CcuClient.js';
+import { CcuClient, toDevices } from '../../src/ccu/CcuClient.js';
+import { RpcClient, type RpcDeviceDescription } from '../../src/ccu/RpcClient.js';
 import { resolveConfig } from '../../src/util/config.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
+import type { RawConfig } from '../../src/types.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
-function makeCcu(): CcuClient {
+function makeCcu(overrides: Partial<RawConfig> = {}): CcuClient {
   const config = resolveConfig({
     platform: 'HapHomematic',
     ccuIp: '127.0.0.1',
     eventServer: { host: '127.0.0.1', port: 9876, watchdogSeconds: 60 },
-    interfaces: { bidcosRf: false, hmIpRf: false, bidcosWired: false, virtualDevices: false, cuxd: false },
+    interfaces: { bidcosRf: false, hmIpRf: false },
+    ...overrides,
   });
   return new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'lc') });
 }
 
-describe('CcuClient list*()', () => {
-  it('listDevices delegates to the JSON-RPC client', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([
-      { address: 'HmIP.000123', name: 'X', type: 'T', interface: 'HmIP-RF', channels: [] },
-    ]);
-    const devices = await ccu.listDevices();
-    expect(devices).toHaveLength(1);
+const BIDCOS_LIST: RpcDeviceDescription[] = [
+  { ADDRESS: 'OEQ0000001', TYPE: 'HM-LC-Sw4-DR-2', PARENT: '', FIRMWARE: '2.4', CHILDREN: ['OEQ0000001:0', 'OEQ0000001:1'] },
+  { ADDRESS: 'OEQ0000001:1', TYPE: 'SWITCH', PARENT: 'OEQ0000001', PARENT_TYPE: 'HM-LC-Sw4-DR-2', INDEX: 1 },
+  { ADDRESS: 'OEQ0000001:0', TYPE: 'MAINTENANCE', PARENT: 'OEQ0000001', PARENT_TYPE: 'HM-LC-Sw4-DR-2', INDEX: 0 },
+];
+const HMIP_LIST: RpcDeviceDescription[] = [
+  { ADDRESS: '0008DBE9971A0F', TYPE: 'HmIP-FROLL', PARENT: '' },
+  { ADDRESS: '0008DBE9971A0F:4', TYPE: 'SHUTTER_VIRTUAL_RECEIVER', PARENT: '0008DBE9971A0F' },
+];
+
+describe('toDevices', () => {
+  it('groups channels under their device, sorted by index, with placeholder names', () => {
+    const [d] = toDevices(BIDCOS_LIST, 'BidCos-RF');
+    expect(d).toMatchObject({
+      address: 'OEQ0000001', type: 'HM-LC-Sw4-DR-2', name: 'HM-LC-Sw4-DR-2 OEQ0000001',
+      interface: 'BidCos-RF', firmware: '2.4',
+    });
+    expect(d!.channels.map((c) => c.index)).toEqual([0, 1]);
+    expect(d!.channels[1]).toEqual({
+      address: 'OEQ0000001:1', index: 1, type: 'SWITCH', name: 'HM-LC-Sw4-DR-2 OEQ0000001:1',
+    });
   });
 
-  it('listVariables delegates to the JSON-RPC client', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listVariables').mockResolvedValue([
-      { id: '1', name: 'V', valuetype: 2, subtype: 0, value: true },
-    ]);
-    expect((await ccu.listVariables())).toHaveLength(1);
+  it('derives the index from the address when INDEX is missing', () => {
+    const [d] = toDevices(HMIP_LIST, 'HmIP-RF');
+    expect(d!.channels[0]!.index).toBe(4);
+    expect(d).not.toHaveProperty('firmware');
   });
 
-  it('listPrograms delegates to the JSON-RPC client', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listPrograms').mockResolvedValue([{ id: '1', name: 'P' }]);
-    expect((await ccu.listPrograms())).toHaveLength(1);
-  });
-
-  it('listRooms delegates to the JSON-RPC client', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listRooms').mockResolvedValue([
-      { id: '1', name: 'Living', channelIds: ['10', '11'] },
-    ]);
-    const rooms = await ccu.listRooms();
-    expect(rooms[0]?.name).toBe('Living');
-    expect(rooms[0]?.channelIds).toEqual(['10', '11']);
+  it('skips junk entries and orphan channels', () => {
+    const out = toDevices([
+      null as unknown as RpcDeviceDescription,
+      { ADDRESS: '', TYPE: 'X' },
+      { ADDRESS: 'ORPHAN:1', TYPE: 'SWITCH', PARENT: 'ORPHAN' },
+      { ADDRESS: 'NOTYPE' } as RpcDeviceDescription,
+      { ADDRESS: 'NOTYPE:x', PARENT: 'NOTYPE' } as RpcDeviceDescription,
+    ], 'BidCos-RF');
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ address: 'NOTYPE', type: '', name: 'Device NOTYPE' });
+    expect(out[0]!.channels[0]).toMatchObject({ index: 0, type: '', name: ' NOTYPE:x' });
   });
 });
 
-describe('CcuClient start/stop with no enabled interfaces', () => {
+describe('CcuClient.listDevices (XML-RPC)', () => {
+  it('queries every enabled interface and merges the result', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
+    vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (this: RpcClient) {
+      return Promise.resolve(this.interfaceId === 'BidCos-RF' ? BIDCOS_LIST : HMIP_LIST);
+    });
+    const devices = await ccu.listDevices();
+    expect(devices.map((d) => `${d.interface}:${d.address}`)).toEqual([
+      'BidCos-RF:OEQ0000001', 'HmIP-RF:0008DBE9971A0F',
+    ]);
+  });
+
+  it('skips a failing interface but rejects when all fail', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
+    const spy = vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (this: RpcClient) {
+      return this.interfaceId === 'HmIP-RF' ? Promise.reject(new Error('down')) : Promise.resolve(BIDCOS_LIST);
+    });
+    expect(await ccu.listDevices()).toHaveLength(1);
+    spy.mockRejectedValue(new Error('down'));
+    await expect(ccu.listDevices()).rejects.toThrow('down');
+  });
+
+  it('returns [] when no interface is enabled', async () => {
+    expect(await makeCcu().listDevices()).toEqual([]);
+  });
+});
+
+describe('CcuClient.probeInterfaces', () => {
+  it('reports system.listMethods per interface', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true }, interfacePorts: { 'HmIP-RF': 42010 } });
+    vi.spyOn(RpcClient.prototype, 'listMethods').mockImplementation(function (this: RpcClient) {
+      return this.interfaceId === 'BidCos-RF' ? Promise.resolve(['a', 'b']) : Promise.reject(new Error('ECONNREFUSED'));
+    });
+    expect(await ccu.probeInterfaces()).toEqual([
+      { interfaceId: 'BidCos-RF', port: 2001, ok: true, methods: 2 },
+      { interfaceId: 'HmIP-RF', port: 42010, ok: false, error: 'ECONNREFUSED' },
+    ]);
+  });
+});
+
+describe('CcuClient start/stop', () => {
   it('start() succeeds without RPC subscriptions and stop() cleans up', async () => {
     const ccu = makeCcu();
     const start = vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
@@ -75,6 +128,62 @@ describe('CcuClient start/stop with no enabled interfaces', () => {
     expect(stop).toHaveBeenCalled();
     await ccu.stop(); // idempotent
   });
+
+  it('subscribes every enabled interface, with port overrides, and unsubscribes on stop', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true }, interfacePorts: { 'BidCos-RF': 42001 } });
+    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
+    vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
+    vi.spyOn(RpcClient.prototype, 'listDevices').mockResolvedValue([]);
+    const sub = vi.spyOn(RpcClient.prototype, 'subscribe').mockResolvedValue(undefined);
+    const unsub = vi.spyOn(RpcClient.prototype, 'unsubscribe').mockResolvedValue(undefined);
+    const infos: string[] = [];
+    vi.spyOn(ccu['log'] as unknown as { info: (...args: unknown[]) => void }, 'info')
+      .mockImplementation((fmt: string, ...args: unknown[]) => {
+        infos.push([fmt, ...args].map(String).join(' '));
+      });
+    await ccu.start();
+    expect(sub).toHaveBeenCalledTimes(2);
+    expect(infos.join('\n')).toMatch(/Using XML-RPC port %d for %s 42001 BidCos-RF/);
+    expect(infos.join('\n')).toMatch(/Using XML-RPC port %d for %s 2010 HmIP-RF/);
+    await ccu.stop();
+    expect(unsub).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps going when discovery and subscribe fail, with a firewall hint', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false }, useTls: true });
+    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
+    vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
+    vi.spyOn(RpcClient.prototype, 'listDevices').mockRejectedValue(new Error('down'));
+    vi.spyOn(RpcClient.prototype, 'subscribe').mockRejectedValue(new Error('init failed: connect ECONNREFUSED'));
+    const warns: string[] = [];
+    vi.spyOn(ccu['log'] as unknown as { warn: (...args: unknown[]) => void }, 'warn')
+      .mockImplementation((fmt: string, ...args: unknown[]) => {
+        warns.push([fmt, ...args].map(String).join(' '));
+      });
+    await expect(ccu.start()).resolves.toBeUndefined();
+    const all = warns.join('\n');
+    expect(all).toMatch(/TLS is not supported/);
+    expect(all).toMatch(/listDevices failed/);
+    expect(all).toMatch(/Could not subscribe/);
+    expect(all).toMatch(/Hint:/);
+    await ccu.stop();
+  });
+
+  it('does not print the firewall hint for other subscribe errors', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false } });
+    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
+    vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
+    vi.spyOn(RpcClient.prototype, 'listDevices').mockResolvedValue([]);
+    vi.spyOn(RpcClient.prototype, 'subscribe').mockRejectedValue(new Error('init failed: fault'));
+    const warns: string[] = [];
+    vi.spyOn(ccu['log'] as unknown as { warn: (...args: unknown[]) => void }, 'warn')
+      .mockImplementation((fmt: string, ...args: unknown[]) => {
+        warns.push([fmt, ...args].map(String).join(' '));
+      });
+    await ccu.start();
+    expect(warns.join('\n')).not.toMatch(/Hint:/);
+    await ccu.stop();
+  });
 });
 
 describe('CcuClient resolveCallbackHost', () => {
@@ -85,195 +194,70 @@ describe('CcuClient resolveCallbackHost', () => {
   });
 
   it('falls back when host is 0.0.0.0', () => {
-    const config = resolveConfig({
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      eventServer: { host: '0.0.0.0', port: 9876 },
-    });
-    const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'lc') });
+    const ccu = makeCcu({ eventServer: { host: '0.0.0.0', port: 9876 } });
     const host = (ccu as unknown as { resolveCallbackHost(): string }).resolveCallbackHost();
     expect(typeof host).toBe('string');
     expect(host.length).toBeGreaterThan(0);
   });
 });
 
-describe('CcuClient setValue/getValue fallback to JSON-RPC', () => {
-  it('falls back to api.setInterfaceValue when no XML-RPC client is subscribed', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('HmIP-RF.000123:1', 'STATE', true);
-    expect(spy).toHaveBeenCalledWith('HmIP-RF', '000123:1', 'STATE', 'boolean', true);
-  });
-
-  it('falls back to api.getInterfaceValue when no XML-RPC client is subscribed', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'getInterfaceValue').mockResolvedValue('22.4');
-    const v = await ccu.getValue('HmIP-RF.000123:1', 'ACTUAL_TEMPERATURE');
-    expect(v).toBe('22.4');
-    expect(spy).toHaveBeenCalledWith('HmIP-RF', '000123:1', 'ACTUAL_TEMPERATURE');
-  });
-
-  it('routes integer values through JSON-RPC with type=integer', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('HmIP-RF.000:1', 'KEY', 42);
-    expect(spy).toHaveBeenCalledWith('HmIP-RF', '000:1', 'KEY', 'integer', 42);
-  });
-
-  it('routes float values through JSON-RPC with type=double', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('HmIP-RF.000:1', 'LEVEL', 0.75);
-    expect(spy).toHaveBeenCalledWith('HmIP-RF', '000:1', 'LEVEL', 'double', 0.75);
-  });
-
-  it('routes string values through JSON-RPC with type=string', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('HmIP-RF.000:1', 'TEXT', 'hello');
-    expect(spy).toHaveBeenCalledWith('HmIP-RF', '000:1', 'TEXT', 'string', 'hello');
-  });
-
-  it('strips interface prefix correctly when address has no dot', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('BARE', 'STATE', true);
-    expect(spy).toHaveBeenCalled();
-  });
-});
-
-describe('CcuClient runtime interface discovery', () => {
-  it('queries listInterfaces during start() and remembers ports', async () => {
-    const ccu = makeCcu();
-    const spy = vi.spyOn(ccu.api, 'listInterfaces').mockResolvedValue([
-      { name: 'BidCos-RF', port: 32001 },
-      { name: 'HmIP-RF', port: 32010 },
-      { name: 'VirtualDevices', port: 39292 },
-    ]);
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([]);
-    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-    await ccu.start();
-    expect(spy).toHaveBeenCalled();
-    // discoveredPorts is private — verify via Map size on the instance
-    const m = (ccu as unknown as { discoveredPorts: Map<string, number> }).discoveredPorts;
-    expect(m.get('BidCos-RF')).toBe(32001);
-    expect(m.get('HmIP-RF')).toBe(32010);
-    expect(m.get('VirtualDevices')).toBe(39292);
-    await ccu.stop();
-  });
-
-  it('start() does not crash when listInterfaces throws', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listInterfaces').mockRejectedValue(new Error('ccu-down'));
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([]);
-    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-    await expect(ccu.start()).resolves.toBeUndefined();
-    await ccu.stop();
-  });
-
-  it('tolerates lower-case / aliased interface names from the CCU', async () => {
-    // Regression: v0.1.5 referenced `mapInterfaceName` without defining it,
-    // so any non-empty listInterfaces response triggered a ReferenceError
-    // that was swallowed by the try/catch and discarded all discovered
-    // ports. Verify the mapping accepts the canonical and aliased forms.
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listInterfaces').mockResolvedValue([
-      { name: 'BIDCOS-RF', port: 32001 },
-      { name: 'hmip-rf', port: 32010 },
-      { name: 'CCU-Jack', port: 12345 }, // unknown — should be skipped, not crash
-    ]);
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([]);
-    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-    await ccu.start();
-    const m = (ccu as unknown as { discoveredPorts: Map<string, number> }).discoveredPorts;
-    expect(m.get('BidCos-RF')).toBe(32001);
-    expect(m.get('HmIP-RF')).toBe(32010);
-    expect(m.size).toBe(2); // CCU-Jack rejected
-    await ccu.stop();
-  });
-});
-
-describe('CcuClient interfacePorts override', () => {
-  it('uses the user-supplied port even when listInterfaces returns a different one', async () => {
-    // RaspberryMatic firewall regression: listInterfaces returns +30000
-    // ports but the CCU firewall blocks them; user pins legacy 2001 in
-    // config. The override must beat the discovered value.
-    const config = resolveConfig({
-      platform: 'HapHomematic',
-      ccuIp: '127.0.0.1',
-      eventServer: { host: '127.0.0.1', port: 9876 },
-      interfaces: { bidcosRf: true, hmIpRf: false, bidcosWired: false, virtualDevices: false, cuxd: false },
-      interfacePorts: { 'BidCos-RF': 2001 },
+describe('CcuClient address → interface routing', () => {
+  it('routes by the discovered device tree', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
+    vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (this: RpcClient) {
+      // Deliberately swapped: the map, not the address shape, decides.
+      return Promise.resolve(this.interfaceId === 'BidCos-RF'
+        ? [{ ADDRESS: '0008DBE9971A0F', TYPE: 'X', PARENT: '' }, { ADDRESS: '0008DBE9971A0F:4', TYPE: 'Y', PARENT: '0008DBE9971A0F' }]
+        : []);
     });
-    const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'lc-override') });
-    vi.spyOn(ccu.api, 'listInterfaces').mockResolvedValue([{ name: 'BidCos-RF', port: 32001 }]);
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([]);
+    await ccu.listDevices();
+    const calls: string[] = [];
+    vi.spyOn(RpcClient.prototype, 'setValue').mockImplementation(function (this: RpcClient) {
+      calls.push(this.interfaceId);
+      return Promise.resolve();
+    });
+    await ccu.setValue('0008DBE9971A0F:4', 'LEVEL', 0.5);
+    await ccu.setValue('0008DBE9971A0F:9', 'LEVEL', 0.5); // device-level fallback
+    expect(calls).toEqual(['BidCos-RF', 'BidCos-RF']);
+  });
+
+  it('falls back to the serial shape before discovery', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
+    const calls: string[] = [];
+    vi.spyOn(RpcClient.prototype, 'getValue').mockImplementation(function (this: RpcClient) {
+      calls.push(this.interfaceId);
+      return Promise.resolve(1);
+    });
+    await ccu.getValue('000A0000000B02:1', 'STATE');
+    await ccu.getValue('OEQ0000001:1', 'STATE');
+    await ccu.getValue('OEQ0000001', 'STATE');
+    expect(calls).toEqual(['HmIP-RF', 'BidCos-RF', 'BidCos-RF']);
+  });
+
+  it('rejects addresses on a disabled interface', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false } });
+    await expect(ccu.setValue('000A0000000B02:1', 'STATE', true)).rejects.toThrow(/HmIP-RF is not enabled/);
+  });
+});
+
+describe('CcuClient watchdog', () => {
+  it('re-subscribes every interface after the watchdog window and logs failures', async () => {
+    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
     vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
     vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
-
-    // Spy on RpcClient ctor by monkey-patching the rpcClients map after start.
-    // We can't easily intercept the ctor, so instead we'll observe via the
-    // probe failure: subscribe() will fail (no listener on either port), but
-    // we can pull the port from the warn log.
+    vi.spyOn(RpcClient.prototype, 'listDevices').mockResolvedValue([]);
+    vi.spyOn(RpcClient.prototype, 'unsubscribe').mockResolvedValue(undefined);
+    const sub = vi.spyOn(RpcClient.prototype, 'subscribe').mockResolvedValue(undefined);
+    await ccu.start();
+    expect(sub).toHaveBeenCalledTimes(2);
+    sub.mockRejectedValue(new Error('gone'));
     const warns: string[] = [];
     vi.spyOn(ccu['log'] as unknown as { warn: (...args: unknown[]) => void }, 'warn')
-      .mockImplementation((fmt: string, ...args: unknown[]) => {
-        warns.push([fmt, ...args].map(String).join(' '));
-      });
-    const infos: string[] = [];
-    vi.spyOn(ccu['log'] as unknown as { info: (...args: unknown[]) => void }, 'info')
-      .mockImplementation((fmt: string, ...args: unknown[]) => {
-        infos.push([fmt, ...args].map(String).join(' '));
-      });
-
-    await ccu.start();
-    // The startup log should announce port 2001 (override), not 32001 (discovery).
-    // PrefixedLogger emits printf-style fmt + args separately; the test
-    // captures them as `'fmt arg1 arg2 …'`, so the regex matches that
-    // joined form rather than a substituted message.
-    expect(infos.join('\n')).toMatch(/Using XML-RPC port .* for .* \(.*\) 2001 BidCos-RF config override/);
-    await ccu.stop();
-  });
-});
-
-describe('CcuClient address → interface lookup', () => {
-  it('routes addresses based on the discovered device tree, not the address prefix', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listInterfaces').mockResolvedValue([]);
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([
-      {
-        address: '0008DBE9971A0F',
-        name: 'Blind 1',
-        type: 'HmIP-FROLL',
-        interface: 'HmIP-RF',
-        channels: [
-          { address: '0008DBE9971A0F:1', index: 1, type: 'BLIND_VIRTUAL_RECEIVER', name: 'ch1' },
-          { address: '0008DBE9971A0F:4', index: 4, type: 'BLIND_VIRTUAL_RECEIVER', name: 'ch4' },
-        ],
-      },
-    ]);
-    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-    await ccu.start();
-
-    const set = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    // Even though the address has no `HmIP-RF.` prefix, the lookup map
-    // (built from listDevices) sends it to HmIP-RF, not to BidCos-RF.
-    await ccu.setValue('0008DBE9971A0F:4', 'LEVEL', 0.5);
-    expect(set).toHaveBeenCalledWith('HmIP-RF', '0008DBE9971A0F:4', 'LEVEL', 'double', 0.5);
-
-    await ccu.stop();
-  });
-
-  it('falls back to prefix heuristic for addresses missing from the device tree', async () => {
-    const ccu = makeCcu();
-    vi.spyOn(ccu.api, 'listInterfaces').mockResolvedValue([]);
-    vi.spyOn(ccu.api, 'listDevices').mockResolvedValue([]);
-    vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
-    await ccu.start();
-
-    const set = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('HmIP-RF.000:1', 'STATE', true);
-    expect(set).toHaveBeenCalledWith('HmIP-RF', '000:1', 'STATE', 'boolean', true);
+      .mockImplementation((...args: unknown[]) => { warns.push(args.map(String).join(' ')); });
+    await vi.advanceTimersByTimeAsync(95_000); // > 60 s silence, checked every 30 s → fires at 90 s
+    expect(sub).toHaveBeenCalledTimes(4);
+    expect(warns.join('\n')).toMatch(/No events for/);
+    expect(warns.join('\n')).toMatch(/Re-subscribe failed for %s: %s HmIP-RF gone/);
     await ccu.stop();
   });
 });

@@ -10,12 +10,11 @@ import {
   makeHapStub,
   makeLog,
 } from '../helpers/hapStub.js';
-import type { AccessoryContext, CcuChannel, CcuVariable } from '../../src/types.js';
+import type { AccessoryContext, CcuChannel } from '../../src/types.js';
 import type { ServiceContext } from '../../src/services/types.js';
 
 import { programmableSwitchService } from '../../src/services/impl/ProgrammableSwitchAccessory.js';
 import { doorOpenerService } from '../../src/services/impl/DoorOpenerAccessory.js';
-import { variableNumericSensorService } from '../../src/services/impl/VariableNumericSensorAccessory.js';
 
 interface TestEnv {
   ccu: CcuClient;
@@ -167,63 +166,5 @@ describe('DoorOpenerAccessory', () => {
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;
     await expect(target.onSetHandler!(0)).resolves.toBeUndefined();
     handler.dispose?.();
-  });
-});
-
-describe('VariableNumericSensorAccessory', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
-
-  it('renders a temperature variable as TemperatureSensor', () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'Outdoor', service: 'VariableNumericSensorAccessory', subtype: 'temperature' });
-    const variable: CcuVariable = { id: '1', name: 'Outdoor', valuetype: 4, subtype: 0, unit: '°C', value: 18.5 };
-    variableNumericSensorService.build(ctx).attach(variable);
-    expect(accessory.services[0]!.UUID).toBe('srv:TemperatureSensor');
-  });
-
-  it('infers humidity from unit', () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'Hum', service: 'VariableNumericSensorAccessory' });
-    const variable: CcuVariable = { id: '2', name: 'Hum', valuetype: 4, subtype: 0, unit: '%', value: 50 };
-    variableNumericSensorService.build(ctx).attach(variable);
-    expect(accessory.services[0]!.UUID).toBe('srv:HumiditySensor');
-  });
-
-  it('infers light from unit', () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'Lux', service: 'VariableNumericSensorAccessory' });
-    const variable: CcuVariable = { id: '3', name: 'Lux', valuetype: 4, subtype: 0, unit: 'lx', value: 200 };
-    variableNumericSensorService.build(ctx).attach(variable);
-    expect(accessory.services[0]!.UUID).toBe('srv:LightSensor');
-  });
-
-  it('polls the CCU and pushes new values', async () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'Outdoor', service: 'VariableNumericSensorAccessory', subtype: 'temperature' });
-    const handler = variableNumericSensorService.build(ctx);
-    handler.attach({ id: '1', name: 'Outdoor', valuetype: 4, subtype: 0, unit: '°C', value: 18 });
-    vi.spyOn(env.ccu.api, 'getVariable').mockResolvedValue('22.5');
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.runOnlyPendingTimersAsync();
-    handler.dispose?.();
-  });
-
-  it('swallows poll errors', async () => {
-    const env = makeEnv();
-    const { ctx } = buildCtx(env, { kind: 'variable', id: 'Outdoor', service: 'VariableNumericSensorAccessory' });
-    const handler = variableNumericSensorService.build(ctx);
-    handler.attach({ id: '1', name: 'Outdoor', valuetype: 4, subtype: 0, unit: '°C', value: 18 });
-    vi.spyOn(env.ccu.api, 'getVariable').mockRejectedValue(new Error('boom'));
-    await vi.advanceTimersByTimeAsync(60_000);
-    await vi.runOnlyPendingTimersAsync();
-    handler.dispose?.();
-  });
-
-  it('falls back to temperature for unknown units', () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'X', service: 'VariableNumericSensorAccessory' });
-    variableNumericSensorService.build(ctx).attach({ id: '1', name: 'X', valuetype: 4, subtype: 0, value: 1 });
-    expect(accessory.services[0]!.UUID).toBe('srv:TemperatureSensor');
   });
 });

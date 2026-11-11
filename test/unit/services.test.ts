@@ -11,7 +11,7 @@ import { CcuClient } from '../../src/ccu/CcuClient.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { resolveConfig } from '../../src/util/config.js';
 import { asPlatformAccessory, makeAccessory, makeHapStub, makeLog, type CharacteristicStub, type ServiceStub } from '../helpers/hapStub.js';
-import type { AccessoryContext, CcuChannel, CcuVariable } from '../../src/types.js';
+import type { AccessoryContext, CcuChannel } from '../../src/types.js';
 import type { ServiceContext } from '../../src/services/types.js';
 
 import { switchService } from '../../src/services/impl/SwitchAccessory.js';
@@ -24,8 +24,6 @@ import { smokeService } from '../../src/services/impl/SmokeAccessory.js';
 import { temperatureService } from '../../src/services/impl/TemperatureAccessory.js';
 import { humidityService } from '../../src/services/impl/HumidityAccessory.js';
 import { leakService } from '../../src/services/impl/LeakAccessory.js';
-import { variableSwitchService, variableLightService } from '../../src/services/impl/VariableAccessory.js';
-import { programService } from '../../src/services/impl/ProgramAccessory.js';
 import { weatherStationService } from '../../src/services/impl/WeatherStationAccessory.js';
 import { garageDoorService } from '../../src/services/impl/GarageDoorAccessory.js';
 
@@ -357,51 +355,6 @@ describe('SmokeAccessory edge', () => {
     env.fireEvent('HmIP.000123:1', 'STATE', true);
     env.fireEvent('HmIP.000123:1', 'STATE', false);
     expect(await getChar(service, 'SmokeDetected').onGetHandler!()).toBe(0);
-  });
-});
-
-describe('VariableAccessory', () => {
-  it('Switch variant: get/set push to CcuJsonRpcClient', async () => {
-    const env = makeEnv();
-    const setVar = vi.spyOn(env.ccu.api, 'setVariable').mockResolvedValue(undefined);
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'V1', service: 'VariableSwitchAccessory' });
-    const variable: CcuVariable = { id: '1', name: 'V1', valuetype: 2, subtype: 0, value: false };
-    const handler = variableSwitchService.build(ctx);
-    handler.attach(variable);
-    const service = accessory.services[0]!;
-    await getChar(service, 'On').onSetHandler!(true);
-    expect(setVar).toHaveBeenCalledWith('V1', true);
-    handler.dispose?.();
-  });
-
-  it('Light variant respects min/max', async () => {
-    const env = makeEnv();
-    const setVar = vi.spyOn(env.ccu.api, 'setVariable').mockResolvedValue(undefined);
-    const { ctx, accessory } = buildCtx(env, { kind: 'variable', id: 'V2', service: 'VariableLightAccessory' });
-    const variable: CcuVariable = { id: '2', name: 'V2', valuetype: 4, subtype: 0, minValue: 10, maxValue: 90, value: 30 };
-    const handler = variableLightService.build(ctx);
-    handler.attach(variable);
-    const service = accessory.services[0]!;
-    await getChar(service, 'Brightness').onSetHandler!(200);
-    expect(setVar).toHaveBeenCalledWith('V2', 90);
-    await getChar(service, 'Brightness').onSetHandler!(-50);
-    expect(setVar).toHaveBeenCalledWith('V2', 10);
-    handler.dispose?.();
-  });
-});
-
-describe('ProgramAccessory', () => {
-  it('On=true triggers runProgram, On=false is a no-op', async () => {
-    const env = makeEnv();
-    const runProg = vi.spyOn(env.ccu.api, 'runProgram').mockResolvedValue(undefined);
-    const { ctx, accessory } = buildCtx(env, { kind: 'program', id: 'P1', service: 'ProgramAccessory' });
-    programService.build(ctx).attach('P1');
-    const service = accessory.services[0]!;
-    await getChar(service, 'On').onSetHandler!(true);
-    expect(runProg).toHaveBeenCalledWith('P1');
-    runProg.mockClear();
-    await getChar(service, 'On').onSetHandler!(false);
-    expect(runProg).not.toHaveBeenCalled();
   });
 });
 

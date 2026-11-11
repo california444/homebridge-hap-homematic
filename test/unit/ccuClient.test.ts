@@ -61,28 +61,12 @@ describe('CcuClient registerListener / event dispatch', () => {
     })).not.toThrow();
   });
 
-  it('routes setValue/getValue to interface based on prefix', () => {
+  it('guesses the interface from the serial shape before discovery', () => {
     const ccu = makeCcu();
     const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
-    expect(intfFor('BidCos-RF.0:1')).toBe('BidCos-RF');
-    expect(intfFor('HmIP-RF.0:1')).toBe('HmIP-RF');
-    expect(intfFor('HmIP.0:1')).toBe('HmIP-RF');
-    expect(intfFor('CUX.0:1')).toBe('CUxD');
-    expect(intfFor('BidCos-Wired.0:1')).toBe('BidCos-Wired');
-    expect(intfFor('VirtualDevices.0:1')).toBe('VirtualDevices');
-    expect(intfFor('weird.0:1')).toBe('BidCos-RF');
-  });
-
-  it('falls back to JSON-RPC when no XML-RPC client is subscribed', async () => {
-    const ccu = makeCcu();
-    // setValue with no XML-RPC subscriber → goes through api.setInterfaceValue
-    const setSpy = vi.spyOn(ccu.api, 'setInterfaceValue').mockResolvedValue(undefined);
-    await ccu.setValue('HmIP-RF.0:1', 'STATE', true);
-    expect(setSpy).toHaveBeenCalledWith('HmIP-RF', '0:1', 'STATE', 'boolean', true);
-    // getValue likewise
-    const getSpy = vi.spyOn(ccu.api, 'getInterfaceValue').mockResolvedValue('22.4');
-    expect(await ccu.getValue('HmIP-RF.0:1', 'ACTUAL_TEMPERATURE')).toBe('22.4');
-    expect(getSpy).toHaveBeenCalled();
+    expect(intfFor('00000000000A01:6')).toBe('HmIP-RF');
+    expect(intfFor('ABC0000002:1')).toBe('BidCos-RF');
+    expect(intfFor('weird')).toBe('BidCos-RF');
   });
 
   it('isLive returns false with no subscribed clients', () => {

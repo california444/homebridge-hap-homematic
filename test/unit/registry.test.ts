@@ -1,12 +1,10 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { describe, it, expect } from 'vitest';
 import {
-  findProgramServiceByKey,
   findServiceByKey,
-  findVariableServiceByKey,
-  pickVariableService,
   servicesForChannelType,
   SERVICE_DEFINITIONS,
-  VARIABLE_SERVICE_DEFINITIONS,
 } from '../../src/services/registry.js';
 
 describe('servicesForChannelType', () => {
@@ -28,41 +26,21 @@ describe('servicesForChannelType', () => {
   });
 });
 
-describe('findServiceByKey / findVariableServiceByKey / findProgramServiceByKey', () => {
+describe('findServiceByKey', () => {
   it('finds known services by key', () => {
     expect(findServiceByKey('SwitchAccessory')?.key).toBe('SwitchAccessory');
-    expect(findVariableServiceByKey('VariableSwitchAccessory')?.key).toBe('VariableSwitchAccessory');
-    expect(findProgramServiceByKey('ProgramAccessory')?.key).toBe('ProgramAccessory');
   });
 
-  it('returns undefined for missing keys', () => {
+  it('returns undefined for missing or removed keys', () => {
     expect(findServiceByKey('NopeAccessory')).toBeUndefined();
-    expect(findVariableServiceByKey('NopeAccessory')).toBeUndefined();
-    expect(findProgramServiceByKey('NopeAccessory')).toBeUndefined();
-  });
-});
-
-describe('pickVariableService', () => {
-  it('matches valuetype-specific service first', () => {
-    expect(pickVariableService(2).key).toBe('VariableSwitchAccessory');
-    expect(pickVariableService(4).key).toBe('VariableLightAccessory');
-  });
-
-  it('falls back to a defined service when no specific match', () => {
-    const r = pickVariableService(99);
-    expect(r).toBeDefined();
-    expect(typeof r.key).toBe('string');
+    expect(findServiceByKey('VariableSwitchAccessory')).toBeUndefined();
+    expect(findServiceByKey('ProgramAccessory')).toBeUndefined();
   });
 });
 
 describe('SERVICE_DEFINITIONS shape', () => {
   it('every service has unique key', () => {
     const keys = SERVICE_DEFINITIONS.map((s) => s.key);
-    expect(new Set(keys).size).toBe(keys.length);
-  });
-
-  it('every variable service has unique key', () => {
-    const keys = VARIABLE_SERVICE_DEFINITIONS.map((s) => s.key);
     expect(new Set(keys).size).toBe(keys.length);
   });
 

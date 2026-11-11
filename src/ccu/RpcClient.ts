@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Wraps homematic-xmlrpc into a Promise-based, per-interface client. We
  * keep one RpcClient per CCU interface (BidCos-RF, HmIP-RF, …) — each one
@@ -16,10 +18,19 @@ const PROBE_TIMEOUT_MS = 5_000;
 export const INTERFACE_PORTS: Record<CcuInterfaceId, number> = {
   'BidCos-RF': 2001,
   'HmIP-RF': 2010,
-  'BidCos-Wired': 2000,
-  'VirtualDevices': 9292,
-  'CUxD': 8701,
 };
+
+/** One entry of the XML-RPC `listDevices` answer (device or channel). */
+export interface RpcDeviceDescription {
+  ADDRESS: string;
+  TYPE: string;
+  PARENT?: string;
+  PARENT_TYPE?: string;
+  CHILDREN?: string[];
+  FIRMWARE?: string;
+  INDEX?: number;
+  VERSION?: number;
+}
 
 export interface RpcClientOptions {
   interfaceId: CcuInterfaceId;
@@ -92,7 +103,7 @@ export class RpcClient {
     //
     // homematic-xmlrpc is published as CommonJS; under ESM dynamic import
     // its real `createClient` shows up on `.default`, not directly on the
-    // module namespace. Same gotcha we hit with iconv-lite earlier.
+    // module namespace.
     type CreateClientFn = (opts: { host: string; port: number }) => {
       methodCall(method: string, params: unknown[],
         cb: (err: Error | null, value: unknown) => void): void;
@@ -141,13 +152,18 @@ export class RpcClient {
     // The probe is skipped when a transport was injected for tests, or
     // when the caller explicitly opted out (skipProbe=true) — used by
     // unit tests that mock homematic-xmlrpc via vi.mock.
-    if (!this.transportFactory && !this.skipProbe) {
-      await this.probeReachable();
-    }
+    await this.probeOnce();
     const t = await this.ensureTransport();
     await t.call('init', [this.callbackUrl, this.callbackId]);
     this.subscribed = true;
     this.log.info('Subscribed (%s -> %s)', this.callbackId, this.callbackUrl);
+  }
+
+  /** TCP probe unless a transport was injected or the caller opted out. */
+  private async probeOnce(): Promise<void> {
+    if (!this.transportFactory && !this.skipProbe) {
+      await this.probeReachable();
+    }
   }
 
   private async probeReachable(): Promise<void> {
@@ -185,6 +201,22 @@ export class RpcClient {
     } finally {
       this.subscribed = false;
     }
+  }
+
+  /** XML-RPC `listDevices`: all devices and channels of this interface. */
+  async listDevices(): Promise<RpcDeviceDescription[]> {
+    await this.probeOnce();
+    const t = await this.ensureTransport();
+    const result = await t.call('listDevices', []);
+    return Array.isArray(result) ? (result as RpcDeviceDescription[]) : [];
+  }
+
+  /** XML-RPC `system.listMethods`; throws if the interface is unreachable. */
+  async listMethods(): Promise<string[]> {
+    await this.probeOnce();
+    const t = await this.ensureTransport();
+    const result = await t.call('system.listMethods', []);
+    return Array.isArray(result) ? (result as string[]) : [];
   }
 
   async getValue(channel: string, datapoint: string): Promise<unknown> {

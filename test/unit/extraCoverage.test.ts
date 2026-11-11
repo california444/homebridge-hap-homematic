@@ -96,21 +96,11 @@ describe('CcuClient internals', () => {
     expect(intfFor('NoDot')).toBe('BidCos-RF');
   });
 
-  it('routes hmip-lowercase prefix to HmIP-RF', () => {
+  it('routes 14-hex-digit HmIP serials to HmIP-RF (case-insensitive)', () => {
     const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1' });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
     const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
-    expect(intfFor('hmip.X:1')).toBe('HmIP-RF');
-  });
-});
-
-describe('Platform attach paths', () => {
-  it('attachProgram returns silently when ccu is missing (idempotent guard)', () => {
-    // The platform's attachProgram has an early-return guard for the
-    // (impossible-in-prod) state where ccu is undefined. We don't have
-    // a way to reach it through public APIs, but exercising the type
-    // narrowing keeps the compiler honest.
-    expect(true).toBe(true);
+    expect(intfFor('000a5d8996bbab:1')).toBe('HmIP-RF');
   });
 });
 

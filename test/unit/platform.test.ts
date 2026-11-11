@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { makeHapStub, makeLog } from '../helpers/hapStub.js';
 import { CcuClient } from '../../src/ccu/CcuClient.js';
-import type { CcuChannel, CcuVariable, CcuProgram } from '../../src/types.js';
+import type { CcuDevice } from '../../src/types.js';
 import { APIEvent, type API, type PlatformAccessory } from 'homebridge';
 
 class FakeApi extends EventEmitter {
@@ -90,31 +90,53 @@ describe('HomematicPlatform', () => {
     expect(platform.getCcu()).toBeDefined();
   });
 
-  it('didFinishLaunching wires up channel/variable/program accessories', async () => {
+  it('didFinishLaunching wires up channel accessories with one listDevices call', async () => {
     const log = makeLog();
     const api = makeApi();
     const config = {
       platform: 'HapHomematic',
       ccuIp: '127.0.0.1',
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory' }],
+      channels: [
+        { address: 'HmIP.0:1', service: 'SwitchAccessory' },
+        { address: 'HmIP.0:2', service: 'SwitchAccessory' },
+      ],
+      // Old fields from removed features are ignored.
       variables: [{ name: 'V1' }],
       programs: [{ name: 'P1' }],
     };
     const platform = new HomematicPlatform(log, config, api as unknown as API);
     const ccu = platform.getCcu()!;
     vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listDevices').mockResolvedValue([
-      { address: 'HmIP.0', type: 'X', name: 'D', interface: 'HmIP-RF', channels: [{ address: 'HmIP.0:1', index: 1, type: 'SWITCH', name: 'C' }] },
-    ] as CcuChannel[] extends never ? never : never[] as never);
-    vi.spyOn(ccu, 'listVariables').mockResolvedValue([
-      { id: '1', name: 'V1', valuetype: 2, subtype: 0, value: false } as CcuVariable,
-    ]);
-    vi.spyOn(ccu, 'listPrograms').mockResolvedValue([{ id: '1', name: 'P1' } as CcuProgram]);
+    const list = vi.spyOn(ccu, 'listDevices').mockResolvedValue([
+      { address: 'HmIP.0', type: 'X', name: 'D', interface: 'HmIP-RF', channels: [
+        { address: 'HmIP.0:1', index: 1, type: 'SWITCH', name: 'C1' },
+        { address: 'HmIP.0:2', index: 2, type: 'SWITCH', name: 'C2' },
+      ] },
+    ] satisfies CcuDevice[]);
 
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
 
-    expect(api.registered.length).toBeGreaterThanOrEqual(3);
+    expect(api.registered).toHaveLength(2);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('still registers accessories when discovery fails', async () => {
+    const log = makeLog();
+    const api = makeApi();
+    const config = {
+      platform: 'HapHomematic',
+      ccuIp: '127.0.0.1',
+      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory', name: 'Lamp' }],
+    };
+    const platform = new HomematicPlatform(log, config, api as unknown as API);
+    const ccu = platform.getCcu()!;
+    vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
+    vi.spyOn(ccu, 'listDevices').mockRejectedValue(new Error('down'));
+    api.emit(APIEvent.DID_FINISH_LAUNCHING);
+    await flushAsync();
+    expect(api.registered).toHaveLength(1);
+    expect(vi.mocked(log.warn).mock.calls.some((c) => String(c[0]).includes('Device discovery failed'))).toBe(true);
   });
 
   it('removes stale accessories on next launch', async () => {
@@ -204,7 +226,7 @@ describe('HomematicPlatform', () => {
     expect(acc?.displayName).toBe('Living Room Lamp');
   });
 
-  it('falls back to legacy settings.name when top-level mapping.name is missing', async () => {
+  it('falls back to the discovered channel name when mapping.name is missing', async () => {
     const log = makeLog();
     const api = makeApi();
     const config = {
@@ -223,7 +245,8 @@ describe('HomematicPlatform', () => {
     await flushAsync();
     const acc = api.registered.find((a) => a.UUID === 'uuid:channel:HmIP.0:1') as
       unknown as { displayName: string } | undefined;
-    expect(acc?.displayName).toBe('Legacy HomeKit Name');
+    // settings.name (pre-0.1.5 hap-homematic imports) is no longer read.
+    expect(acc?.displayName).toBe('CCU Name');
   });
 
   it('updates an existing cached accessory instead of re-registering', async () => {
@@ -249,20 +272,41 @@ describe('HomematicPlatform', () => {
     expect(api.registered.find((a) => a.UUID === 'uuid:channel:HmIP.0:1')).toBeUndefined();
   });
 
-  it('warns if a configured variable does not exist', async () => {
+  it('renames a cached accessory and disposes handlers on shutdown', async () => {
     const log = makeLog();
     const api = makeApi();
     const config = {
       platform: 'HapHomematic',
       ccuIp: '127.0.0.1',
-      variables: [{ name: 'Missing' }],
+      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory', name: 'New Name' }],
     };
     const platform = new HomematicPlatform(log, config, api as unknown as API);
+    const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)('Old Name', 'uuid:channel:HmIP.0:1');
+    const setCharacteristic = vi.fn();
+    const info = api.hap.Service.AccessoryInformation;
+    (cached as unknown as { getService: unknown }).getService = vi.fn((svc: unknown) =>
+      (svc === info ? { setCharacteristic } : undefined));
+    platform.configureAccessory(cached);
     const ccu = platform.getCcu()!;
     vi.spyOn(ccu, 'start').mockResolvedValue(undefined);
-    vi.spyOn(ccu, 'listVariables').mockResolvedValue([]);
+    vi.spyOn(ccu, 'stop').mockResolvedValue(undefined);
+    vi.spyOn(ccu, 'listDevices').mockResolvedValue([]);
     api.emit(APIEvent.DID_FINISH_LAUNCHING);
     await flushAsync();
-    expect(vi.mocked(log.warn)).toHaveBeenCalled();
+    expect(cached.displayName).toBe('New Name');
+    expect(setCharacteristic).toHaveBeenCalledWith(expect.anything(), 'New Name');
+
+    // The FakeApi accessory cannot wire HAP characteristics, so attach()
+    // fails here; insert handlers directly to cover the shutdown path.
+    const managed = (platform as unknown as { managed: Map<string, { handler: { dispose?: () => void } }> }).managed;
+    const ok = vi.fn();
+    managed.set('a', { handler: { dispose: ok } });
+    managed.set('b', { handler: { dispose: () => { throw new Error('dispose boom'); } } });
+    managed.set('c', { handler: {} });
+    api.emit(APIEvent.SHUTDOWN);
+    await flushAsync();
+    expect(ok).toHaveBeenCalled();
+    expect(managed.size).toBe(0);
+    expect(vi.mocked(log.debug).mock.calls.some((c) => String(c[1]).includes('dispose boom'))).toBe(true);
   });
 });

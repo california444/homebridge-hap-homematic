@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -19,12 +21,12 @@ export default defineConfig({
         // is the same as the corresponding push-event listener — the
         // listener test exercises the apply* function but the v8 coverage
         // provider counts the `.then` body's branches separately.
-        // Threshold lowered to 88 for branches; the goal is to lift it
-        // back to 90 once the initial-pull paths have dedicated tests.
+        // Re-set after the XML-RPC-only cleanup (Phase 2, 2026-11-11):
+        // branches at 90 (measured 91.1 %).
         lines: 95,
         statements: 95,
         functions: 95,
-        branches: 88,
+        branches: 90,
       },
     },
     pool: 'forks',

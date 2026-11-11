@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * The DynamicPlatformPlugin entry point. Wires CCU client + service
  * registry + Homebridge accessory cache together. Lifecycle:
@@ -5,7 +7,7 @@
  *   constructor()        — validate config, build CCU client
  *   configureAccessory() — restore one accessory from disk cache
  *   didFinishLaunching   — start CCU client, then materialize accessories
- *                          for every channel/variable/program in config
+ *                          for every mapped channel in config
  *   shutdown             — stop CCU client (event server + RPC subs)
  */
 
@@ -20,18 +22,13 @@ import {
   type Service,
 } from 'homebridge';
 import { CcuClient } from './ccu/CcuClient.js';
-import {
-  findProgramServiceByKey,
-  findServiceByKey,
-  findVariableServiceByKey,
-  pickVariableService,
-  PROGRAM_SERVICE_DEFINITIONS,
-} from './services/registry.js';
-import type { ChannelService, ProgramService, ServiceContext, VariableService } from './services/types.js';
+import { findServiceByKey } from './services/registry.js';
+import type { ChannelService, ServiceContext } from './services/types.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import type {
   AccessoryContext,
   CcuChannel,
+  CcuDevice,
   RawConfig,
   ResolvedConfig,
 } from './types.js';
@@ -41,7 +38,7 @@ import { PluginStorage } from './util/storage.js';
 
 interface ManagedAccessory {
   accessory: PlatformAccessory<AccessoryContext>;
-  handler: ChannelService | VariableService | ProgramService;
+  handler: ChannelService;
 }
 
 export class HomematicPlatform implements DynamicPlatformPlugin {
@@ -108,41 +105,24 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     await this.ccu.start();
     this.log.success('Connected to CCU at %s', this.resolved.ccuIp);
 
-    // Materialize each channel/variable/program from config.
+    // One listDevices per start (not one per mapping).
+    let devices: CcuDevice[] = [];
+    try {
+      devices = await this.ccu.listDevices();
+    } catch (err) {
+      this.log.warn('Device discovery failed: %s', (err as Error).message);
+    }
+
+    // Materialize each mapped channel from config.
     const seen = new Set<string>();
 
     for (const mapping of this.resolved.channels) {
       try {
         const uuid = this.api.hap.uuid.generate(`channel:${mapping.address}`);
         seen.add(uuid);
-        await this.attachChannel(uuid, mapping.address, mapping);
+        this.attachChannel(uuid, mapping.address, mapping, devices);
       } catch (err) {
         this.log.warn('Skipping channel %s: %s', mapping.address, (err as Error).message);
-      }
-    }
-
-    for (const mapping of this.resolved.variables) {
-      try {
-        const uuid = this.api.hap.uuid.generate(`variable:${mapping.name}`);
-        seen.add(uuid);
-        const legacyName = typeof mapping.settings?.name === 'string'
-          ? (mapping.settings.name as string) : undefined;
-        const dn = mapping.displayName ?? legacyName;
-        await this.attachVariable(uuid, mapping.name, mapping.service, mapping.settings, dn);
-      } catch (err) {
-        this.log.warn('Skipping variable %s: %s', mapping.name, (err as Error).message);
-      }
-    }
-
-    for (const mapping of this.resolved.programs) {
-      try {
-        const uuid = this.api.hap.uuid.generate(`program:${mapping.name}`);
-        seen.add(uuid);
-        const legacyName = typeof mapping.settings?.name === 'string'
-          ? (mapping.settings.name as string) : undefined;
-        await this.attachProgram(uuid, mapping.name, mapping.displayName ?? legacyName);
-      } catch (err) {
-        this.log.warn('Skipping program %s: %s', mapping.name, (err as Error).message);
       }
     }
 
@@ -175,11 +155,12 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  private async attachChannel(
+  private attachChannel(
     uuid: string,
     address: string,
     mapping: { address: string; service: string; subtype?: string; settings?: Record<string, unknown>; name?: string },
-  ): Promise<void> {
+    devices: CcuDevice[],
+  ): void {
     /* c8 ignore start — unreachable: didFinishLaunching gates on ccu */
     if (!this.ccu) {
       return;
@@ -190,19 +171,10 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       throw new Error(`Unknown service: ${mapping.service}`);
     }
 
-    const channel: CcuChannel = await this.fetchChannel(address, mapping.name);
-    // mapping.name is the user-customised HomeKit display name (set in the
-    // GUI or imported from hap-homematic). Falls back to the CCU's channel
-    // name when the user hasn't overridden it.
-    //
-    // Pre-0.1.5 imports stored the custom name nested under settings.name
-    // because the importer's drop-list excluded it. Pick it up from there
-    // so users don't have to re-import.
-    const settingsName = typeof mapping.settings?.name === 'string'
-      ? (mapping.settings.name as string)
-      : undefined;
+    const channel: CcuChannel = findChannel(devices, address, mapping.name);
+    // mapping.name is the user-chosen HomeKit display name (set in the
+    // GUI). Falls back to the placeholder channel name (type + address).
     const displayName = (mapping.name && mapping.name.length > 0 && mapping.name)
-      || (settingsName && settingsName.length > 0 ? settingsName : undefined)
       || channel.name;
     const accessory = this.getOrCreateAccessory<AccessoryContext>(uuid, displayName, {
       kind: 'channel',
@@ -224,92 +196,6 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     this.managed.set(uuid, { accessory, handler });
   }
 
-  private async attachVariable(
-    uuid: string,
-    name: string,
-    serviceKey: string | undefined,
-    _settings: Record<string, unknown> | undefined,
-    displayName?: string,
-  ): Promise<void> {
-    /* c8 ignore start — unreachable: didFinishLaunching gates on ccu */
-    if (!this.ccu) {
-      return;
-    }
-    /* c8 ignore stop */
-    const variables = await this.ccu.listVariables();
-    const variable = variables.find((v) => v.name === name);
-    if (!variable) {
-      throw new Error(`Variable not found on CCU: ${name}`);
-    }
-    const explicit = serviceKey ? findVariableServiceByKey(serviceKey) : undefined;
-    const def = explicit ?? pickVariableService(variable.valuetype);
-    const finalName = displayName && displayName.length > 0 ? displayName : name;
-    const accessory = this.getOrCreateAccessory<AccessoryContext>(uuid, finalName, {
-      kind: 'variable',
-      id: name,
-      service: def.key,
-      name: finalName,
-    });
-    const ctx: ServiceContext = {
-      accessory,
-      ccu: this.ccu,
-      log: this.log.child(`svc:${def.key}:${name}`),
-      Service: this.Service,
-      Characteristic: this.Characteristic,
-    };
-    const handler = def.build(ctx);
-    handler.attach(variable);
-    this.managed.set(uuid, { accessory, handler });
-  }
-
-  private async attachProgram(uuid: string, name: string, displayName?: string): Promise<void> {
-    /* c8 ignore start — unreachable: didFinishLaunching gates on ccu */
-    if (!this.ccu) {
-      return;
-    }
-    /* c8 ignore stop */
-    const def = findProgramServiceByKey('ProgramAccessory') ?? PROGRAM_SERVICE_DEFINITIONS[0]!;
-    const finalName = displayName && displayName.length > 0 ? displayName : name;
-    const accessory = this.getOrCreateAccessory<AccessoryContext>(uuid, finalName, {
-      kind: 'program',
-      id: name,
-      service: def.key,
-      name: finalName,
-    });
-    const ctx: ServiceContext = {
-      accessory,
-      ccu: this.ccu,
-      log: this.log.child(`svc:${def.key}:${name}`),
-      Service: this.Service,
-      Characteristic: this.Characteristic,
-    };
-    const handler = def.build(ctx);
-    handler.attach(name);
-    this.managed.set(uuid, { accessory, handler });
-  }
-
-  private async fetchChannel(address: string, fallbackName: string | undefined): Promise<CcuChannel> {
-    /* c8 ignore next 3 — same unreachable-in-prod guard as attachChannel/Variable/Program */
-    if (!this.ccu) {
-      throw new Error('CCU client not initialized');
-    }
-    const devices = await this.ccu.listDevices();
-    for (const device of devices) {
-      const channel = device.channels.find((c) => c.address === address);
-      if (channel) {
-        return channel;
-      }
-    }
-    // Channel not currently visible — fall back to a stub so the accessory
-    // still registers; events for it will still flow when the CCU sees it.
-    return {
-      address,
-      index: 0,
-      name: fallbackName ?? address,
-      type: 'UNKNOWN',
-    };
-  }
-
   private getOrCreateAccessory<T extends AccessoryContext>(
     uuid: string,
     displayName: string,
@@ -318,8 +204,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     const existing = this.cachedAccessories.get(uuid) as PlatformAccessory<T> | undefined;
     if (existing) {
       Object.assign(existing.context, context);
-      // If the user renamed the accessory (or imported a hap-homematic
-      // backup with custom HomeKit names), update the cached accessory's
+      // If the user renamed the accessory, update the cached accessory's
       // display name + AccessoryInformation Name characteristic so
       // HomeKit shows the new name. Note: HomeKit caches the room/name
       // pairing on the device side too, so this only takes effect for
@@ -341,4 +226,21 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     this.cachedAccessories.set(uuid, accessory as unknown as PlatformAccessory<AccessoryContext>);
     return accessory;
   }
+}
+
+function findChannel(devices: CcuDevice[], address: string, fallbackName: string | undefined): CcuChannel {
+  for (const device of devices) {
+    const channel = device.channels.find((c) => c.address === address);
+    if (channel) {
+      return channel;
+    }
+  }
+  // Channel not currently visible — fall back to a stub so the accessory
+  // still registers; events for it will still flow when the CCU sees it.
+  return {
+    address,
+    index: 0,
+    name: fallbackName ?? address,
+    type: 'UNKNOWN',
+  };
 }

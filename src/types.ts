@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Plugin-wide type declarations for the validated runtime config and
  * the persisted homebridge accessory context. These are the only shapes
@@ -7,25 +9,12 @@
 
 import type { PlatformConfig } from 'homebridge';
 
-export type CcuInterfaceId =
-  | 'BidCos-RF'
-  | 'HmIP-RF'
-  | 'BidCos-Wired'
-  | 'VirtualDevices'
-  | 'CUxD';
+/** The two radio interfaces this plugin talks to (XML-RPC only). */
+export type CcuInterfaceId = 'BidCos-RF' | 'HmIP-RF';
 
 export interface InterfaceToggles {
   bidcosRf: boolean;
   hmIpRf: boolean;
-  bidcosWired: boolean;
-  virtualDevices: boolean;
-  cuxd: boolean;
-}
-
-export interface CcuAuthConfig {
-  enabled: boolean;
-  username?: string;
-  password?: string;
 }
 
 export interface EventServerConfig {
@@ -39,19 +28,17 @@ export interface ResolvedConfig {
   name: string;
   ccuIp: string;
   interfaces: InterfaceToggles;
-  /** Manual XML-RPC port overrides per interface; takes precedence over discovery. */
+  /** XML-RPC port overrides per interface; defaults are 2001 / 2010. */
   interfacePorts: Partial<Record<CcuInterfaceId, number>>;
   useTls: boolean;
-  ccuAuth: CcuAuthConfig;
   eventServer: EventServerConfig;
+  /** Channel mappings; move to devices.json in Phase 3. */
   channels: ChannelMapping[];
-  variables: VariableMapping[];
-  programs: ProgramMapping[];
 }
 
 /** Shape of an entry in `config.channels[]`, keyed in the UI by address. */
 export interface ChannelMapping {
-  /** CCU address — `<interface>.<serial>:<channel>`, e.g. `HmIP.000123:1`. */
+  /** CCU channel address as reported by XML-RPC `listDevices`, e.g. `000123:1`. */
   address: string;
   name?: string;
   /** Class name in the service registry, e.g. `SwitchAccessory`. */
@@ -59,34 +46,12 @@ export interface ChannelMapping {
   /** Variant within a service, e.g. `Outlet` vs `Switch` for SwitchAccessory. */
   subtype?: string;
   settings?: Record<string, unknown>;
-  /** hap-homematic instance UUID this channel belonged to, when imported. */
-  instance?: string;
-}
-
-export interface VariableMapping {
-  /** CCU variable name (the identifier used to look it up). */
-  name: string;
-  /** Optional HomeKit display name override — defaults to the CCU name. */
-  displayName?: string;
-  service?: string;
-  subtype?: string;
-  settings?: Record<string, unknown>;
-  instance?: string;
-}
-
-export interface ProgramMapping {
-  /** CCU program name (the identifier used to look it up). */
-  name: string;
-  /** Optional HomeKit display name override — defaults to the CCU name. */
-  displayName?: string;
-  settings?: Record<string, unknown>;
-  instance?: string;
 }
 
 /** Shape persisted on `accessory.context`, restored on Homebridge restart. */
 export interface AccessoryContext {
-  kind: 'channel' | 'variable' | 'program';
-  /** Stable identifier (channel address, variable name, or program name). */
+  kind: 'channel';
+  /** Stable identifier (channel address). */
   id: string;
   /** Service registry key chosen for this accessory. */
   service: string;
@@ -104,42 +69,24 @@ export interface RawConfig extends PlatformConfig {
   interfaces?: Partial<InterfaceToggles>;
   interfacePorts?: Partial<Record<CcuInterfaceId, number>>;
   useTls?: boolean;
-  ccuAuth?: Partial<CcuAuthConfig>;
   eventServer?: Partial<EventServerConfig>;
   channels?: ChannelMapping[];
-  variables?: VariableMapping[];
-  programs?: ProgramMapping[];
 }
 
-/** Discovery result from the CCU. */
+/** Discovery result from the CCU (XML-RPC `listDevices`). */
 export interface CcuDevice {
-  address: string;     // e.g. HmIP.000123
+  address: string;     // e.g. 000123 (no interface prefix)
   type: string;        // e.g. HmIP-PSM
+  /** Placeholder name (`TYPE ADDRESS`); XML-RPC carries no names. */
   name: string;
   interface: CcuInterfaceId;
+  firmware?: string;
   channels: CcuChannel[];
 }
 
 export interface CcuChannel {
-  address: string;     // e.g. HmIP.000123:1
+  address: string;     // e.g. 000123:1
   index: number;
   type: string;        // e.g. SWITCH_VIRTUAL_RECEIVER
   name: string;
-}
-
-export interface CcuVariable {
-  name: string;
-  id: string;
-  valuetype: number;   // 2=bool, 4=number, 16=string, 20=enum
-  subtype: number;     // 2=alarm, 6=presence
-  minValue?: number;
-  maxValue?: number;
-  unit?: string;
-  enumValues?: string[];
-  value: boolean | number | string;
-}
-
-export interface CcuProgram {
-  name: string;
-  id: string;
 }

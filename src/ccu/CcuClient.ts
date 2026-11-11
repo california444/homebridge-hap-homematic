@@ -1,13 +1,14 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 /**
  * Facade over the CCU adapters. Owns the lifecycle (connect / disconnect /
  * reconnect), exposes high-level operations to the platform and services,
  * and dispatches inbound events to registered listeners.
  *
- * Architecture:
- *   - control plane: CcuJsonRpcClient (JSON-RPC at /api/homematic.cgi)
- *     used for discovery, variable I/O, program execution, getValue/setValue.
- *   - event plane:    EventServer (local XML-RPC) + RpcClient per interface
- *     for the CCU's push events.
+ * XML-RPC only: one RpcClient per enabled interface (BidCos-RF → rfd,
+ * HmIP-RF → HMIPServer) for discovery (`listDevices`), reads and writes,
+ * plus the local EventServer for the CCU's push events. No JSON-RPC,
+ * no ReGa, no CCU login.
  *
  * Exactly one CcuClient lives per HomematicPlatform instance.
  */
@@ -15,13 +16,11 @@
 import { networkInterfaces } from 'node:os';
 import { EventEmitter } from 'node:events';
 import { EventServer, type ChannelEvent } from './EventServer.js';
-import { CcuJsonRpcClient } from './CcuJsonRpcClient.js';
-import { RpcClient, INTERFACE_PORTS } from './RpcClient.js';
+import { RpcClient, INTERFACE_PORTS, type RpcDeviceDescription } from './RpcClient.js';
 import type {
+  CcuChannel,
   CcuDevice,
   CcuInterfaceId,
-  CcuProgram,
-  CcuVariable,
   ResolvedConfig,
 } from '../types.js';
 import type { PrefixedLogger } from '../util/logger.js';
@@ -38,16 +37,20 @@ const ENABLED_INTERFACES: ReadonlyArray<{
   id: CcuInterfaceId;
   flag: keyof ResolvedConfig['interfaces'];
 }> = [
-  { id: 'BidCos-RF',     flag: 'bidcosRf' },
-  { id: 'HmIP-RF',       flag: 'hmIpRf' },
-  { id: 'BidCos-Wired',  flag: 'bidcosWired' },
-  { id: 'VirtualDevices', flag: 'virtualDevices' },
-  { id: 'CUxD',          flag: 'cuxd' },
+  { id: 'BidCos-RF', flag: 'bidcosRf' },
+  { id: 'HmIP-RF',   flag: 'hmIpRf' },
 ];
 
+export interface InterfaceProbe {
+  interfaceId: CcuInterfaceId;
+  port: number;
+  ok: boolean;
+  /** Number of methods reported by `system.listMethods` (when ok). */
+  methods?: number;
+  error?: string;
+}
+
 export class CcuClient extends EventEmitter {
-  /** Modern JSON-RPC control plane. */
-  readonly api: CcuJsonRpcClient;
   readonly eventServer: EventServer;
   private readonly rpcClients: Map<CcuInterfaceId, RpcClient> = new Map();
   private readonly datapointListeners: Map<string, Set<DatapointListener>> = new Map();
@@ -56,24 +59,13 @@ export class CcuClient extends EventEmitter {
   private watchdogTimer: NodeJS.Timeout | undefined;
   private lastEventAt = 0;
   private started = false;
-  /** XML-RPC port discovered per interface from `Interface.listInterfaces`. */
-  private readonly discoveredPorts: Map<CcuInterfaceId, number> = new Map();
-  /** address → interface map built from `Device.listAllDetail` at startup. */
+  /** address → interface map, filled by listDevices(). */
   private readonly addressInterface: Map<string, CcuInterfaceId> = new Map();
 
   constructor(opts: CcuClientOptions) {
     super();
     this.config = opts.config;
     this.log = opts.log;
-
-    this.api = new CcuJsonRpcClient({
-      host: this.config.ccuIp,
-      useTls: this.config.useTls,
-      auth: this.config.ccuAuth.enabled
-        ? { username: this.config.ccuAuth.username!, password: this.config.ccuAuth.password! }
-        : undefined,
-      log: this.log.child('api'),
-    });
 
     this.eventServer = new EventServer({
       host: this.config.eventServer.host,
@@ -85,67 +77,51 @@ export class CcuClient extends EventEmitter {
     this.eventServer.on('error', (err) => {
       this.log.error('Event server error: %s', err.message);
     });
+
+    const callbackUrl = `http://${this.resolveCallbackHost()}:${this.config.eventServer.port}`;
+    for (const { id, flag } of ENABLED_INTERFACES) {
+      if (!this.config.interfaces[flag]) {
+        continue;
+      }
+      this.rpcClients.set(id, new RpcClient({
+        interfaceId: id,
+        host: this.config.ccuIp,
+        port: this.portFor(id),
+        callbackUrl,
+        callbackId: `${PLUGIN_NAME}:${id}`,
+        log: this.log.child(`rpc:${id}`),
+      }));
+    }
   }
 
   async start(): Promise<void> {
     if (this.started) {
       return;
     }
+    if (this.config.useTls) {
+      this.log.warn('useTls is set but TLS is not supported for XML-RPC yet; using plain HTTP');
+    }
     await this.eventServer.start();
 
-    // Pull the actual XML-RPC ports from the CCU. RaspberryMatic exposes
-    // them at +30000 (32001/32010/39292), but a stock CCU3 still uses
-    // 2001/2010/9292 — so we trust whatever the CCU reports.
-    await this.refreshInterfacePorts();
-    // Build a lookup of channel-address → interface so setValue can route
-    // unprefixed addresses (the way they appear in hap-homematic backups)
-    // to the right XML-RPC client without guessing.
-    await this.refreshAddressInterfaceMap();
+    // Build the address → interface map before any accessory sends a command.
+    await this.listDevices().catch((err) => {
+      this.log.warn('listDevices failed: %s', (err as Error).message);
+    });
 
-    const callbackHost = this.resolveCallbackHost();
-    const callbackUrl = `http://${callbackHost}:${this.config.eventServer.port}`;
-
-    for (const { id, flag } of ENABLED_INTERFACES) {
-      if (!this.config.interfaces[flag]) {
-        continue;
-      }
-      const callbackId = `${PLUGIN_NAME}:${id}`;
-      // Resolution order: explicit user override > listInterfaces discovery
-      // > built-in default. The override is the only escape hatch when the
-      // CCU's reported port isn't actually reachable from this host (the
-      // common case is RaspberryMatic reporting +30000 ports that are
-      // firewalled off by the CCU's "Restrict access" firewall preset).
-      const overridePort = this.config.interfacePorts[id];
-      const port = overridePort
-        ?? this.discoveredPorts.get(id)
-        ?? INTERFACE_PORTS[id];
-      const portSource = overridePort !== undefined
-        ? 'config override'
-        : this.discoveredPorts.has(id) ? 'CCU listInterfaces' : 'built-in default';
-      this.log.info('Using XML-RPC port %d for %s (%s)', port, id, portSource);
-      const client = new RpcClient({
-        interfaceId: id,
-        host: this.config.ccuIp,
-        port,
-        callbackUrl,
-        callbackId,
-        log: this.log.child(`rpc:${id}`),
-      });
+    for (const client of this.rpcClients.values()) {
+      const id = client.interfaceId;
+      const port = this.portFor(id);
+      this.log.info('Using XML-RPC port %d for %s', port, id);
       try {
         await client.subscribe();
-        this.rpcClients.set(id, client);
       } catch (err) {
         const msg = (err as Error).message;
         this.log.warn('Could not subscribe to %s: %s', id, msg);
         if (/ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH/.test(msg)) {
           this.log.warn(
-            'Hint: %s:%d is not reachable from this host. On RaspberryMatic, '
-              + 'open the CCU WebUI → Settings → Control Panel → Security → '
-              + 'Configure firewall, and set "XML-RPC API" to "Open" or '
-              + '"Restricted access" with this Homebridge host whitelisted. '
-              + 'Alternatively, set interfacePorts.%s in the plugin config '
-              + 'to a port that IS reachable (e.g. 2001/2010/9292 if Homebridge '
-              + 'and the CCU share the same host).',
+            'Hint: %s:%d is not reachable from this host. Check the CCU firewall '
+              + '(Settings → Control Panel → Security → Firewall: "XML-RPC API") '
+              + 'or set interfacePorts.%s in the plugin config.',
             this.config.ccuIp, port, id,
           );
         }
@@ -155,53 +131,6 @@ export class CcuClient extends EventEmitter {
     this.lastEventAt = Date.now();
     this.startWatchdog();
     this.started = true;
-  }
-
-  private async refreshInterfacePorts(): Promise<void> {
-    try {
-      const list = await this.api.listInterfaces();
-      for (const i of list) {
-        const id = mapInterfaceName(i.name);
-        if (id) {
-          this.discoveredPorts.set(id, i.port);
-          this.log.debug('Interface %s on port %d', id, i.port);
-        }
-      }
-    } catch (err) {
-      this.log.warn('Interface.listInterfaces failed (%s) — using default ports',
-        (err as Error).message);
-    }
-  }
-
-  private async refreshAddressInterfaceMap(): Promise<void> {
-    try {
-      const devices = await this.api.listDevices();
-      const remember = (addr: string, intf: CcuInterfaceId): void => {
-        if (!addr) return;
-        this.addressInterface.set(addr, intf);
-        // Also index without the interface prefix (some CCUs/backups
-        // store addresses as `HmIP-RF.0001D7...` while others store the
-        // bare `0001D7...:1`). Storing both forms means lookups succeed
-        // either way.
-        const dot = addr.indexOf('.');
-        if (dot !== -1) {
-          this.addressInterface.set(addr.slice(dot + 1), intf);
-        } else {
-          this.addressInterface.set(`${intf}.${addr}`, intf);
-        }
-      };
-      for (const d of devices) {
-        if (!d.interface) continue;
-        remember(d.address, d.interface);
-        for (const c of d.channels) {
-          remember(c.address, d.interface);
-        }
-      }
-      this.log.debug('Indexed %d addresses across interfaces', this.addressInterface.size);
-    } catch (err) {
-      this.log.debug('listDevices for address-interface map failed: %s',
-        (err as Error).message);
-    }
   }
 
   async stop(): Promise<void> {
@@ -217,29 +146,58 @@ export class CcuClient extends EventEmitter {
       await client.unsubscribe();
       await client.close();
     }
-    this.rpcClients.clear();
     await this.eventServer.stop();
-    this.api.invalidateSession();
   }
 
-  /** All devices and their channels (one JSON-RPC call). */
-  listDevices(): Promise<CcuDevice[]> {
-    return this.api.listDevices();
+  /**
+   * All devices and their channels, via XML-RPC `listDevices` on every
+   * enabled interface. XML-RPC carries no names, so `name` is a
+   * placeholder of type and address. Interfaces that fail are logged and
+   * skipped; the call rejects only if every interface failed.
+   */
+  async listDevices(): Promise<CcuDevice[]> {
+    const out: CcuDevice[] = [];
+    let failures = 0;
+    let lastError: Error | undefined;
+    for (const client of this.rpcClients.values()) {
+      try {
+        const raw = await client.listDevices();
+        out.push(...toDevices(raw, client.interfaceId));
+      } catch (err) {
+        failures++;
+        lastError = err as Error;
+        this.log.warn('listDevices on %s failed: %s', client.interfaceId, lastError.message);
+      }
+    }
+    if (failures > 0 && failures === this.rpcClients.size) {
+      throw lastError ?? new Error('no interface enabled');
+    }
+    for (const d of out) {
+      this.addressInterface.set(d.address, d.interface);
+      for (const c of d.channels) {
+        this.addressInterface.set(c.address, d.interface);
+      }
+    }
+    this.log.debug('Indexed %d addresses across interfaces', this.addressInterface.size);
+    return out;
   }
 
-  listVariables(): Promise<CcuVariable[]> {
-    return this.api.listVariables();
+  /** `system.listMethods` on every enabled interface (UI "Test connection"). */
+  async probeInterfaces(): Promise<InterfaceProbe[]> {
+    const results: InterfaceProbe[] = [];
+    for (const client of this.rpcClients.values()) {
+      const port = this.portFor(client.interfaceId);
+      try {
+        const methods = await client.listMethods();
+        results.push({ interfaceId: client.interfaceId, port, ok: true, methods: methods.length });
+      } catch (err) {
+        results.push({ interfaceId: client.interfaceId, port, ok: false, error: (err as Error).message });
+      }
+    }
+    return results;
   }
 
-  listPrograms(): Promise<CcuProgram[]> {
-    return this.api.listPrograms();
-  }
-
-  listRooms(): Promise<{ id: string; name: string; channelIds: string[] }[]> {
-    return this.api.listRooms();
-  }
-
-  /** Subscribe a callback to a `<interface>.<serial>:<chan>.<datapoint>` address. */
+  /** Subscribe a callback to a `<serial>:<chan>.<datapoint>` address. */
   registerListener(address: string, listener: DatapointListener): () => void {
     let set = this.datapointListeners.get(address);
     if (!set) {
@@ -265,41 +223,30 @@ export class CcuClient extends EventEmitter {
     return false;
   }
 
-  /**
-   * Set a CCU datapoint via XML-RPC (the event-plane interface client).
-   * setValue HAS to go through XML-RPC because that's the path the CCU
-   * also pushes events back from — round-trip latency is best there.
-   * Falls back to JSON-RPC `Interface.setValue` if no XML-RPC client is
-   * subscribed for that interface.
-   */
+  /** Set a CCU datapoint via XML-RPC on the channel's interface. */
   async setValue(address: string, datapoint: string, value: unknown): Promise<void> {
-    const intf = this.interfaceForAddress(address);
-    const client = this.rpcClients.get(intf);
-    if (client) {
-      await client.setValue(address, datapoint, value);
-      return;
-    }
-    // Fall back to JSON-RPC. JSON-RPC's Interface.setValue takes the
-    // address WITHOUT the interface prefix.
-    const bareAddress = stripInterfacePrefix(address);
-    const type = guessJsonRpcType(value);
-    await this.api.setInterfaceValue(intf, bareAddress, datapoint, type, value);
+    await this.clientFor(address).setValue(address, datapoint, value);
   }
 
-  /**
-   * Read a CCU datapoint. Prefers the XML-RPC interface client (single
-   * round-trip, no auth overhead) and falls back to JSON-RPC.
-   */
+  /** Read a CCU datapoint via XML-RPC on the channel's interface. */
   async getValue(address: string, datapoint: string): Promise<unknown> {
-    const intf = this.interfaceForAddress(address);
-    const client = this.rpcClients.get(intf);
-    if (client) {
-      return client.getValue(address, datapoint);
-    }
-    return this.api.getInterfaceValue(intf, stripInterfacePrefix(address), datapoint);
+    return this.clientFor(address).getValue(address, datapoint);
   }
 
   // --- internals -----------------------------------------------------
+
+  private clientFor(address: string): RpcClient {
+    const intf = this.interfaceForAddress(address);
+    const client = this.rpcClients.get(intf);
+    if (!client) {
+      throw new Error(`Interface ${intf} is not enabled (address ${address})`);
+    }
+    return client;
+  }
+
+  private portFor(id: CcuInterfaceId): number {
+    return this.config.interfacePorts[id] ?? INTERFACE_PORTS[id];
+  }
 
   private handleEvent(ev: ChannelEvent): void {
     this.lastEventAt = ev.receivedAt;
@@ -319,42 +266,20 @@ export class CcuClient extends EventEmitter {
   }
 
   private interfaceForAddress(address: string): CcuInterfaceId {
-    // First check the device-discovery map (built at start()). This is the
-    // only source that always tells the truth — hap-homematic backups
-    // store bare addresses like "000123:1" with no interface prefix, and
-    // a HmIP serial like "000123" can't be distinguished from a BidCos
-    // serial without consulting the CCU.
+    // The discovery map (built from listDevices) is authoritative.
     const direct = this.addressInterface.get(address);
     if (direct) {
       return direct;
     }
-    // Try without the channel suffix (`:N`) — `listDevices` returns both
-    // device- and channel-level addresses but external code may pass the
-    // device address only.
     const colon = address.indexOf(':');
     if (colon !== -1) {
       const deviceOnly = this.addressInterface.get(address.slice(0, colon));
       if (deviceOnly) return deviceOnly;
     }
-    // Fall back to prefix heuristics. This matches the pre-discovery
-    // behavior so accessories created before start() completes still
-    // route somewhere reasonable.
-    const dot = address.indexOf('.');
-    const prefix = dot === -1 ? address : address.slice(0, dot);
-    if (prefix === 'BidCos-RF' || prefix === 'HmIP-RF' || prefix === 'BidCos-Wired'
-      || prefix === 'VirtualDevices' || prefix === 'CUxD') {
-      return prefix;
-    }
-    if (prefix.startsWith('HmIP') || prefix.startsWith('hmip')) {
-      return 'HmIP-RF';
-    }
-    if (prefix.startsWith('CUX')) {
-      return 'CUxD';
-    }
-    if (prefix.startsWith('BidCos-Wired')) {
-      return 'BidCos-Wired';
-    }
-    return 'BidCos-RF';
+    // Before discovery: HmIP serials are 14 hex digits, BidCos serials
+    // are 10 characters (3 letters + 7 digits).
+    const serial = colon === -1 ? address : address.slice(0, colon);
+    return /^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF';
   }
 
   private startWatchdog(): void {
@@ -392,41 +317,47 @@ export class CcuClient extends EventEmitter {
   }
 }
 
-function stripInterfacePrefix(address: string): string {
-  const dot = address.indexOf('.');
-  return dot === -1 ? address : address.slice(dot + 1);
-}
-
 /**
- * Map the CCU's interface display name to our canonical CcuInterfaceId.
- * RaspberryMatic returns names like "BidCos-RF", "HmIP-RF", "BidCos-Wired",
- * "VirtualDevices", "CUxD" already — but some firmwares prefix with "HM-" or
- * use lowercase. We accept the obvious aliases and reject anything else
- * (notably "HmIPServer" used internally by HmIP-RF, which would otherwise
- * be misrouted, and "CCU-Jack" which we don't support).
+ * Turn the flat `listDevices` answer (devices and channels mixed) into
+ * devices with their channels. Channel 0 (MAINTENANCE) is kept.
  */
-function mapInterfaceName(name: string): CcuInterfaceId | undefined {
-  const n = name.trim();
-  if (n === 'BidCos-RF' || n === 'BidCos-Wired' || n === 'HmIP-RF'
-    || n === 'VirtualDevices' || n === 'CUxD') {
-    return n;
+export function toDevices(raw: RpcDeviceDescription[], intf: CcuInterfaceId): CcuDevice[] {
+  const devices = new Map<string, CcuDevice>();
+  const channels: RpcDeviceDescription[] = [];
+  for (const e of raw) {
+    if (!e || typeof e.ADDRESS !== 'string' || e.ADDRESS.length === 0) {
+      continue;
+    }
+    if (e.PARENT) {
+      channels.push(e);
+      continue;
+    }
+    devices.set(e.ADDRESS, {
+      address: e.ADDRESS,
+      type: e.TYPE ?? '',
+      name: `${e.TYPE ?? 'Device'} ${e.ADDRESS}`,
+      interface: intf,
+      ...(e.FIRMWARE ? { firmware: e.FIRMWARE } : {}),
+      channels: [],
+    });
   }
-  // Tolerate case differences and a couple of historical aliases.
-  const lower = n.toLowerCase();
-  if (lower === 'bidcos-rf' || lower === 'rf') return 'BidCos-RF';
-  if (lower === 'bidcos-wired' || lower === 'wired') return 'BidCos-Wired';
-  if (lower === 'hmip-rf' || lower === 'hmip' || lower === 'hmiprf') return 'HmIP-RF';
-  if (lower === 'virtualdevices' || lower === 'virtual') return 'VirtualDevices';
-  if (lower === 'cuxd') return 'CUxD';
-  return undefined;
-}
-
-function guessJsonRpcType(value: unknown): 'boolean' | 'string' | 'integer' | 'double' {
-  if (typeof value === 'boolean') {
-    return 'boolean';
+  for (const c of channels) {
+    const device = devices.get(c.PARENT!);
+    if (!device) {
+      continue;
+    }
+    const colon = c.ADDRESS.lastIndexOf(':');
+    const index = typeof c.INDEX === 'number' ? c.INDEX : Number(c.ADDRESS.slice(colon + 1));
+    const channel: CcuChannel = {
+      address: c.ADDRESS,
+      index: Number.isFinite(index) ? index : 0,
+      type: c.TYPE ?? '',
+      name: `${device.type} ${c.ADDRESS}`,
+    };
+    device.channels.push(channel);
   }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? 'integer' : 'double';
+  for (const d of devices.values()) {
+    d.channels.sort((a, b) => a.index - b.index);
   }
-  return 'string';
+  return [...devices.values()];
 }

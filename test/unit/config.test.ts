@@ -29,7 +29,7 @@ describe('resolveConfig', () => {
     expect(c.eventServer.port).toBe(9875);
     expect(c.eventServer.watchdogSeconds).toBe(300);
     expect(c.useTls).toBe(false);
-    expect(c.ccuAuth.enabled).toBe(false);
+    expect(c).not.toHaveProperty('ccuAuth');
   });
 
   it('rejects empty config', () => {
@@ -41,9 +41,9 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig({ ...base, ccuIp: 'has spaces' })).toThrow(/ccuIp/);
   });
 
-  it('requires username/password when ccuAuth.enabled', () => {
-    expect(() => resolveConfig({ ...base, ccuAuth: { enabled: true } })).toThrow(/username/);
-    expect(() => resolveConfig({ ...base, ccuAuth: { enabled: true, username: 'u', password: 'p' } })).not.toThrow();
+  it('keeps only BidCos-RF / HmIP-RF interface toggles', () => {
+    const c = resolveConfig({ ...base, interfaces: { hmIpRf: false, cuxd: true } as never });
+    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: false });
   });
 
   it('rejects out-of-range event-server port', () => {
@@ -60,7 +60,7 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig({ ...base, eventServer: { host: '' } })).toThrow(/host/);
   });
 
-  it('coerces non-array channels/variables/programs to []', () => {
+  it('coerces non-array channels to []', () => {
     const c = resolveConfig({ ...base, channels: 'not an array' as unknown as never[] });
     expect(c.channels).toEqual([]);
   });
@@ -68,13 +68,9 @@ describe('resolveConfig', () => {
   it('preserves valid arrays', () => {
     const c = resolveConfig({
       ...base,
-      channels: [{ address: 'HmIP.0:1', service: 'SwitchAccessory' }],
-      variables: [{ name: 'V1' }],
-      programs: [{ name: 'P1' }],
+      channels: [{ address: '0:1', service: 'SwitchAccessory' }],
     });
     expect(c.channels).toHaveLength(1);
-    expect(c.variables).toHaveLength(1);
-    expect(c.programs).toHaveLength(1);
   });
 
   it('uses provided platform name', () => {
@@ -101,6 +97,10 @@ describe('resolveConfig', () => {
       expect(() => resolveConfig({
         ...base,
         interfacePorts: { 'Bogus': 1234 } as never,
+      })).toThrow(/unknown interface/);
+      expect(() => resolveConfig({
+        ...base,
+        interfacePorts: { 'CUxD': 8701 } as never,
       })).toThrow(/unknown interface/);
     });
 

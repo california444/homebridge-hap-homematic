@@ -1,32 +1,35 @@
 # Security Policy
 
+<!--
+  Modified by california444 (2026) for homebridge-hap-homematic,
+  a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
+-->
+
 ## Threat model
 
 `homebridge-hap-homematic` runs in the trusted Homebridge process on a
-LAN host that already has full RPC and ReGa access to your CCU. It is not a
+LAN host that already has XML-RPC access to your CCU. It is not a
 multi-tenant product and is not intended to be exposed to the public
 internet. The relevant threats it actively mitigates are:
 
-1. **Hostile values from the CCU.** Device names, datapoint values, ReGa
-   script output, and event payloads are parsed defensively; no value is
+1. **Hostile values from the CCU.** Device descriptions, datapoint
+   values and event payloads are parsed defensively; no value is
    used to build a shell command or evaluated as code.
 2. **Hostile values from the Homebridge custom-UI iframe.** All
    `onRequest` handlers in `homebridge-ui/server` validate their payloads
    (type, length, allowlist) before passing them to the CCU client.
    The frontend is treated as untrusted.
-3. **Persistence of secrets.** CCU credentials, when configured, live in
-   `config.json` (Homebridge's own file). They are never logged, never
-   printed by `--debug` mode, and never sent to the iframe. The iframe
-   retrieves and updates them only via the official `homebridge.getPluginConfig`
-   / `updatePluginConfig` / `savePluginConfig` API.
-4. **Filesystem writes.** All plugin-owned files (cache, import staging,
-   diagnostics dumps) are written under `api.user.storagePath()`. No path
+3. **No CCU credentials.** The plugin uses the XML-RPC ports without a
+   CCU login, so there are no CCU secrets in `config.json`. If XML-RPC
+   Basic auth is added later, the credentials must never be logged or
+   sent to the iframe.
+4. **Filesystem writes.** All plugin-owned files (caches, mappings)
+   are written under `<storagePath>/homebridge-hap-homematic/`. No path
    that originates from user input or CCU output is ever opened directly;
    all paths are normalized and confined to the storage root before use.
-5. **TLS to the CCU.** TLS is opt-in via config (`useTls`). When enabled,
-   the CCU's self-signed certificate is accepted (this is unavoidable for
-   default Raspberrymatic installations) but only for the configured
-   `ccuIp` host — connections to any other host fail closed.
+5. **TLS to the CCU.** Not implemented for XML-RPC yet; traffic to
+   ports 2001 / 2010 is plain HTTP on the LAN. `useTls` is ignored with
+   a warning.
 
 ## Reporting a vulnerability
 

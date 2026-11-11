@@ -5,8 +5,8 @@
   "strictValidation": false,
   "customUi": true,
   "customUiPath": "./homebridge-ui",
-  "headerDisplay": "**HomeMatic / HomematicIP** plugin with full GUI configuration. A spiritual successor to [hap-homematic](https://github.com/thkl/hap-homematic) by [@thkl](https://github.com/thkl), running as a Homebridge plugin instead of a CCU addon. Use the **custom UI** below to discover devices, expose variables and programs, and import an existing hap-homematic configuration without re-pairing accessories.",
-  "footerDisplay": "Built on the architecture, configuration model and migration format pioneered by [@thkl](https://github.com/thkl) in [thkl/hap-homematic](https://github.com/thkl/hap-homematic) and [thkl/homebridge-homematic](https://github.com/thkl/homebridge-homematic) — please ⭐ those repos. Apache-2.0.",
+  "headerDisplay": "**HomeMatic (BidCos-RF) / HomematicIP (HmIP-RF)** plugin for a CCU / OpenCCU, using XML-RPC only. Use the **custom UI** below to discover devices and map channels to HomeKit.",
+  "footerDisplay": "Hard fork of [Homebridge-Homematic-HAP](https://github.com/matthiaseinig/Homebridge-Homematic-HAP), which builds on [thkl/hap-homematic](https://github.com/thkl/hap-homematic) and [thkl/homebridge-homematic](https://github.com/thkl/homebridge-homematic). Apache-2.0.",
   "schema": {
     "type": "object",
     "properties": {
@@ -22,45 +22,50 @@
         "format": "hostname",
         "required": true,
         "placeholder": "192.168.1.10",
-        "description": "Address of your Raspberrymatic / CCU3."
+        "description": "Address of your CCU / OpenCCU / RaspberryMatic."
       },
       "interfaces": {
         "title": "CCU interfaces",
         "type": "object",
         "properties": {
-          "bidcosRf":      { "title": "BidCos-RF",       "type": "boolean", "default": true  },
-          "hmIpRf":        { "title": "HmIP-RF",         "type": "boolean", "default": true  },
-          "bidcosWired":   { "title": "BidCos-Wired",    "type": "boolean", "default": false },
-          "virtualDevices":{ "title": "VirtualDevices",  "type": "boolean", "default": true  },
-          "cuxd":          { "title": "CUxD (BIN-RPC, planned)", "type": "boolean", "default": false }
+          "bidcosRf": {
+            "title": "BidCos-RF",
+            "type": "boolean",
+            "default": true
+          },
+          "hmIpRf": {
+            "title": "HmIP-RF",
+            "type": "boolean",
+            "default": true
+          }
         }
       },
       "interfacePorts": {
         "title": "XML-RPC port overrides",
         "type": "object",
-        "description": "Override the XML-RPC ports the plugin uses to talk to each CCU interface. Leave blank to auto-discover via Interface.listInterfaces. Set explicitly only if the auto-discovered port is not reachable from this Homebridge host (e.g. blocked by the CCU firewall).",
+        "description": "XML-RPC ports of the CCU interfaces. Defaults: BidCos-RF 2001, HmIP-RF 2010.",
         "properties": {
-          "BidCos-RF":      { "title": "BidCos-RF port",      "type": "integer", "minimum": 1, "maximum": 65535, "placeholder": "32001" },
-          "HmIP-RF":        { "title": "HmIP-RF port",        "type": "integer", "minimum": 1, "maximum": 65535, "placeholder": "32010" },
-          "BidCos-Wired":   { "title": "BidCos-Wired port",   "type": "integer", "minimum": 1, "maximum": 65535, "placeholder": "32000" },
-          "VirtualDevices": { "title": "VirtualDevices port", "type": "integer", "minimum": 1, "maximum": 65535, "placeholder": "39292" },
-          "CUxD":           { "title": "CUxD port",           "type": "integer", "minimum": 1, "maximum": 65535, "placeholder": "8701"  }
+          "BidCos-RF": {
+            "title": "BidCos-RF port",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "placeholder": "2001"
+          },
+          "HmIP-RF": {
+            "title": "HmIP-RF port",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "placeholder": "2010"
+          }
         }
       },
       "useTls": {
         "title": "Use TLS to talk to CCU",
         "type": "boolean",
         "default": false,
-        "description": "Use HTTPS for ReGa script calls. CCU self-signed certificates are accepted."
-      },
-      "ccuAuth": {
-        "title": "CCU authentication",
-        "type": "object",
-        "properties": {
-          "enabled":  { "title": "Use CCU authentication", "type": "boolean", "default": false },
-          "username": { "title": "Username",               "type": "string"  },
-          "password": { "title": "Password",               "type": "string", "format": "password" }
-        }
+        "description": "Not supported yet for XML-RPC; ignored (a warning is logged)."
       },
       "eventServer": {
         "title": "Local event server",
@@ -89,40 +94,44 @@
           }
         }
       },
-      "channels":  { "title": "Exposed channels",  "type": "array", "items": { "$ref": "#/definitions/channelMapping"  }, "default": [] },
-      "variables": { "title": "Exposed variables", "type": "array", "items": { "$ref": "#/definitions/variableMapping" }, "default": [] },
-      "programs":  { "title": "Exposed programs",  "type": "array", "items": { "$ref": "#/definitions/programMapping"  }, "default": [] }
+      "channels": {
+        "title": "Exposed channels",
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/channelMapping"
+        },
+        "default": []
+      }
     },
     "definitions": {
       "channelMapping": {
         "type": "object",
         "properties": {
-          "address": { "title": "Channel address",     "type": "string" },
-          "name":    { "title": "Display name",        "type": "string" },
-          "service": { "title": "Service class",       "type": "string" },
-          "subtype": { "title": "Service variant",     "type": "string" },
-          "settings":{ "title": "Service settings",    "type": "object" }
+          "address": {
+            "title": "Channel address",
+            "type": "string"
+          },
+          "name": {
+            "title": "Display name",
+            "type": "string"
+          },
+          "service": {
+            "title": "Service class",
+            "type": "string"
+          },
+          "subtype": {
+            "title": "Service variant",
+            "type": "string"
+          },
+          "settings": {
+            "title": "Service settings",
+            "type": "object"
+          }
         },
-        "required": ["address", "service"]
-      },
-      "variableMapping": {
-        "type": "object",
-        "properties": {
-          "name":        { "title": "Variable name",   "type": "string" },
-          "displayName": { "title": "HomeKit name",    "type": "string" },
-          "service":     { "title": "Service class",   "type": "string" },
-          "settings":    { "title": "Settings",        "type": "object" }
-        },
-        "required": ["name"]
-      },
-      "programMapping": {
-        "type": "object",
-        "properties": {
-          "name":        { "title": "Program name",  "type": "string" },
-          "displayName": { "title": "HomeKit name",  "type": "string" },
-          "settings":    { "title": "Settings",      "type": "object" }
-        },
-        "required": ["name"]
+        "required": [
+          "address",
+          "service"
+        ]
       }
     }
   }

@@ -1,5 +1,10 @@
 # Architecture
 
+<!--
+  Modified by california444 (2026) for homebridge-hap-homematic,
+  a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
+-->
+
 This document explains how `homebridge-hap-homematic` works at a
 level of detail that should be sufficient for a contributor to make
 meaningful changes without reading every file first. The companion
@@ -8,86 +13,65 @@ meaningful changes without reading every file first. The companion
 
 ## High-level shape
 
-```
-┌──────────────────────────┐    LAN, /api/homematic.cgi     ┌─────────────────┐
-│ Homebridge process       │ ─── JSON-RPC (control plane) ─►│                 │
-│                          │ ◄────  session token, JSON ────│  CCU3 /         │
-│  HomematicPlatform       │                                │  Raspberrymatic │
-│   ├─ CcuClient           │ ◄── XML-RPC events ────────────│                 │
-│   │    ├─ CcuJsonRpcClient│      LAN, port 9875           │  (BidCos-RF,    │
-│   │    ├─ RpcClient × N  │ ─── XML-RPC subscribe / setValue│   HmIP-RF, …)  │
-│   │    └─ EventServer    │      LAN, ports 2001/2010/…   └─────────────────┘
-│   └─ Services × M        │
-│        (Switch, Dimmer…) │ ─── HAP characteristic update ─► HomeKit hub / Home app
+```text
+┌──────────────────────────┐                                  ┌─────────────────┐
+│ Homebridge process       │ ── XML-RPC: listDevices, init, ─►│                 │
+│                          │    getValue, setValue            │  CCU / OpenCCU  │
+│  HomematicPlatform       │    (2001 BidCos-RF, 2010 HmIP-RF)│                 │
+│   ├─ CcuClient           │                                  │  rfd (BidCos-RF)│
+│   │    ├─ RpcClient × 2  │ ◄── XML-RPC callbacks ───────────│  HMIPServer     │
+│   │    └─ EventServer    │     (event, listDevices,         │  (HmIP-RF)      │
+│   └─ Services × M        │      newDevices; port 9875)      └─────────────────┘
+│        (Switch, Blind…)  │ ─── HAP characteristic update ─► HomeKit hub / Home app
 └──────────────────────────┘
 ```
 
-The plugin uses two separate CCU surfaces:
+The plugin talks to the CCU over **XML-RPC only**:
 
-1. **JSON-RPC at `/api/homematic.cgi`** — the modern, structured CCU
-   API. Used for everything declarative: device / channel / variable /
-   program discovery, room layout, variable read/write, program
-   execution, and individual `getValue` / `setValue` calls. Auth is via
-   `Session.login` returning a session id that we attach to every
-   subsequent call as `_session_id_` in the `params` object.
-2. **XML-RPC** on the per-interface ports (2001 = BidCos-RF, 2010 =
-   HmIP-RF, etc.) — used only to **subscribe** to push events and to
-   send fast `setValue` calls (lower latency than going through
-   /api/homematic.cgi for state writes that round-trip to events).
-3. **Local XML-RPC server** ("EventServer", port 9875 by default) that
-   the CCU calls back into when device state changes. We deliberately
-   parse the inbound XML with a small in-house parser
+1. **Outbound XML-RPC** to `rfd` (BidCos-RF, port 2001) and
+   `HMIPServer` (HmIP-RF, port 2010): `listDevices` for discovery,
+   `init` to subscribe to push events, `getValue` / `setValue`, and
+   `system.listMethods` for the UI's connection test. No JSON-RPC, no
+   ReGa scripts, no CCU login.
+2. **Local XML-RPC server** ("EventServer", port 9875 by default) that
+   the CCU calls back into when device state changes. Inbound XML is
+   parsed with a small in-house parser
    ([src/ccu/xmlRpc.ts](../src/ccu/xmlRpc.ts)) that **rejects
    `<!DOCTYPE>`** and external entity references, so the LAN service
    isn't trivially XXE-able.
 
-### Why JSON-RPC, not ReGa scripts?
-
-The predecessor plugins (`thkl/homebridge-homematic`,
-`thkl/hap-homematic`, `AlexanderSchmutz/homebridge-homematic-asaw`) all
-used the legacy `/tclrega.exe` ReGa-script endpoint with HTTP Basic
-auth. We started there too, then ran into a real RaspberryMatic quirk:
-ReGa scripts run in a per-user security context that sometimes refuses
-to enumerate the device tree even for an *Admin* user, returning empty
-arrays from `root.Devices().EnumIDs()`. The JSON-RPC API doesn't have
-that hole — it returns the full tree as long as the user is
-authenticated and has Admin role. JSON-RPC is also strictly
-better-typed (returns JSON, not stringly-typed XML scraped from script
-stdout) and has built-in session management.
+XML-RPC carries no device or channel names. Discovery therefore uses a
+placeholder name (`TYPE ADDRESS`); the HomeKit name comes from the
+mapping (`channels[].name`, set in the UI) or from the Home app.
 
 ## Module map
 
-```
+```text
 src/
 ├── index.ts             registers the platform with Homebridge
 ├── settings.ts          PLATFORM_NAME / PLUGIN_NAME constants
 ├── platform.ts          HomematicPlatform — DynamicPlatformPlugin
 ├── types.ts             cross-module types: ResolvedConfig,
-│                        AccessoryContext, CcuDevice, CcuVariable, …
+│                        AccessoryContext, CcuDevice, CcuChannel
 ├── util/
 │   ├── config.ts        resolveConfig() validates & defaults raw config
 │   ├── logger.ts        PrefixedLogger with secret-scrubbing
 │   ├── address.ts       parse / build CCU addresses
 │   ├── sanitize.ts      defensive value coercion at CCU↔HomeKit boundary
-│   └── storage.ts       confines all writes to api.user.storagePath()
+│   └── storage.ts       confines all writes to <storagePath>/homebridge-hap-homematic/
 ├── ccu/
-│   ├── CcuClient.ts        facade: owns api+rpc+eventServer, dispatch
-│   ├── CcuJsonRpcClient.ts JSON-RPC at /api/homematic.cgi (control plane)
-│   ├── RpcClient.ts        XML-RPC per interface (event subscription)
-│   ├── EventServer.ts      inbound HTTP + XML-RPC dispatcher
-│   └── xmlRpc.ts           in-house XML-RPC parser/serializer (no XXE)
-├── services/
-│   ├── types.ts         ServiceDefinition / ServiceContext interfaces
-│   ├── AccessoryBase.ts shared per-accessory handler base class
-│   ├── registry.ts      static SERVICE_DEFINITIONS table
-│   └── impl/            one file per HAP service mapping
-├── import/
-│   └── HapHomematicImporter.ts  reads hap-homematic config / .tar.gz +
-│                                 splits into Homebridge child-bridge
-│                                 platform blocks (one per hap-homematic
-│                                 instance)
+│   ├── CcuClient.ts     facade: RpcClient per interface + EventServer,
+│   │                    discovery, routing, listener dispatch, watchdog
+│   ├── RpcClient.ts     XML-RPC client per interface
+│   ├── EventServer.ts   inbound HTTP + XML-RPC dispatcher
+│   └── xmlRpc.ts        in-house XML-RPC parser/serializer (no XXE)
+└── services/
+    ├── types.ts         ServiceDefinition / ServiceContext interfaces
+    ├── AccessoryBase.ts shared per-accessory handler base class
+    ├── registry.ts      static SERVICE_DEFINITIONS table
+    └── impl/            one file per HAP service mapping
 homebridge-ui/
-├── server.js            HomebridgePluginUiServer in its own process
+├── server.src.js        HomebridgePluginUiServer (bundled to server.js)
 └── public/              HTML + plain JS frontend (Bootstrap 5)
 ```
 
@@ -101,11 +85,12 @@ homebridge-ui/
 2. **`configureAccessory`** is called once per cached accessory restored
    from disk. We just remember them; we never re-register.
 3. On `didFinishLaunching`:
-   1. `CcuClient.start()` boots the EventServer and tries to subscribe
-      every enabled XML-RPC interface via `init`. Unreachable interfaces
-      log a warning and the rest still come up.
-   2. We iterate `config.channels[]`, `config.variables[]`,
-      `config.programs[]`. For each:
+   1. `CcuClient.start()` boots the EventServer, runs `listDevices` on
+      every enabled interface (this builds the address → interface
+      map), then subscribes each interface via `init`. Unreachable
+      interfaces log a warning and the rest still come up.
+   2. The platform calls `listDevices` once more and iterates
+      `config.channels[]`. For each:
       - Compute a stable UUID with `api.hap.uuid.generate(...)`.
       - If cached, mutate `accessory.context` and call
         `api.updatePlatformAccessories([accessory])`.
@@ -113,8 +98,17 @@ homebridge-ui/
         `api.registerPlatformAccessories(...)`.
    3. Anything that was cached but isn't in the new config is
       `unregisterPlatformAccessories(...)`'d.
-4. On shutdown, `CcuClient.stop()` unregisters from every interface,
-   closes the EventServer, and invalidates the JSON-RPC session.
+4. On shutdown, `CcuClient.stop()` unregisters from every interface
+   (`init` with the same URL and an empty id) and closes the
+   EventServer.
+
+## Address routing
+
+Addresses are used exactly as XML-RPC reports them (`ABC0000002:1`,
+`00000000000A01:6`, no interface prefix). `CcuClient` routes each call
+to the interface whose `listDevices` answer contained the address.
+Before discovery it falls back to the serial shape: 14 hex digits →
+HmIP-RF, everything else → BidCos-RF.
 
 ## Service registry
 
@@ -148,39 +142,41 @@ lifetime. It must:
   immediately — never block on the network. Push fresh values to
   HomeKit through `service.updateCharacteristic(...)` in the
   EventServer callback.
-- For setters, route through `this.ccu.setValue(...)`, which prefers
-  the XML-RPC interface client (lower latency) and falls back to
-  JSON-RPC `Interface.setValue` if no XML-RPC client is subscribed.
+- For setters, route through `this.ccu.setValue(...)` (XML-RPC on the
+  channel's interface).
 - Throw at most for genuinely-bad input. Normal failures should log
   and let HomeKit see "Not Responding" via a HapStatusError later.
 
 ## Custom UI
 
 `homebridge-config-ui-x` spawns `homebridge-ui/server.js` in its own
-Node process. The server receives `onRequest` calls from the iframe
-and talks to the CCU itself by spinning up a short-lived `CcuClient`
-against the credentials the user just typed (so **Test connection**
-works before they save).
+Node process. `server.js` is generated by `npm run build` (esbuild
+bundle of `server.src.js` plus `@homebridge/plugin-ui-utils`; it
+imports the compiled `dist/` at runtime). The server receives
+`onRequest` calls from the iframe and talks to the CCU itself by
+spinning up a short-lived `CcuClient` against the settings the user
+just typed (so **Test connection** works before they save):
+
+- `/services` — the service registry for the edit dialog.
+- `/test-connection` — `system.listMethods` on every enabled port,
+  result per interface.
+- `/discover` — `listDevices` on every enabled interface, with
+  suggested services per channel.
 
 Critical security points:
 
 - The iframe is treated as untrusted. Every `onRequest` validates its
   payload (type, length, allowlisted shape).
-- Credentials never leave `config.json`; they flow through
-  `homebridge.savePluginConfig()` only.
-- Tarballs uploaded for hap-homematic import are size-capped (64 MiB)
-  and parsed with `tar.list` (parse-only, no disk writes).
 - The xmlRpc parser refuses DOCTYPE / external entities.
 
 ## Watchdog
 
 A CCU XML-RPC subscription is fire-and-forget — the CCU forgets
-clients that don't poke it for a while, and the network can
-silently drop the connection. The CcuClient keeps a `lastEventAt`
-timestamp; if no events arrive within `watchdogSeconds` (default 300),
-every interface re-issues `init`. The implementation is a deliberate
-adaptation of the proven loop in
-[thkl/homebridge-homematic#HomeMaticRPC.js](https://github.com/thkl/homebridge-homematic/blob/master/HomeMaticRPC.js).
+clients after a restart and does not re-register them. The CcuClient
+keeps a `lastEventAt` timestamp; if no events arrive within
+`watchdogSeconds` (default 300), every interface re-issues `init`.
+A per-interface state machine with ping/PONG is planned (plan
+section 7).
 
 ## Testing strategy
 
@@ -188,23 +184,16 @@ adaptation of the proven loop in
   95 % statements, 95 % functions, 90 % branches. The full
   quality gate is `npm run lint && npm run build && npm run coverage
   && npm audit --omit=dev --audit-level=high`.
-- All tests live in `test/unit/`. Network code is exercised against
-  on-the-fly local HTTP servers (`CcuJsonRpcClient`, `EventServer`);
-  HAP types are stubbed by `test/helpers/hapStub.ts` rather than
-  dragging in the full hap-nodejs runtime.
+- All tests live in `test/unit/`. `RpcClient` is stubbed (no sockets)
+  in the `CcuClient` tests; the `EventServer` is exercised against a
+  local HTTP server; HAP types are stubbed by `test/helpers/hapStub.ts`
+  rather than dragging in the full hap-nodejs runtime.
 
-## What we deliberately did *not* port from upstream
+## Removed from upstream
 
-- **Multi-instance bridge model.** hap-homematic spins up multiple HAP
-  bridges under one server. Homebridge has a native
-  [child-bridge mechanism](https://github.com/homebridge/homebridge/wiki/Child-Bridges)
-  — users opt into it from the UI by setting `_bridge` on this
-  platform's config block. Our hap-homematic importer can
-  automatically emit one platform block per source instance with the
-  right `_bridge` identity (see
-  [IMPORT-FROM-HAP-HOMEMATIC.md](IMPORT-FROM-HAP-HOMEMATIC.md)).
-- **ReGa-script transport.** Replaced by JSON-RPC for the reasons in
-  the *Why JSON-RPC* section above.
-- **Custom HAP pairing storage.** Homebridge owns it; we don't touch.
-- **Variable change events** — the CCU doesn't push variable changes
-  through the XML-RPC channel reliably. We poll variables every 60 s.
+- JSON-RPC control plane (`CcuJsonRpcClient`, `Session.login`, CCU
+  user), ReGa, system variables, programs, rooms.
+- hap-homematic import (backup tarball / `config.json`).
+- Multi-bridge support: one plugin instance = one child bridge.
+- Interfaces other than BidCos-RF and HmIP-RF (Wired, VirtualDevices,
+  CUxD).

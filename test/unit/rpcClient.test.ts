@@ -1,3 +1,5 @@
+// Modified by california444 (2026) for homebridge-hap-homematic,
+// a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { describe, it, expect, vi } from 'vitest';
 import { RpcClient, patchDeserializerForUnknownTags, type RpcTransport } from '../../src/ccu/RpcClient.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
@@ -33,6 +35,30 @@ function makeClient(transport?: RpcTransport): RpcClient {
 }
 
 describe('RpcClient', () => {
+  it('listDevices and listMethods return arrays, [] for non-array answers', async () => {
+    const t = makeTransport();
+    const c = makeClient(t);
+    expect(await c.listMethods()).toEqual(['init', 'getValue']);
+    expect(await c.listDevices()).toEqual([]); // transport answers '' for listDevices
+    vi.mocked(t.call).mockResolvedValueOnce([{ ADDRESS: 'X', TYPE: 'T' }]);
+    expect(await c.listDevices()).toEqual([{ ADDRESS: 'X', TYPE: 'T' }]);
+    vi.mocked(t.call).mockResolvedValueOnce('nope');
+    expect(await c.listMethods()).toEqual([]);
+    expect(t.calls.map(([m]) => m)).toContain('listDevices');
+  });
+
+  it('listMethods probes TCP first and fails fast when the port is closed', async () => {
+    const c = new RpcClient({
+      interfaceId: 'HmIP-RF',
+      host: '127.0.0.1',
+      port: 1, // nothing listens on port 1
+      callbackUrl: 'http://example/cb',
+      callbackId: 'cbid',
+      log: new PrefixedLogger(makeLog(), 'rpc-test'),
+    });
+    await expect(c.listMethods()).rejects.toThrow(/ECONNREFUSED|EACCES|connect/);
+  });
+
   it('subscribe calls init and marks subscribed', async () => {
     const t = makeTransport();
     const c = makeClient(t);

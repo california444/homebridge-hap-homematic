@@ -74,6 +74,9 @@ the upstream project. Modified files carry a "Modified by california444
                 (src/services/impl/BlindAccessory.ts and
                 test/unit/blindMovement.test.ts) taken from upstream
                 commit 2011787 (2026-11-11), Apache-2.0.
-
-Planned: XML-RPC only (JSON-RPC, ReGa, system variables, programs,
-hap-homematic import and multi-bridge support are removed).
+  * 2026-11-11  XML-RPC only: removed the JSON-RPC control plane,
+                system variables, programs, rooms, the hap-homematic
+                import, multi-bridge support and the BidCos-Wired /
+                VirtualDevices / CUxD interfaces; discovery via XML-RPC
+                listDevices. The tar and iconv-lite dependencies listed
+                in the upstream notice above are no longer used.
