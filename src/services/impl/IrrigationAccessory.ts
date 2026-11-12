@@ -210,12 +210,14 @@ export const irrigationService: ServiceDefinition = {
   scope: 'device',
   options: [
     { key: 'defaultDuration', label: 'Default run time (s)', type: 'number', default: DEFAULT_DURATION_S,
-      min: 0, max: MAX_DURATION_S, hint: 'Used until a duration is set in Home. 0 = stays on until switched off.' },
+      min: 0, max: MAX_DURATION_S,
+      hint: 'How long a valve runs when switched on (sent as ON_TIME; the actuator switches off by itself). '
+        + 'A duration set for a valve in Home replaces it for that valve. 0 = stays on until switched off. Max. 3600 s.' },
   ],
   channelOptions: [
-    { key: 'name', label: 'Valve name', type: 'text' },
+    { key: 'name', label: 'Valve name', type: 'text', hint: 'Name of the valve in Home; empty = "Valve <channel>".' },
     { key: 'valveType', label: 'Valve type', type: 'enum', default: 'Irrigation',
-      values: ['Irrigation', 'GenericValve', 'ShowerHead', 'WaterFaucet'] },
+      values: ['Irrigation', 'GenericValve', 'ShowerHead', 'WaterFaucet'], hint: 'Icon and wording in Home.' },
   ],
   build: (ctx: ServiceContext) => new IrrigationHandler(ctx),
 };

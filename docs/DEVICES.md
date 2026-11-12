@@ -76,7 +76,7 @@ in the channel entry.
 | `SmokeAccessory` | `secondaryAlarm` | `true` | `false`: an alarm of another detector of the group does not show smoke on this one |
 | `DoorbellAccessory` | `trigger` | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge) |
 | `DoorbellAccessory` | `debounceSeconds` | `2` | repeats within this time are ignored |
-| `IrrigationAccessory` | `defaultDuration` | `600` | seconds, used until a duration is set in Home (0 = no auto-off) |
+| `IrrigationAccessory` | `defaultDuration` | `600` | run time in seconds (max. 3600), sent as `ON_TIME`; the actuator switches off by itself. A duration set for a valve in Home replaces it for that valve. `0` = stays on until switched off |
 | `IrrigationAccessory` | channel `valveType` | `Irrigation` | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet` |
 | `IrrigationAccessory` | channel `name` | `Valve N` | name of the valve |
 

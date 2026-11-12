@@ -837,7 +837,7 @@ function subEditChannel(host, props) {
     return fromEntry.length ? fromEntry : ['1', '2', '3', '4'];
   };
 
-  const optionInput = (spec, value, id) => {
+  const optionInput = (spec, value, id, placeholder) => {
     const v = value ?? spec.default;
     switch (spec.type) {
       case 'boolean':
@@ -850,7 +850,7 @@ function subEditChannel(host, props) {
         return `<input class="form-control" type="number" id="${id}" value="${h(v ?? '')}"
           ${spec.min !== undefined ? `min="${spec.min}"` : ''} ${spec.max !== undefined ? `max="${spec.max}"` : ''} />`;
       default:
-        return `<input class="form-control" id="${id}" value="${h(v ?? '')}" />`;
+        return `<input class="form-control" id="${id}" value="${h(v ?? '')}"${placeholder ? ` placeholder="${h(placeholder)}"` : ''} />`;
     }
   };
   const readOption = (spec, el) => {
@@ -915,12 +915,20 @@ function subEditChannel(host, props) {
           </div>`).join('')}
         ${chans.length ? `
           <h6 class="mt-3">Channels</h6>
+          <div class="hgui-form-row mb-1">
+            <label class="pt-0 hgui-meta">Channel</label>
+            <div class="d-flex gap-2">${def.channelOptions.map((o) =>
+              `<div class="flex-fill hgui-meta fw-semibold" title="${h(o.hint ?? '')}">${h(o.label)}</div>`).join('')}</div>
+          </div>
           ${chans.map((idx) => `
             <div class="hgui-form-row">
-              <label>Channel ${h(idx)}</label>
+              <label>${h(idx)}</label>
               <div class="d-flex gap-2">${def.channelOptions.map((o, j) =>
-                `<div class="flex-fill">${optionInput(o, draft.channels[idx]?.[o.key], `ec-ch-${idx}-${j}`)}</div>`).join('')}</div>
-            </div>`).join('')}` : ''}
+                `<div class="flex-fill">${optionInput(o, draft.channels[idx]?.[o.key], `ec-ch-${idx}-${j}`,
+                  o.key === 'name' ? `Valve ${idx}` : undefined)}</div>`).join('')}</div>
+            </div>`).join('')}
+          ${def.channelOptions.some((o) => o.hint) ? `<div class="hgui-hint">${def.channelOptions.filter((o) => o.hint)
+            .map((o) => `<strong>${h(o.label)}:</strong> ${h(o.hint)}`).join('<br>')}</div>` : ''}` : ''}
       </div>
     `;
     body.querySelector('#ec-name').addEventListener('input', (e) => { draft.name = e.target.value; });
