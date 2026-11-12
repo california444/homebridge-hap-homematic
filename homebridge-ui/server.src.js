@@ -46,7 +46,8 @@ const PLUGIN_VERSION = (() => {
   return version;
 })();
 
-import { CcuClient } from '../dist/src/ccu/CcuClient.js';
+import { CcuClient, toDevices } from '../dist/src/ccu/CcuClient.js';
+import { DISCOVERY_CACHE_FILE } from '../dist/src/ccu/Discovery.js';
 import { resolveConfig, ConfigError } from '../dist/src/util/config.js';
 import { PrefixedLogger } from '../dist/src/util/logger.js';
 import {
@@ -66,6 +67,17 @@ const MAX_DEVICES_JSON_BYTES = 512 * 1024;
 const KNOWN_SERVICES = new Set(SERVICE_DEFINITIONS.map((s) => s.key));
 const DEVICE_SERVICES = new Set(SERVICE_DEFINITIONS.filter((s) => s.scope === 'device').map((s) => s.key));
 
+/** Annotate channels with the services that can handle them. */
+function enrich(devices) {
+  return devices.map((d) => ({
+    ...d,
+    channels: d.channels.map((c) => ({
+      ...c,
+      suggestedServices: servicesForChannelType(c.type).map((s) => s.key),
+    })),
+  }));
+}
+
 class UiLogger {
   info(...args)    { console.log('[ui]', ...args); }
   success(...args) { console.log('[ui]', ...args); }
@@ -83,6 +95,7 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     this.onRequest('/services', () => this.handleServices());
     this.onRequest('/test-connection', (payload) => this.handleTestConnection(payload));
     this.onRequest('/discover', (payload) => this.handleDiscover(payload));
+    this.onRequest('/discover/cached', () => this.handleCachedDiscovery());
     this.onRequest('/network', () => this.handleNetwork());
     this.onRequest('/devices/get', () => this.handleGetDevices());
     this.onRequest('/devices/put', (payload) => this.handlePutDevices(payload));
@@ -139,22 +152,40 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     const ccu = new CcuClient({ config, log });
     try {
       const devices = await ccu.listDevices();
-
-      // Annotate channels with suggested services.
-      const enrichedDevices = devices.map((d) => ({
-        ...d,
-        channels: d.channels.map((c) => ({
-          ...c,
-          suggestedServices: servicesForChannelType(c.type).map((s) => s.key),
-        })),
-      }));
-
-      return { devices: enrichedDevices };
+      return { devices: enrich(devices), source: 'live', fetchedAt: new Date().toISOString() };
     } catch (err) {
       throw new RequestError(`Discovery failed: ${err.message}`, { status: 502 });
     } finally {
       try { await ccu.stop(); } catch { /* ignore */ }
     }
+  }
+
+  /**
+   * The device list the plugin saved at its last start (discovery.json),
+   * without asking the CCU. `devices: []` if there is none (plugin never
+   * started) or it is unreadable; the UI then discovers live.
+   */
+  async handleCachedDiscovery() {
+    let raw;
+    try {
+      raw = await this.storage().readJson(DISCOVERY_CACHE_FILE);
+    } catch (err) {
+      console.warn('[ui] cannot read %s: %s', DISCOVERY_CACHE_FILE, err.message);
+      return { devices: [], source: 'cache' };
+    }
+    const interfaces = raw && typeof raw === 'object' && raw.version === 1 && raw.interfaces && typeof raw.interfaces === 'object'
+      ? raw.interfaces
+      : {};
+    const devices = [];
+    const stamps = [];
+    for (const [id, entry] of Object.entries(interfaces)) {
+      if (!entry || !Array.isArray(entry.devices)) continue;
+      devices.push(...toDevices(entry.devices, id));
+      if (typeof entry.fetchedAt === 'string') stamps.push(entry.fetchedAt);
+    }
+    // The oldest interface decides how fresh the list is.
+    stamps.sort();
+    return { devices: enrich(devices), source: 'cache', fetchedAt: stamps[0] };
   }
 
   /** Local IPv4 addresses, offered as callback address (5.1). */

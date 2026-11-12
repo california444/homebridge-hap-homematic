@@ -316,7 +316,7 @@ function viewChannels(host) {
   host.innerHTML = `
     <div class="hgui-stats mt-3">
       ${statHTML('Channels', configuredChannels().length, 'in HomeKit')}
-      ${statHTML('Devices', discovered, discovered ? 'discovered on the CCU' : 'not discovered yet')}
+      ${statHTML('Devices', discovered, discoverySourceText())}
       <div class="hgui-card d-flex flex-column justify-content-center gap-1">
         <button class="btn btn-primary" id="hgui-discover-btn">Discover</button>
         <div class="hgui-meta">Reload devices and channels from the CCU.</div>
@@ -369,7 +369,7 @@ function viewChannels(host) {
   $('hgui-filterType-channels').value   = channelTypes.has(state.ui.filterType.channels) ? state.ui.filterType.channels : 'all';
   $('hgui-sort-channels').value         = state.ui.sort.channels;
 
-  $('hgui-discover-btn').addEventListener('click', onDiscover);
+  $('hgui-discover-btn').addEventListener('click', () => onDiscover());
   $('hgui-help').addEventListener('toggle', (e) => { state.ui.helpOpen = e.target.open; });
 
   $('hgui-search-channels').addEventListener('input', (e) => {
@@ -1009,18 +1009,50 @@ async function onTestConnection() {
   } finally { spinner(false); }
 }
 
-async function onDiscover() {
-  spinner(true);
+/**
+ * Live discovery from the CCU (listDevices, no radio traffic).
+ * `quiet`: no spinner and no success toast (automatic fallback on open);
+ * errors are always shown.
+ */
+async function onDiscover({ quiet = false } = {}) {
+  if (!quiet) spinner(true);
   try {
     const res = await homebridge.request('/discover', state.cfg);
     state.discovered = res;
     rerender();
-    toast('success', 
-      `${res.devices.length} devices`,
-      'Discovery complete');
+    if (!quiet) toast('success', `${res.devices.length} devices`, 'Discovery complete');
   } catch (err) {
     toast('error', err.message, 'Discovery');
-  } finally { spinner(false); }
+  } finally { if (!quiet) spinner(false); }
+}
+
+/**
+ * The device list the plugin saved at its last start. Returns false if
+ * there is none, so the caller can fall back to a live discovery.
+ */
+async function loadCachedDiscovery() {
+  try {
+    const res = await homebridge.request('/discover/cached');
+    if (!res?.devices?.length) return false;
+    state.discovered = res;
+    rerender();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** "live, 22:05" / "saved by the plugin, 12.11. 22:05" for the Devices box. */
+function discoverySourceText() {
+  const d = state.discovered;
+  if (!d.devices?.length) return 'not discovered yet';
+  const at = d.fetchedAt ? new Date(d.fetchedAt) : null;
+  const when = at && !Number.isNaN(at.getTime())
+    ? at.toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : '';
+  return d.source === 'cache'
+    ? `saved by the plugin${when ? `, ${when}` : ''}`
+    : `live from the CCU${when ? `, ${when}` : ''}`;
 }
 
 /**
@@ -1098,16 +1130,18 @@ async function init() {
     if (e.key === 'Escape' && state.nav.length) popNav();
   });
 
-  // Initial tab: Settings until a CCU is configured, then Channels with
-  // a background Discover so the list fills in on its own.
+  // Initial tab: Settings until a CCU is configured, then Channels. The
+  // device list comes from the plugin's discovery.json (no CCU call);
+  // only if there is none (plugin never started) a quiet live discovery
+  // runs. The Discover button always asks the CCU.
   const isConfigured = !!state.cfg.ccuIp && state.cfg.ccuIp.length > 0;
   if (!isConfigured) {
     navigate('settings');
   } else {
     navigate('channels');
-    // Fire-and-forget; failures fall back to the empty state with a
-    // hint already in place. No spinner — user can still navigate.
-    onDiscover().catch(() => { /* errors already toasted by onDiscover */ });
+    loadCachedDiscovery()
+      .then((ok) => (ok ? undefined : onDiscover({ quiet: true })))
+      .catch(() => { /* errors already toasted by onDiscover */ });
   }
 }
 
