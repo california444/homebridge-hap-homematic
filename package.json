@@ -40,7 +40,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "audit": "npm audit --omit=dev",
-    "prepublishOnly": "npm run lint && npm run test && npm run build",
+    "prepublishOnly": "npm run lint && npm run test",
     "watch": "npm run build && npm link && nodemon",
     "prepack": "npm run build"
   },
