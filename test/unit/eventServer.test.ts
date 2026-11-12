@@ -7,7 +7,7 @@ import { EventServer, describeCall } from '../../src/ccu/EventServer.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
 
-function call(port: number, body: string, method = 'POST'): Promise<{ status: number; body: string; connection?: string }> {
+function call(port: number, body: string, method = 'POST'): Promise<{ status: number; body: string; connection?: string; length?: string; chunked?: string }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       // agent: false → one connection per call, closed afterwards.
@@ -19,6 +19,8 @@ function call(port: number, body: string, method = 'POST'): Promise<{ status: nu
           status: res.statusCode ?? 0,
           body: Buffer.concat(chunks).toString('utf8'),
           connection: res.headers.connection,
+          length: res.headers['content-length'],
+          chunked: res.headers['transfer-encoding'],
         }));
       },
     );
@@ -60,6 +62,17 @@ describe('EventServer', () => {
     const res = await call(port, body);
     expect(res.connection).toBe('close');
     expect((await call(port, '', 'GET')).connection).toBe('close');
+  });
+
+  it('sends Content-Length, never chunked (rfd cannot read chunked answers)', async () => {
+    const ok = await call(port, '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>');
+    expect(ok.chunked).toBeUndefined();
+    expect(Number(ok.length)).toBe(Buffer.byteLength(ok.body));
+    const fault = await call(port, 'not xml');
+    expect(fault.chunked).toBeUndefined();
+    expect(Number(fault.length)).toBe(Buffer.byteLength(fault.body));
+    const get = await call(port, '', 'GET');
+    expect(Number(get.length)).toBe(Buffer.byteLength(get.body));
   });
 
   it('rejects non-POST', async () => {
