@@ -7,7 +7,7 @@ import { EventServer, describeCall } from '../../src/ccu/EventServer.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
 
-function call(port: number, body: string, method = 'POST'): Promise<{ status: number; body: string }> {
+function call(port: number, body: string, method = 'POST'): Promise<{ status: number; body: string; connection?: string }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       // agent: false → one connection per call, closed afterwards.
@@ -15,7 +15,11 @@ function call(port: number, body: string, method = 'POST'): Promise<{ status: nu
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+        res.on('end', () => resolve({
+          status: res.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString('utf8'),
+          connection: res.headers.connection,
+        }));
       },
     );
     req.on('error', reject);
@@ -51,6 +55,13 @@ afterEach(async () => {
 });
 
 describe('EventServer', () => {
+  it('answers with Connection: close (one request per connection)', async () => {
+    const body = '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>';
+    const res = await call(port, body);
+    expect(res.connection).toBe('close');
+    expect((await call(port, '', 'GET')).connection).toBe('close');
+  });
+
   it('rejects non-POST', async () => {
     const res = await call(port, '', 'GET');
     expect(res.status).toBe(405);
