@@ -89,7 +89,11 @@ const state = {
     page:       { channels: 1,            picker: 1 },
     /** false: hide channels that are not worth mapping (see hiddenChannels). */
     showAll: false,
+    /** Channels help text expanded (collapsed by default). */
+    helpOpen: false,
   },
+  /** Last "Test CCU" result as HTML; survives re-renders. */
+  testResult: '',
   pluginVersion: 'unknown',
 };
 
@@ -308,9 +312,18 @@ function viewChannels(host) {
     for (const c of d.channels) if (c.type && c.index !== 0 && !hidden.has(c.address)) channelTypes.add(c.type);
   }
 
+  const discovered = state.discovered.devices.length;
   host.innerHTML = `
-    <div class="hgui-card mt-3">
-      <h6>Which channels go to HomeKit?</h6>
+    <div class="hgui-stats mt-3">
+      ${statHTML('Channels', configuredChannels().length, 'in HomeKit')}
+      ${statHTML('Devices', discovered, discovered ? 'discovered on the CCU' : 'not discovered yet')}
+      <div class="hgui-card d-flex flex-column justify-content-center gap-1">
+        <button class="btn btn-primary" id="hgui-discover-btn">Discover</button>
+        <div class="hgui-meta">Reload devices and channels from the CCU.</div>
+      </div>
+    </div>
+    <details class="hgui-card" id="hgui-help" ${state.ui.helpOpen ? 'open' : ''}>
+      <summary>Which channels go to HomeKit?</summary>
       <ol class="hgui-meta mb-2 ps-3">
         <li>Click <strong>Discover</strong> to load the devices from the CCU.</li>
         <li>Switch the filter to <em>Not in HomeKit</em>, pick a channel and click <strong>+ Add</strong>.
@@ -321,7 +334,7 @@ function viewChannels(host) {
         channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
         the plugin reads the state there and sends commands to the matching receiver channel itself.
         Choose the channel and service once: changing either later creates a new accessory in Home.</p>
-    </div>
+    </details>
     <div class="hgui-toolbar">
       <input type="search" class="form-control" id="hgui-search-channels"
              placeholder="Search by HomeKit name, CCU name, address, type…"
@@ -355,6 +368,9 @@ function viewChannels(host) {
   $('hgui-filter-channels').value       = state.ui.filter.channels;
   $('hgui-filterType-channels').value   = channelTypes.has(state.ui.filterType.channels) ? state.ui.filterType.channels : 'all';
   $('hgui-sort-channels').value         = state.ui.sort.channels;
+
+  $('hgui-discover-btn').addEventListener('click', onDiscover);
+  $('hgui-help').addEventListener('toggle', (e) => { state.ui.helpOpen = e.target.open; });
 
   $('hgui-search-channels').addEventListener('input', (e) => {
     state.ui.search.channels = e.target.value;
@@ -550,21 +566,19 @@ function pagerHTML(kind, page, pageCount) {
 
 // ---------------------------------------------------------------- settings view
 
-function viewSettings(host) {
-  const m = state.cfg;
-  const stat = (label, value, sub) => `
+function statHTML(label, value, sub) {
+  return `
     <div class="hgui-card">
       <div class="hgui-meta">${h(label)}</div>
       <div class="hgui-stat-value">${h(value)}</div>
       <div class="hgui-meta">${h(sub)}</div>
     </div>`;
-  const discovered = state.discovered.devices.length;
+}
+
+function viewSettings(host) {
+  const m = state.cfg;
   host.innerHTML = `
-    <div class="hgui-stats mt-3">
-      ${stat('Channels', configuredChannels().length, 'in HomeKit')}
-      ${stat('Devices', discovered, discovered ? 'discovered on the CCU' : 'not discovered yet — click "Discover"')}
-    </div>
-    <div class="hgui-card">
+    <div class="hgui-card mt-3">
       <h6>CCU connection</h6>
       <div class="row g-2 mb-2">
         <div class="col-md-6">
@@ -639,7 +653,13 @@ function viewSettings(host) {
             </div>`).join('')}
       </div>
     </div>
+    <div class="hgui-card d-flex align-items-center gap-2 flex-wrap">
+      <button class="btn btn-outline-primary" id="hgui-test-btn">Test CCU</button>
+      <span class="small" id="hgui-test-result">${state.testResult
+        || '<span class="hgui-meta">Checks the connection with the settings above (not saved yet is fine).</span>'}</span>
+    </div>
   `;
+  $('hgui-test-btn').addEventListener('click', onTestConnection);
   const propagate = (mut) => { mut(state.cfg); pushConfig(); };
   $('cf-ccu-ip').addEventListener('input', (e) => propagate((b) => b.ccuIp = e.target.value.trim()));
   $('cf-event-port').addEventListener('input', (e) => propagate((b) => b.eventServer.port = parseInt(e.target.value, 10) || 9875));
@@ -969,16 +989,22 @@ function subEditChannel(host, props) {
 // ---------------------------------------------------------------- API actions
 
 async function onTestConnection() {
-  $('hgui-test-result').textContent = 'Testing…';
+  // The result element only exists while Settings is shown.
+  const show = (html) => {
+    state.testResult = html;
+    const el = $('hgui-test-result');
+    if (el) el.innerHTML = html;
+  };
+  show('Testing…');
   spinner(true);
   try {
     const res = await homebridge.request('/test-connection', state.cfg);
-    $('hgui-test-result').innerHTML = res.ok
+    show(res.ok
       ? `<span class="text-success">✓ ${h(res.message)}</span>`
-      : `<span class="text-danger">✗ ${h(res.message)}</span>`;
+      : `<span class="text-danger">✗ ${h(res.message)}</span>`);
     toast(res.ok ? 'success' : 'warning', res.message, 'CCU');
   } catch (err) {
-    $('hgui-test-result').innerHTML = `<span class="text-danger">✗ ${h(err.message)}</span>`;
+    show(`<span class="text-danger">✗ ${h(err.message)}</span>`);
     toast('error', err.message, 'CCU');
   } finally { spinner(false); }
 }
@@ -1063,11 +1089,9 @@ async function init() {
     toast('error', `Could not load services: ${err.message}`);
   }
 
-  // Header listeners.
+  // Tab listeners.
   document.querySelectorAll('#hgui-tabs [data-tab]').forEach((t) =>
     t.addEventListener('click', () => navigate(t.dataset.tab)));
-  $('hgui-discover-btn').addEventListener('click', onDiscover);
-  $('hgui-test-btn').addEventListener('click', onTestConnection);
 
   // Esc pops the sub-view stack (back button affordance).
   document.addEventListener('keydown', (e) => {
