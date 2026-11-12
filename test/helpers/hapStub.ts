@@ -158,6 +158,28 @@ function makeCharacteristicClass(name: string, extra: Record<string, unknown> = 
   return C as unknown as WithUUID<typeof Characteristic>;
 }
 
+/**
+ * Like hap-nodejs, Characteristic is itself constructible (services such
+ * as PowerMeter create custom Eve characteristics with
+ * `new Characteristic(displayName, uuid, props)`); the standard
+ * characteristics hang off it as static members.
+ */
+class CharacteristicRoot {
+  UUID: string;
+  displayName: string;
+  props: Record<string, unknown>;
+  value: unknown = undefined;
+  constructor(displayName?: string, uuid?: string, props?: Record<string, unknown>) {
+    this.displayName = displayName ?? '';
+    this.UUID = uuid ?? '';
+    this.props = props ?? {};
+  }
+  onGet(): this { return this; }
+  onSet(): this { return this; }
+  setProps(p: Record<string, unknown>): this { Object.assign(this.props, p); return this; }
+  updateValue(v: unknown): this { this.value = v; return this; }
+}
+
 export function makeHapStub() {
   return {
     Service: {
@@ -183,7 +205,7 @@ export function makeHapStub() {
       IrrigationSystem: makeServiceClass('IrrigationSystem'),
       Valve: makeServiceClass('Valve'),
     } as unknown as typeof Service,
-    Characteristic: {
+    Characteristic: Object.assign(class extends CharacteristicRoot {}, {
       On: makeCharacteristicClass('On'),
       Brightness: makeCharacteristicClass('Brightness'),
       Name: makeCharacteristicClass('Name'),
@@ -220,7 +242,15 @@ export function makeHapStub() {
       IsConfigured: makeCharacteristicClass('IsConfigured', { NOT_CONFIGURED: 0, CONFIGURED: 1 }),
       ServiceLabelIndex: makeCharacteristicClass('ServiceLabelIndex'),
       ProgramMode: makeCharacteristicClass('ProgramMode', { NO_PROGRAM_SCHEDULED: 0, PROGRAM_SCHEDULED: 1, PROGRAM_SCHEDULED_MANUAL_MODE_: 2 }),
-    } as unknown as typeof Characteristic,
+      Hue: makeCharacteristicClass('Hue'),
+      Saturation: makeCharacteristicClass('Saturation'),
+      ColorTemperature: makeCharacteristicClass('ColorTemperature'),
+      CurrentHorizontalTiltAngle: makeCharacteristicClass('CurrentHorizontalTiltAngle'),
+      TargetHorizontalTiltAngle: makeCharacteristicClass('TargetHorizontalTiltAngle'),
+      OutletInUse: makeCharacteristicClass('OutletInUse'),
+      Formats: { FLOAT: 'float', UINT8: 'uint8', UINT16: 'uint16', UINT32: 'uint32', BOOL: 'bool' },
+      Perms: { PAIRED_READ: 'pr', NOTIFY: 'ev', EVENTS: 'ev', READ: 'pr' },
+    }) as unknown as typeof Characteristic,
     /** Like hap-nodejs: HapStatusError(status) with `hapStatus`. */
     HapStatusError: class HapStatusError extends Error {
       constructor(public readonly hapStatus: number) {
