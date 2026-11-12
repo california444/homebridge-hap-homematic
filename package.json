@@ -1,7 +1,7 @@
 {
   "name": "homebridge-hap-homematic",
   "version": "0.0.0-development",
-  "description": "Homebridge plugin for HomeMatic / HomematicIP devices on a CCU / OpenCCU, using XML-RPC only. Hard fork of matthiaseinig/Homebridge-Homematic-HAP (homebridge-homematic-hap); not affiliated with thkl/hap-homematic.",
+  "description": "Homebridge plugin for HomeMatic / HomematicIP devices on a CCU / OpenCCU, using XML-RPC only.",
   "type": "module",
   "license": "Apache-2.0",
   "author": {

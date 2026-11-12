@@ -1,9 +1,6 @@
 # Security Policy
 
-<!--
-  Modified by california444 (2026) for homebridge-hap-homematic,
-  a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
--->
+<!-- Modified by california444 (2026). See NOTICE. -->
 
 ## Threat model
 

@@ -1,9 +1,6 @@
 # Architecture
 
-<!--
-  Modified by california444 (2026) for homebridge-hap-homematic,
-  a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
--->
+<!-- Modified by california444 (2026). See NOTICE. -->
 
 This document explains how `homebridge-hap-homematic` works at a
 level of detail that should be sufficient for a contributor to make
