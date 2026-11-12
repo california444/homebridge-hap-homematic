@@ -61,7 +61,7 @@ describe('service option metadata (UI, plan 5.3)', () => {
     expect(keys('IrrigationAccessory')).toEqual(['defaultDuration']);
     const irr = findServiceByKey('IrrigationAccessory')!;
     expect(irr.scope).toBe('device');
-    expect(irr.channelOptions!.map((o) => o.key)).toEqual(['name', 'valveType']);
+    expect(irr.channelOptions!.map((o) => o.key)).toEqual(['name', 'valveType', 'duration']);
   });
 
   it('only whole-device services have scope "device"; enum options list their values', () => {

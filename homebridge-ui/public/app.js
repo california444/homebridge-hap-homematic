@@ -119,7 +119,12 @@ const GROUP_RE = /^(SWITCH|SHUTTER|BLIND|DIMMER)_(TRANSMITTER|VIRTUAL_RECEIVER)$
  *     transmitter if a service handles it, else the first receiver. The
  *     plugin pairs them itself (src/ccu/pairing.ts), so mapping any of
  *     them gives the same accessory;
- *   - the CCU's own virtual remote (HM-RCV-50 / HmIP-RCV-50, 50 keys).
+ *   - the CCU's own virtual remote (HM-RCV-50 / HmIP-RCV-50, 50 keys);
+ *   - the buttons and inputs (KEY_TRANSCEIVER, MULTI_MODE_INPUT_TRANSMITTER)
+ *     of an actuator, i.e. a device that also has a
+ *     SWITCH/SHUTTER/BLIND/DIMMER_TRANSMITTER: HmIP-PS channel 1,
+ *     BROLL/FROLL channels 1–2, DRSI4 wall-button inputs 1–4. A remote or
+ *     a pure input device (HmIP-DSD-PCB bell signal) keeps them.
  * Channels already in devices.json are never hidden.
  */
 function hiddenChannels(device) {
@@ -127,8 +132,13 @@ function hiddenChannels(device) {
   if (/RCV-50$/i.test(device.type ?? '')) return new Set(channels.map((c) => c.address));
   const handled = new Set(state.services.channelServices.flatMap((s) => s.channelTypes));
   const hidden = new Set();
+  const isActuator = channels.some((c) => /^(SWITCH|SHUTTER|BLIND|DIMMER)_TRANSMITTER$/.test(c.type ?? ''));
   for (let i = 0; i < channels.length; i++) {
     const c = channels[i];
+    if (isActuator && (c.type === 'KEY_TRANSCEIVER' || c.type === 'MULTI_MODE_INPUT_TRANSMITTER')) {
+      hidden.add(c.address);
+      continue;
+    }
     const m = GROUP_RE.exec(c.type ?? '');
     if (!m || m[2] !== 'TRANSMITTER') {
       // Receivers are handled with their transmitter below; a receiver
@@ -330,7 +340,7 @@ function viewChannels(host) {
           Give it a HomeKit name and choose the service (switch, outlet, light, blind, …).</li>
         <li>Restart the child bridge to apply the changes.</li>
       </ol>
-      <p class="hgui-meta mb-0">Only the channels worth mapping are listed. An HmIP actuator shows one
+      <p class="hgui-meta mb-0">Only the channels worth mapping are listed (built-in buttons and wall-button inputs of actuators are hidden). An HmIP actuator shows one
         channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
         the plugin reads the state there and sends commands to the matching receiver channel itself.
         Choose the channel and service once: changing either later creates a new accessory in Home.</p>
@@ -565,6 +575,12 @@ function pagerHTML(kind, page, pageCount) {
 }
 
 // ---------------------------------------------------------------- settings view
+
+/** The variant to save: only one the service still offers (drops e.g. a legacy contact "door"). */
+function variantOf(def, subtype) {
+  const ids = (def?.variants ?? []).map((v) => v.id.toLowerCase());
+  return subtype && ids.includes(String(subtype).toLowerCase()) ? subtype : undefined;
+}
 
 function statHTML(label, value, sub) {
   return `
@@ -837,7 +853,7 @@ function subEditChannel(host, props) {
     return fromEntry.length ? fromEntry : ['1', '2', '3', '4'];
   };
 
-  const optionInput = (spec, value, id) => {
+  const optionInput = (spec, value, id, placeholder) => {
     const v = value ?? spec.default;
     switch (spec.type) {
       case 'boolean':
@@ -850,7 +866,7 @@ function subEditChannel(host, props) {
         return `<input class="form-control" type="number" id="${id}" value="${h(v ?? '')}"
           ${spec.min !== undefined ? `min="${spec.min}"` : ''} ${spec.max !== undefined ? `max="${spec.max}"` : ''} />`;
       default:
-        return `<input class="form-control" id="${id}" value="${h(v ?? '')}" />`;
+        return `<input class="form-control" id="${id}" value="${h(v ?? '')}"${placeholder ? ` placeholder="${h(placeholder)}"` : ''} />`;
     }
   };
   const readOption = (spec, el) => {
@@ -915,12 +931,20 @@ function subEditChannel(host, props) {
           </div>`).join('')}
         ${chans.length ? `
           <h6 class="mt-3">Channels</h6>
+          <div class="hgui-form-row mb-1">
+            <label class="pt-0 hgui-meta">Channel</label>
+            <div class="d-flex gap-2">${def.channelOptions.map((o) =>
+              `<div class="flex-fill hgui-meta fw-semibold" title="${h(o.hint ?? '')}">${h(o.label)}</div>`).join('')}</div>
+          </div>
           ${chans.map((idx) => `
             <div class="hgui-form-row">
-              <label>Channel ${h(idx)}</label>
+              <label>${h(idx)}</label>
               <div class="d-flex gap-2">${def.channelOptions.map((o, j) =>
-                `<div class="flex-fill">${optionInput(o, draft.channels[idx]?.[o.key], `ec-ch-${idx}-${j}`)}</div>`).join('')}</div>
-            </div>`).join('')}` : ''}
+                `<div class="flex-fill">${optionInput(o, draft.channels[idx]?.[o.key], `ec-ch-${idx}-${j}`,
+                  o.key === 'name' ? `Valve ${idx}` : undefined)}</div>`).join('')}</div>
+            </div>`).join('')}
+          ${def.channelOptions.some((o) => o.hint) ? `<div class="hgui-hint">${def.channelOptions.filter((o) => o.hint)
+            .map((o) => `<strong>${h(o.label)}:</strong> ${h(o.hint)}`).join('<br>')}</div>` : ''}` : ''}
       </div>
     `;
     body.querySelector('#ec-name').addEventListener('input', (e) => { draft.name = e.target.value; });
@@ -968,10 +992,10 @@ function subEditChannel(host, props) {
           if (Object.keys(c).length) channels[idx] = c;
         }
         saveDeviceMapping(serial, intf, {
-          service: draft.service, variant: draft.subtype || undefined, name, options, channels,
+          service: draft.service, variant: variantOf(def, draft.subtype), name, options, channels,
         });
       } else {
-        saveChannelMapping(address, intf, { name, service: draft.service, variant: draft.subtype || undefined, options });
+        saveChannelMapping(address, intf, { name, service: draft.service, variant: variantOf(def, draft.subtype), options });
       }
     } catch (err) {
       toast('warning', err.message); return;
