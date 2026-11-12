@@ -51,12 +51,14 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      # Creates the tag and the GitHub release. Nothing is committed back to
-      # main and nothing is published to npm here.
+      # Creates the tag and the GitHub release and commits CHANGELOG.md back
+      # to main ("chore(release): x.y.z [skip ci]"); the tag points to that
+      # commit. Nothing is published to npm here.
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -102,6 +104,9 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org/
+          # npm download cache, keyed by package-lock.json; npm ci still
+          # verifies every package against the lockfile hashes.
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
