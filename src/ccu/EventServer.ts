@@ -55,6 +55,19 @@ export function describeCall(method: string, params: unknown[]): string {
   return typeof params[0] === 'string' ? `${method}(${params[0]})` : method;
 }
 
+/**
+ * Write a complete response with Content-Length. Without it Node answers
+ * with `Transfer-Encoding: chunked`, which rfd's XML-RPC client (BidCos-RF)
+ * cannot read: it logs "XmlRpc transport error", retries every event
+ * (hence each BidCos event arrived twice) and after a few failures removes
+ * the subscription ("Removing unreachable XMLRPC handler") — BidCos-RF went
+ * STALE every few minutes. HMIPServer accepts chunked answers.
+ */
+function send(res: http.ServerResponse, status: number, type: string, body: string): void {
+  res.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body, 'utf8') });
+  res.end(body);
+}
+
 function short(value: unknown): string {
   const s = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
   return s.length > 40 ? `${s.slice(0, 40)}…` : s;
@@ -154,11 +167,7 @@ export class EventServer extends EventEmitter {
       conn.requests++;
     }
     const tag = conn ? `#${conn.id}.${conn.requests}` : '#?';
-    // One request per connection. rfd keeps the last connection of a burst
-    // open and later reuses it after Node's keep-alive timeout has closed
-    // it; that delivery fails and rfd drops the subscription (BidCos-RF
-    // going STALE every few minutes). With `Connection: close` the CCU
-    // never reuses a connection.
+    // One request per connection; the CCU never reuses one.
     res.setHeader('Connection', 'close');
     res.on('close', () => {
       if (!res.writableFinished) {
@@ -167,8 +176,7 @@ export class EventServer extends EventEmitter {
     });
     res.on('error', (err) => this.log.debug('%s response error: %s', tag, err.message));
     if (req.method !== 'POST') {
-      res.writeHead(405, { 'Content-Type': 'text/plain' });
-      res.end('Method Not Allowed');
+      send(res, 405, 'text/plain', 'Method Not Allowed');
       return;
     }
 
@@ -188,14 +196,12 @@ export class EventServer extends EventEmitter {
         const parsed = parseXml(body);
         const result = this.dispatch(parsed.method, parsed.params);
         const xml = serializeResponse(result);
-        res.writeHead(200, { 'Content-Type': 'text/xml' });
-        res.end(xml);
+        send(res, 200, 'text/xml', xml);
         this.log.debug('%s %s → %d bytes in %d ms', tag, describeCall(parsed.method, parsed.params),
           Buffer.byteLength(xml), Date.now() - started);
       } catch (err) {
         this.log.error('Event server handler error (%s): %s', tag, (err as Error).message);
-        res.writeHead(200, { 'Content-Type': 'text/xml' });
-        res.end(serializeFault(-1, (err as Error).message));
+        send(res, 200, 'text/xml', serializeFault(-1, (err as Error).message));
       }
     });
     req.on('error', (err) => {
