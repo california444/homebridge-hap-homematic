@@ -14,7 +14,7 @@
  *     (connection only).
  *   - state.devicesFile: devices.json (the mappings), loaded and saved
  *     through the /devices/get and /devices/put endpoints.
- *   - state.view: top-level view (dashboard | channels | settings).
+ *   - state.view: top-level view, shown as a tab (settings | channels).
  *   - state.nav: optional sub-view stack pushed on top of the base
  *     view. Pushing a sub-view (e.g. "edit channel") swaps the body
  *     until the user pops back. No modals.
@@ -69,7 +69,7 @@ const DEFAULT_BLOCK = () => ({
 });
 
 const state = {
-  view: 'dashboard',
+  view: 'settings',
   /** Optional drill-down sub-view (replaces base view body until popped). */
   nav: [],
   cfg: DEFAULT_BLOCK(),
@@ -87,6 +87,8 @@ const state = {
     filterType: { channels: 'all' },        // CCU channel type, e.g. SWITCH_VIRTUAL_RECEIVER, or 'all'
     sort:       { channels: 'name' },       // name | device | address | type
     page:       { channels: 1,            picker: 1 },
+    /** false: hide channels that are not worth mapping (see hiddenChannels). */
+    showAll: false,
   },
   pluginVersion: 'unknown',
 };
@@ -98,6 +100,54 @@ function channelLookup() {
   for (const d of state.discovered.devices ?? []) {
     out.set(d.address, { device: d, channel: undefined });
     for (const c of d.channels ?? []) out.set(c.address, { device: d, channel: c });
+  }
+  return out;
+}
+
+const GROUP_RE = /^(SWITCH|SHUTTER|BLIND|DIMMER)_(TRANSMITTER|VIRTUAL_RECEIVER)$/;
+
+/**
+ * Addresses of channels that the lists hide unless "Show all channels"
+ * is on:
+ *   - channels no service can handle (MAINTENANCE, week profiles, …);
+ *   - in an HmIP actuator group (one *_TRANSMITTER followed by its
+ *     *_VIRTUAL_RECEIVERs) every channel but one. The one kept is the
+ *     transmitter if a service handles it, else the first receiver. The
+ *     plugin pairs them itself (src/ccu/pairing.ts), so mapping any of
+ *     them gives the same accessory;
+ *   - the CCU's own virtual remote (HM-RCV-50 / HmIP-RCV-50, 50 keys).
+ * Channels already in devices.json are never hidden.
+ */
+function hiddenChannels(device) {
+  const channels = sortBy(device.channels ?? [], (c) => c.index);
+  if (/RCV-50$/i.test(device.type ?? '')) return new Set(channels.map((c) => c.address));
+  const handled = new Set(state.services.channelServices.flatMap((s) => s.channelTypes));
+  const hidden = new Set();
+  for (let i = 0; i < channels.length; i++) {
+    const c = channels[i];
+    const m = GROUP_RE.exec(c.type ?? '');
+    if (!m || m[2] !== 'TRANSMITTER') {
+      // Receivers are handled with their transmitter below; a receiver
+      // without a transmitter before it stays visible.
+      const inGroup = m && channels.slice(0, i).some((p) => p.type === `${m[1]}_TRANSMITTER`);
+      if (!inGroup && !handled.has(c.type)) hidden.add(c.address);
+      continue;
+    }
+    const group = [c];
+    for (let j = i + 1; j < channels.length && channels[j].type === `${m[1]}_VIRTUAL_RECEIVER`; j++) group.push(channels[j]);
+    const keep = handled.has(c.type) ? c : (group[1] ?? c);
+    for (const g of group) if (g !== keep) hidden.add(g.address);
+  }
+  return hidden;
+}
+
+/** Union of hiddenChannels() over all discovered devices, minus mapped ones. */
+function hiddenAddresses() {
+  if (state.ui.showAll) return new Set();
+  const mapped = new Set(configuredChannels().map((c) => c.address));
+  const out = new Set();
+  for (const d of state.discovered.devices ?? []) {
+    for (const a of hiddenChannels(d)) if (!mapped.has(a)) out.add(a);
   }
   return out;
 }
@@ -214,7 +264,11 @@ function devicesErrorHTML() {
 function navigate(view) {
   state.view = view;
   state.nav = [];
-  $('hgui-view-select').value = view;
+  document.querySelectorAll('#hgui-tabs [data-tab]').forEach((t) => {
+    const on = t.dataset.tab === view;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', String(on));
+  });
   rerender();
 }
 
@@ -235,45 +289,9 @@ function rerender() {
 // ---------------------------------------------------------------- top-level views
 
 const VIEWS = {
-  dashboard: viewDashboard,
-  channels:  viewChannels,
   settings:  viewSettings,
+  channels:  viewChannels,
 };
-
-// ---------------------------------------------------------------- dashboard
-
-function viewDashboard(host) {
-  const card = (label, value, sub = '') => `
-    <div class="col-sm-6 col-md-3 d-flex">
-      <div class="hgui-card flex-fill">
-        <div class="hgui-meta">${h(label)}</div>
-        <div class="display-6">${h(value)}</div>
-        <div class="hgui-meta">${h(sub)}</div>
-      </div>
-    </div>`;
-  const discoveryStatus = state.discovered.devices.length
-    ? `${state.discovered.devices.length} devices`
-    : 'No discovery data yet — click "Discover" in the header to load from the CCU.';
-  host.innerHTML = `
-    <h4 class="my-3">Dashboard</h4>
-    <div class="row g-3 mb-3">
-      ${card('Channels', configuredChannels().length, 'in HomeKit')}
-      ${card('Devices',  state.discovered.devices.length, 'discovered on the CCU')}
-    </div>
-    <div class="hgui-card">
-      <h6>Discovery</h6>
-      <p class="hgui-meta mb-0">${h(discoveryStatus)}</p>
-    </div>
-    <div class="hgui-card">
-      <h6>Quick links</h6>
-      <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-outline-primary btn-sm" data-go="channels">Manage channels →</button>
-        <button class="btn btn-outline-secondary btn-sm" data-go="settings">Settings →</button>
-      </div>
-    </div>
-  `;
-  host.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => navigate(b.dataset.go)));
-}
 
 // ---------------------------------------------------------------- channels view
 
@@ -284,11 +302,26 @@ function viewChannels(host) {
   // search input never gets recreated, never loses focus.
   // Build the type filter option list from the discovered device tree
   // so the dropdown reflects what's actually on this CCU.
+  const hidden = hiddenAddresses();
   const channelTypes = new Set();
-  for (const d of state.discovered.devices) for (const c of d.channels) if (c.type) channelTypes.add(c.type);
+  for (const d of state.discovered.devices) {
+    for (const c of d.channels) if (c.type && c.index !== 0 && !hidden.has(c.address)) channelTypes.add(c.type);
+  }
 
   host.innerHTML = `
-    <h4 class="my-3">Channels</h4>
+    <div class="hgui-card mt-3">
+      <h6>Which channels go to HomeKit?</h6>
+      <ol class="hgui-meta mb-2 ps-3">
+        <li>Click <strong>Discover</strong> to load the devices from the CCU.</li>
+        <li>Switch the filter to <em>Not in HomeKit</em>, pick a channel and click <strong>+ Add</strong>.
+          Give it a HomeKit name and choose the service (switch, outlet, light, blind, …).</li>
+        <li>Restart the child bridge to apply the changes.</li>
+      </ol>
+      <p class="hgui-meta mb-0">Only the channels worth mapping are listed. An HmIP actuator shows one
+        channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
+        the plugin reads the state there and sends commands to the matching receiver channel itself.
+        Choose the channel and service once: changing either later creates a new accessory in Home.</p>
+    </div>
     <div class="hgui-toolbar">
       <input type="search" class="form-control" id="hgui-search-channels"
              placeholder="Search by HomeKit name, CCU name, address, type…"
@@ -308,6 +341,10 @@ function viewChannels(host) {
         <option value="address">Sort: Address</option>
         <option value="type">Sort: Channel type</option>
       </select>
+      <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" id="hgui-showall-channels" ${state.ui.showAll ? 'checked' : ''} />
+        <label class="form-check-label" for="hgui-showall-channels">Show all channels</label>
+      </div>
       <button class="btn btn-primary ms-auto" id="hgui-add-channel">+ Add channel</button>
       <span class="hgui-meta" id="hgui-channels-count"></span>
     </div>
@@ -338,6 +375,11 @@ function viewChannels(host) {
     state.ui.sort.channels = e.target.value;
     drawChannelRows();
   });
+  $('hgui-showall-channels').addEventListener('change', (e) => {
+    state.ui.showAll = e.target.checked;
+    state.ui.page.channels = 1;
+    rerender(); // the type filter list depends on it too
+  });
   $('hgui-add-channel').addEventListener('click', () => {
     if (state.devicesErrors) {
       toast('warning', 'Fix devices.json first', 'Add channel'); return;
@@ -366,6 +408,7 @@ function drawChannelRows() {
     rows = configured.map((c) => ({ ...c, _info: cl.get(c.address), isConfigured: true }));
   } else {
     // 'all' or 'unconfigured' both need discovered data.
+    const hidden = hiddenAddresses();
     rows = [];
     for (const d of state.discovered.devices) {
       // A whole-device mapping (e.g. irrigation) is one card, not N channels.
@@ -376,6 +419,7 @@ function drawChannelRows() {
       }
       for (const c of d.channels) {
         if (c.index === 0) continue; // MAINTENANCE: not mappable
+        if (hidden.has(c.address)) continue;
         const existing = configuredByAddr.get(c.address);
         const isConfigured = !!existing;
         if (filter === 'unconfigured' && isConfigured) continue;
@@ -508,8 +552,18 @@ function pagerHTML(kind, page, pageCount) {
 
 function viewSettings(host) {
   const m = state.cfg;
+  const stat = (label, value, sub) => `
+    <div class="hgui-card">
+      <div class="hgui-meta">${h(label)}</div>
+      <div class="hgui-stat-value">${h(value)}</div>
+      <div class="hgui-meta">${h(sub)}</div>
+    </div>`;
+  const discovered = state.discovered.devices.length;
   host.innerHTML = `
-    <h4 class="my-3">Settings</h4>
+    <div class="hgui-stats mt-3">
+      ${stat('Channels', configuredChannels().length, 'in HomeKit')}
+      ${stat('Devices', discovered, discovered ? 'discovered on the CCU' : 'not discovered yet — click "Discover"')}
+    </div>
     <div class="hgui-card">
       <h6>CCU connection</h6>
       <div class="row g-2 mb-2">
@@ -533,9 +587,12 @@ function viewSettings(host) {
           <label class="form-label">Callback address (required)</label>
           <input class="form-control" id="cf-callback-host" list="cf-callback-list" placeholder="192.168.0.13" value="${h(m.eventServer.callbackHost ?? '')}" />
           <datalist id="cf-callback-list">${state.network.map((n) => `<option value="${h(n.address)}">${h(n.name)}</option>`).join('')}</datalist>
-          <div class="hgui-hint">IP of this Homebridge host as seen from the CCU. The CCU sends its events to <code>http://&lt;address&gt;:&lt;port&gt;</code>.
-            ${state.network.length ? `Local addresses: ${state.network.map((n) => `<a href="#" data-pick-ip="${h(n.address)}">${h(n.address)}</a> (${h(n.name)})`).join(', ')}.
-            In Docker these are container addresses — use the host's IP instead.` : ''}</div>
+          <div class="hgui-hint">IP of this Homebridge host as seen from the CCU. The CCU sends its events to <code>http://&lt;address&gt;:&lt;port&gt;</code>.</div>
+          ${state.network.length ? `<div class="hgui-hint"><details>
+            <summary>Local addresses of this host (${state.network.length})</summary>
+            <div class="mt-1">${state.network.map((n) => `<a href="#" data-pick-ip="${h(n.address)}">${h(n.address)}</a> (${h(n.name)})`).join(', ')}</div>
+            <div class="mt-1">Click one to use it. In Docker these are container addresses — use the host's IP instead.</div>
+          </details></div>` : ''}
         </div>
       </div>
     </div>
@@ -634,7 +691,8 @@ function subviewHeader(host, title, breadcrumb) {
 // --- pickChannel: searchable picker
 
 function subPickChannel(host) {
-  subviewHeader(host, 'Add channel — pick from CCU');
+  subviewHeader(host, 'Add channel — pick from CCU',
+    state.ui.showAll ? 'all channels' : 'channels worth mapping ("Show all channels" lists every one)');
   const body = $('hgui-sub-body');
   body.innerHTML = `
     <div class="hgui-toolbar">
@@ -658,9 +716,13 @@ function drawPicker() {
   const host = $('hgui-picker-host');
   const pagerHost = $('hgui-picker-pager');
   const configuredByAddr = new Map(configuredChannels().map((c) => [c.address, c]));
+  const hidden = hiddenAddresses();
   const all = [];
   for (const d of state.discovered.devices) {
-    for (const c of d.channels) all.push({ device: d, channel: c });
+    for (const c of d.channels) {
+      if (c.index === 0 || hidden.has(c.address)) continue;
+      all.push({ device: d, channel: c });
+    }
   }
   const q = state.ui.search.picker.trim().toLowerCase();
   let rows = q
@@ -1001,7 +1063,8 @@ async function init() {
   }
 
   // Header listeners.
-  $('hgui-view-select').addEventListener('change', (e) => navigate(e.target.value));
+  document.querySelectorAll('#hgui-tabs [data-tab]').forEach((t) =>
+    t.addEventListener('click', () => navigate(t.dataset.tab)));
   $('hgui-discover-btn').addEventListener('click', onDiscover);
   $('hgui-test-btn').addEventListener('click', onTestConnection);
 
@@ -1010,15 +1073,13 @@ async function init() {
     if (e.key === 'Escape' && state.nav.length) popNav();
   });
 
-  // Initial tab: if the user hasn't configured a CCU yet, drop them
-  // straight into Settings. Otherwise show Dashboard and kick off a
-  // background Discover so the channels tab is
-  // populated by the time the user clicks them.
+  // Initial tab: Settings until a CCU is configured, then Channels with
+  // a background Discover so the list fills in on its own.
   const isConfigured = !!state.cfg.ccuIp && state.cfg.ccuIp.length > 0;
   if (!isConfigured) {
     navigate('settings');
   } else {
-    navigate('dashboard');
+    navigate('channels');
     // Fire-and-forget; failures fall back to the empty state with a
     // hint already in place. No spinner — user can still navigate.
     onDiscover().catch(() => { /* errors already toasted by onDiscover */ });

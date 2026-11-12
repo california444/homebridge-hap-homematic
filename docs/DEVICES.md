@@ -85,10 +85,13 @@ channel of the device (e.g. HM-LC-Sw4-DR-2, channels 1–4).
 
 ### HmIP actuators
 
-For HmIP-PS, HmIP-DRSI4, HmIP-BROLL / FROLL map the channel you want
-(transmitter or any receiver of the group, e.g. DRSI4 lamp 1 = channel
-6). The plugin reads the state from the group's `*_TRANSMITTER` and sends
-commands to the first `*_VIRTUAL_RECEIVER`.
+For HmIP-PS, HmIP-DRSI4, HmIP-BROLL / FROLL map the group's
+`*_TRANSMITTER` channel: HmIP-PS channel 2, HmIP-BROLL / FROLL channel 3,
+HmIP-DRSI4 channels 5 / 9 / 13 / 17 (one per output). The plugin reads the
+state there and sends commands to the first `*_VIRTUAL_RECEIVER` after it.
+Mapping a receiver of the group works the same. The custom UI lists only one
+channel per group and hides channels no service can handle as well as the
+CCU's virtual remote (RCV-50); "Show all channels" lists every channel.
 
 ## Accessory identity (decision D6)
 
