@@ -11,6 +11,11 @@
  * timed STATE=false. RemainingDuration is display only; the end time is
  * kept in accessory.context so it survives a Homebridge restart.
  * SetDuration = 0: no ON_TIME, the valve stays on until switched off.
+ *
+ * Run time per valve: channel option `duration` (seconds) fixes it — used
+ * for ON_TIME and shown as SetDuration; a duration set in Home is ignored
+ * for that valve (the Home app only offers 5 min and more). Without it:
+ * the duration set in Home, else `defaultDuration`.
  */
 
 import type { Service } from 'homebridge';
@@ -41,6 +46,8 @@ interface Valve {
   address: string;
   service: Service;
   on: boolean | undefined;
+  /** Fixed run time from devices.json (channel option `duration`). */
+  fixed: number | undefined;
 }
 
 class IrrigationHandler extends AccessoryBase implements ChannelService {
@@ -50,7 +57,7 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel, device?: CcuDevice): void {
     const serial = channel.address.split(':')[0]!;
     const settings = (this.accessory.context.settings ?? {}) as {
-      channels?: Record<string, { name?: string; valveType?: unknown }>;
+      channels?: Record<string, { name?: string; valveType?: unknown; duration?: unknown }>;
       defaultDuration?: unknown;
     };
     const perChannel = settings.channels ?? {};
@@ -80,7 +87,8 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       const cfg = perChannel[key] ?? {};
       const name = typeof cfg.name === 'string' && cfg.name ? cfg.name : `Valve ${index}`;
       const service = this.getOrAddService(this.Service.Valve, name, `valve-${index}`);
-      const valve: Valve = { index, address, service, on: undefined };
+      const fixed = fixedDuration(cfg.duration);
+      const valve: Valve = { index, address, service, on: undefined, fixed };
       this.valves.push(valve);
       (system as unknown as { addLinkedService?: (s: Service) => void }).addLinkedService?.(service);
 
@@ -93,13 +101,23 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
         .onSet(this.wrapSet<number>(async (v) => this.switchValve(valve, Number(v) === 1)));
       service.getCharacteristic(this.Characteristic.InUse)
         .onGet(this.wrapGet<number>(() => (valve.on === undefined ? this.unknown() : valve.on ? 1 : 0)));
-      service.getCharacteristic(this.Characteristic.SetDuration)
+      const setDuration = service.getCharacteristic(this.Characteristic.SetDuration)
         .setProps({ minValue: 0, maxValue: MAX_DURATION_S })
-        .onGet(() => store.durations![key] ?? defaultDuration)
+        .onGet(() => fixed ?? store.durations![key] ?? defaultDuration)
         .onSet((v) => {
+          if (fixed !== undefined) {
+            // Fixed in devices.json: ignore Home and show the fixed value again.
+            this.log.info('%s: run time is fixed to %d s in the plugin settings; ignoring %s s from Home',
+              name, fixed, String(v));
+            setTimeout(() => setDuration.updateValue(fixed), 0);
+            return;
+          }
           store.durations![key] = clampDuration(Number(v));
           this.persist();
         });
+      if (fixed !== undefined) {
+        setDuration.updateValue(fixed);
+      }
       service.getCharacteristic(this.Characteristic.RemainingDuration)
         .setProps({ minValue: 0, maxValue: MAX_DURATION_S })
         .onGet(() => this.remaining(key));
@@ -130,7 +148,9 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       return;
     }
     const settings = (this.accessory.context.settings ?? {}) as { defaultDuration?: unknown };
-    const duration = store.durations![key] ?? clampDuration(Number(settings.defaultDuration ?? DEFAULT_DURATION_S));
+    const duration = valve.fixed
+      ?? store.durations![key]
+      ?? clampDuration(Number(settings.defaultDuration ?? DEFAULT_DURATION_S));
     if (duration > 0) {
       // The actuator switches off by itself after ON_TIME (D3).
       await this.ccu.setValue(valve.address, 'ON_TIME', duration);
@@ -182,6 +202,15 @@ function clampDuration(n: number): number {
   return Number.isFinite(n) ? Math.min(MAX_DURATION_S, Math.max(0, Math.round(n))) : DEFAULT_DURATION_S;
 }
 
+/** Channel option `duration`: seconds 1–3600, else not set. */
+function fixedDuration(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.min(MAX_DURATION_S, Math.round(n)) : undefined;
+}
+
 function valveType(raw: unknown): number {
   return VALVE_TYPES[String(raw ?? 'irrigation').toLowerCase().replace(/[^a-z]/g, '')] ?? 1;
 }
@@ -211,13 +240,16 @@ export const irrigationService: ServiceDefinition = {
   options: [
     { key: 'defaultDuration', label: 'Default run time (s)', type: 'number', default: DEFAULT_DURATION_S,
       min: 0, max: MAX_DURATION_S,
-      hint: 'How long a valve runs when switched on (sent as ON_TIME; the actuator switches off by itself). '
-        + 'A duration set for a valve in Home replaces it for that valve. 0 = stays on until switched off. Max. 3600 s.' },
+      hint: 'How long a valve runs when switched on (sent as ON_TIME; the actuator switches off by itself), '
+        + 'unless the valve has its own run time below or a duration set in Home. 0 = stays on until switched off. Max. 3600 s.' },
   ],
   channelOptions: [
     { key: 'name', label: 'Valve name', type: 'text', hint: 'Name of the valve in Home; empty = "Valve <channel>".' },
     { key: 'valveType', label: 'Valve type', type: 'enum', default: 'Irrigation',
       values: ['Irrigation', 'GenericValve', 'ShowerHead', 'WaterFaucet'], hint: 'Icon and wording in Home.' },
+    { key: 'duration', label: 'Run time (s)', type: 'number', min: 1, max: MAX_DURATION_S,
+      hint: 'Fixed run time of this valve in seconds (1–3600). Set: a duration chosen in Home is ignored '
+        + '(Home only offers 5 min and more). Empty: the duration from Home, else the default run time.' },
   ],
   build: (ctx: ServiceContext) => new IrrigationHandler(ctx),
 };

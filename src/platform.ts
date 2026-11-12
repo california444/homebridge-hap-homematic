@@ -149,13 +149,19 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     }
 
     const seen = new Set<string>();
+    const counts = { added: 0, restored: 0, skipped: 0, removed: 0 };
     for (const mapping of mappings) {
       const seed = mappingUuidSeed(mapping);
       try {
         const uuid = this.api.hap.uuid.generate(seed);
+        const cached = this.cachedAccessories.has(uuid);
         seen.add(uuid);
         this.attachMapping(uuid, mapping);
+        const name = this.managed.get(uuid)?.accessory.displayName ?? seed;
+        this.log.info('%s "%s" (%s, %s)', cached ? 'Restored' : 'Added', name, mapping.service, seed.split(':').slice(0, -1).join(':'));
+        counts[cached ? 'restored' : 'added']++;
       } catch (err) {
+        counts.skipped++;
         this.log.warn('Skipping %s: %s', seed, (err as Error).message);
       }
     }
@@ -171,8 +177,11 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
         this.cachedAccessories.delete(uuid);
       }
     }
+    counts.removed = toRemove.length;
+    this.log.info('%d accessories: %d added, %d restored, %d removed%s', counts.added + counts.restored,
+      counts.added, counts.restored, counts.removed, counts.skipped ? `, ${counts.skipped} skipped` : '');
     if (toRemove.length > 0) {
-      this.log.info('Removing %d stale accessories', toRemove.length);
+      this.log.info('Removing %d stale accessories: %s', toRemove.length, toRemove.map((a) => a.displayName).join(', '));
       this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, toRemove);
     }
   }

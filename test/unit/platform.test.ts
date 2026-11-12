@@ -295,7 +295,8 @@ describe('HomematicPlatform', () => {
   it('updates an existing cached accessory instead of re-registering', async () => {
     await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory' } } } } });
     const api = makeApi();
-    const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+    const log = makeLog();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
     const uuid = `uuid:HmIP-RF:${PS}:1:SwitchAccessory`;
     const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)(`HMIP-PS ${PS}:1`, uuid);
     platform.configureAccessory(cached);
@@ -304,6 +305,9 @@ describe('HomematicPlatform', () => {
     await flushAsync();
     expect(api.updated).toContain(cached);
     expect(api.registered).toHaveLength(0);
+    // The stub accessory has no services, so attaching fails: counted as skipped.
+    const info = vi.mocked(log.info).mock.calls.map((c) => c.map(String).join(' '));
+    expect(info.some((l) => /accessories: %d added/.test(l) && l.includes(', 1 skipped'))).toBe(true);
   });
 
   it('renames a cached accessory and disposes handlers on shutdown', async () => {
@@ -398,9 +402,10 @@ describe('HomematicPlatform', () => {
   });
 
   it('phase 5 wiring: HmIP pairing, device to attach, start values via refresh, persist, describer', async () => {
-    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '4': { service: 'SwitchAccessory' } } } } });
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '4': { service: 'SwitchAccessory', name: 'Lampe' } } } } });
     const api = makeApi();
-    const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+    const log = makeLog();
+    const platform = new HomematicPlatform(log, CFG, api as unknown as API);
     const list: RpcDeviceDescription[] = [
       { ADDRESS: PS, TYPE: 'HMIP-PS', PARENT: '', FIRMWARE: '2.24.8' },
       { ADDRESS: `${PS}:2`, TYPE: 'SWITCH_TRANSMITTER', PARENT: PS, INDEX: 2 },
@@ -426,6 +431,9 @@ describe('HomematicPlatform', () => {
     ctxSeen.persist!();
     expect(api.updated.length).toBeGreaterThan(0);
     expect(ccu.describe(`${PS}:3`, 'STATE')).toEqual({ TYPE: 'BOOL' });
+    const info = vi.mocked(log.info).mock.calls.map((c) => c.map(String).join(' '));
+    expect(info.some((l) => l.includes('Added') && l.includes('Lampe') && l.includes(`SwitchAccessory HmIP-RF:${PS}:4`))).toBe(true);
+    expect(info.some((l) => /accessories: %d added/.test(l) && l.includes(' 1 1 0 0 '))).toBe(true);
   });
 
   it('a failing refresh is logged and does not stop the start', async () => {

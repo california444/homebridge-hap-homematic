@@ -79,6 +79,7 @@ in the channel entry.
 | `IrrigationAccessory` | `defaultDuration` | `600` | run time in seconds (max. 3600), sent as `ON_TIME`; the actuator switches off by itself. A duration set for a valve in Home replaces it for that valve. `0` = stays on until switched off |
 | `IrrigationAccessory` | channel `valveType` | `Irrigation` | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet` |
 | `IrrigationAccessory` | channel `name` | `Valve N` | name of the valve |
+| `IrrigationAccessory` | channel `duration` | – | fixed run time of this valve in seconds (1–3600); a duration chosen in Home is ignored (Home only offers 5 min and more). Empty: Home's duration, else `defaultDuration` |
 
 `IrrigationAccessory` is a whole-device mapping: one valve per `SWITCH`
 channel of the device (e.g. HM-LC-Sw4-DR-2, channels 1–4).
@@ -91,7 +92,7 @@ HmIP-DRSI4 channels 5 / 9 / 13 / 17 (one per output). The plugin reads the
 state there and sends commands to the first `*_VIRTUAL_RECEIVER` after it.
 Mapping a receiver of the group works the same. The custom UI lists only one
 channel per group and hides channels no service can handle as well as the
-CCU's virtual remote (RCV-50); "Show all channels" lists every channel.
+CCU's virtual remote (RCV-50) and the built-in buttons (`KEY_TRANSCEIVER`) of actuators; "Show all channels" lists every channel.
 
 ## Accessory identity (decision D6)
 

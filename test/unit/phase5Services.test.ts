@@ -209,6 +209,27 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     expect((a.accessory.context as unknown as { irrigation: { ends: object } }).irrigation.ends).toEqual({});
   });
 
+  it('fixed run time per valve (channel option duration) wins over Home and the default', async () => {
+    const { env, a, valve } = setup({
+      settings: { defaultDuration: 300, channels: { '1': { name: 'Rasen', duration: 90 }, '2': { duration: 'x' }, '3': { duration: 9999 } } },
+    });
+    const dur = a.char(valve(1), 'SetDuration');
+    expect(dur.value).toBe(90);
+    expect(dur.onGetHandler!()).toBe(90);
+    dur.onSetHandler!(600); // Home tries 10 min
+    await vi.advanceTimersByTimeAsync(1);
+    expect(dur.value).toBe(90);
+    expect(dur.onGetHandler!()).toBe(90);
+    await a.char(valve(1), 'Active').onSetHandler!(1);
+    expect(env.setValue.mock.calls[0]).toEqual([`${SERIAL}:1`, 'ON_TIME', 90]);
+    // invalid → not fixed: Home / default apply
+    expect(a.char(valve(2), 'SetDuration').onGetHandler!()).toBe(300);
+    a.char(valve(2), 'SetDuration').onSetHandler!(120);
+    expect(a.char(valve(2), 'SetDuration').onGetHandler!()).toBe(120);
+    // clamped to the HAP maximum
+    expect(a.char(valve(3), 'SetDuration').onGetHandler!()).toBe(3600);
+  });
+
   it('SetDuration 0: no ON_TIME, stays on until switched off', async () => {
     const { env, a, valve } = setup();
     a.char(valve(2), 'SetDuration').onSetHandler!(0);
