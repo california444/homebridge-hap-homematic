@@ -6,7 +6,6 @@
   "customUi": true,
   "customUiPath": "./homebridge-ui",
   "headerDisplay": "**HomeMatic (BidCos-RF) / HomematicIP (HmIP-RF)** plugin for a CCU / OpenCCU, using XML-RPC only. Use the **custom UI** below to discover devices and map channels to HomeKit.",
-  "footerDisplay": "Hard fork of [Homebridge-Homematic-HAP](https://github.com/matthiaseinig/Homebridge-Homematic-HAP), which builds on [thkl/hap-homematic](https://github.com/thkl/hap-homematic) and [thkl/homebridge-homematic](https://github.com/thkl/homebridge-homematic). Apache-2.0.",
   "schema": {
     "type": "object",
     "properties": {

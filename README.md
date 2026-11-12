@@ -1,9 +1,6 @@
 # homebridge-hap-homematic
 
-<!--
-  Modified by california444 (2026) for homebridge-hap-homematic,
-  a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
--->
+<!-- Modified by california444 (2026). See NOTICE. -->
 
 [![Release](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
