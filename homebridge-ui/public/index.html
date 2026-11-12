@@ -90,7 +90,7 @@
   .hgui-empty { color: var(--bs-secondary-color); font-style: italic; padding: 2rem; text-align: center; border: 1px dashed var(--bs-border-color-translucent); border-radius: 8px; margin-top: 1rem; }
   .hgui-pager { display: flex; gap: 0.25rem; align-items: center; justify-content: center; padding: 0.75rem 0; flex-wrap: wrap; }
 
-  /* Cards (used in dashboard / settings) --------------------------- */
+  /* Cards (used in settings / sub-views) --------------------------- */
   .hgui-card { background: var(--bs-tertiary-bg); color: var(--bs-body-color); border: 1px solid var(--bs-border-color-translucent); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
   .hgui-card h6 { margin-bottom: 0.5rem; }
   .hgui-meta { color: var(--bs-secondary-color); font-size: 0.85rem; }
@@ -100,22 +100,37 @@
   @media (max-width: 700px) { .hgui-form-row { grid-template-columns: 1fr; } }
   .hgui-form-row label { padding-top: 0.5rem; font-weight: 500; color: var(--bs-body-color); }
   .hgui-form-row .hgui-hint { color: var(--bs-secondary-color); font-size: 0.825rem; margin-top: 0.25rem; }
+  .hgui-hint { color: var(--bs-secondary-color); font-size: 0.825rem; margin-top: 0.25rem; }
+  .hgui-hint details summary { cursor: pointer; color: var(--bs-link-color); }
+
+  /* Tabs: keep the host's tab look, make the active tab readable in both themes. */
+  #hgui-tabs .nav-link { color: var(--bs-secondary-color); }
+  #hgui-tabs .nav-link.active { color: var(--bs-body-color); background: var(--bs-body-bg); }
+
+  /* Status tiles at the top of Settings. */
+  .hgui-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
+  .hgui-stats .hgui-card { margin-bottom: 0; }
+  .hgui-stat-value { font-size: 1.75rem; font-weight: 600; line-height: 1.2; }
 </style>
 
 <div id="hgui-app">
 
-  <!-- Header: view dropdown + persistent action buttons --------------- -->
+  <!-- Header: action buttons, then the view tabs ------------------------ -->
   <header class="hgui-header">
-    <select id="hgui-view-select" class="form-select form-select-sm" style="min-width: 200px; max-width: 220px">
-      <option value="dashboard">📊 Dashboard</option>
-      <option value="channels">💡 Channels</option>
-      <option value="settings">⚙️ Settings</option>
-    </select>
     <button id="hgui-discover-btn" class="btn btn-primary btn-sm">Discover</button>
     <button id="hgui-test-btn" class="btn btn-outline-secondary btn-sm">Test CCU</button>
     <span id="hgui-test-result" class="small"></span>
     <span class="hgui-version ms-auto" id="hgui-version-banner"></span>
   </header>
+  <!-- Plain Bootstrap tab styling; switching is done in app.js (no Bootstrap JS). -->
+  <ul class="nav nav-tabs" id="hgui-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" type="button" role="tab" data-tab="settings">⚙️ Settings</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" type="button" role="tab" data-tab="channels">💡 Channels</button>
+    </li>
+  </ul>
 
   <main class="hgui-main">
     <div id="hgui-view-host"></div>
