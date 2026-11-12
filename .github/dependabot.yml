@@ -1,3 +1,5 @@
+# Taken from california444/homebridge-doorbell-telegram-photo; ignore rules
+# for @types/node and typescript added for this plugin.
 version: 2
 updates:
 - package-ecosystem: npm
@@ -26,6 +28,13 @@ updates:
       dependency-type: development
       update-types: [minor, patch]
   ignore:
+    # Types must match the lowest supported Node (engines: node >=24);
+    # newer majors would allow APIs that Node 24 does not have.
+    - dependency-name: "@types/node"
+      update-types: [version-update:semver-major]
+    # TypeScript 7 (native compiler) is not supported by typescript-eslint yet.
+    - dependency-name: typescript
+      update-types: [version-update:semver-major]
     # v10 needs conventional-changelog-writer@9, but
     # @semantic-release/release-notes-generator still ships writer@8.
     # Lift this once the generator moves to writer@9.
