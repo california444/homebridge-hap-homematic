@@ -373,6 +373,9 @@ export class CcuClient extends EventEmitter {
 
   private handleEvent(ev: ChannelEvent): void {
     const sup = this.byCallbackId.get(ev.callbackId);
+    if (!sup) {
+      this.log.debug('Event for unknown callback id %s: %s.%s', ev.callbackId, ev.channelAddress, ev.datapoint);
+    }
     if (ev.datapoint === 'PONG' && (ev.channelAddress === 'CENTRAL' || ev.channelAddress === 'CENTRAL:0')) {
       // Own PONG (value = our caller id) or a foreign client's; both prove
       // that our subscription on this interface is alive.
