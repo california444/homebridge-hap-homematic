@@ -31,9 +31,9 @@
      its height to our content, so vh creates a positive feedback loop
      (content grows → iframe grows → vh grows → … hits 100k+ px). */
   #hgui-app { display: flex; flex-direction: column; color: var(--bs-body-color); }
-  .hgui-header { display: flex; gap: 0.5rem; align-items: center; padding: 0.75rem 0; flex-wrap: wrap; }
-  .hgui-header .hgui-brand { font-weight: 600; }
-  .hgui-header .hgui-version { color: var(--bs-secondary-color); font-size: 0.8rem; }
+  .hgui-version { color: var(--bs-secondary-color); font-size: 0.8rem; }
+  details.hgui-card > summary { cursor: pointer; font-weight: 500; }
+  details.hgui-card[open] > summary { margin-bottom: 0.5rem; }
   .hgui-main { flex: 1; min-width: 0; }
 
   .hgui-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; padding: 0.75rem 0; border-top: 1px solid var(--bs-border-color-translucent); border-bottom: 1px solid var(--bs-border-color-translucent); position: sticky; top: 0; background: var(--bs-body-bg); z-index: 10; }
@@ -115,20 +115,18 @@
 
 <div id="hgui-app">
 
-  <!-- Header: action buttons, then the view tabs ------------------------ -->
-  <header class="hgui-header">
-    <button id="hgui-discover-btn" class="btn btn-primary btn-sm">Discover</button>
-    <button id="hgui-test-btn" class="btn btn-outline-secondary btn-sm">Test CCU</button>
-    <span id="hgui-test-result" class="small"></span>
-    <span class="hgui-version ms-auto" id="hgui-version-banner"></span>
-  </header>
-  <!-- Plain Bootstrap tab styling; switching is done in app.js (no Bootstrap JS). -->
-  <ul class="nav nav-tabs" id="hgui-tabs" role="tablist">
+  <!-- View tabs (plain Bootstrap tab styling; switching is done in app.js,
+       no Bootstrap JS). The actions live in the views: Test CCU in
+       Settings, Discover in Channels. -->
+  <ul class="nav nav-tabs mt-2" id="hgui-tabs" role="tablist">
     <li class="nav-item" role="presentation">
       <button class="nav-link" type="button" role="tab" data-tab="settings">⚙️ Settings</button>
     </li>
     <li class="nav-item" role="presentation">
       <button class="nav-link" type="button" role="tab" data-tab="channels">💡 Channels</button>
+    </li>
+    <li class="nav-item ms-auto d-flex align-items-center">
+      <span class="hgui-version" id="hgui-version-banner"></span>
     </li>
   </ul>
 
