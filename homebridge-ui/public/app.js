@@ -1027,7 +1027,7 @@ async function onDiscover({ quiet = false } = {}) {
 }
 
 /**
- * The device list the plugin saved at its last start. Returns false if
+ * The last saved device list (plugin start or live discovery). Returns false if
  * there is none, so the caller can fall back to a live discovery.
  */
 async function loadCachedDiscovery() {
@@ -1042,7 +1042,7 @@ async function loadCachedDiscovery() {
   }
 }
 
-/** "live, 22:05" / "saved by the plugin, 12.11. 22:05" for the Devices box. */
+/** "live from the CCU, 22:05" / "saved list, 12.11. 22:05" for the Devices box. */
 function discoverySourceText() {
   const d = state.discovered;
   if (!d.devices?.length) return 'not discovered yet';
@@ -1051,7 +1051,7 @@ function discoverySourceText() {
     ? at.toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     : '';
   return d.source === 'cache'
-    ? `saved by the plugin${when ? `, ${when}` : ''}`
+    ? `saved list${when ? `, ${when}` : ''}`
     : `live from the CCU${when ? `, ${when}` : ''}`;
 }
 

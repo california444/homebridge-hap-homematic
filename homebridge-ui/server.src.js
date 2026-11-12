@@ -150,18 +150,50 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     const config = this.coerceConfig(payload);
     const log = new PrefixedLogger(new UiLogger(), 'ui:discover');
     const ccu = new CcuClient({ config, log });
+    let results;
     try {
-      const devices = await ccu.listDevices();
-      return { devices: enrich(devices), source: 'live', fetchedAt: new Date().toISOString() };
+      const raw = await ccu.listRawDevices();
+      results = raw.results;
+      for (const [id, err] of raw.errors) {
+        console.warn('[ui] listDevices on %s failed: %s', id, err.message);
+      }
+      if (results.size === 0 && raw.errors.size > 0) {
+        throw [...raw.errors.values()][0];
+      }
     } catch (err) {
       throw new RequestError(`Discovery failed: ${err.message}`, { status: 502 });
     } finally {
       try { await ccu.stop(); } catch { /* ignore */ }
     }
+    const fetchedAt = new Date().toISOString();
+    await this.saveDiscoveryCache(results, fetchedAt);
+    const devices = [];
+    for (const [id, list] of results) devices.push(...toDevices(list, id));
+    return { devices: enrich(devices), source: 'live', fetchedAt };
   }
 
   /**
-   * The device list the plugin saved at its last start (discovery.json),
+   * Store a live answer in discovery.json, in the plugin's format, so the
+   * next opening of the UI shows it. Interfaces that did not answer keep
+   * their saved list. Best effort: a write error is only logged.
+   */
+  async saveDiscoveryCache(results, fetchedAt) {
+    try {
+      const storage = this.storage();
+      const old = await storage.readJson(DISCOVERY_CACHE_FILE).catch(() => undefined);
+      const interfaces = old && old.version === 1 && old.interfaces && typeof old.interfaces === 'object'
+        ? { ...old.interfaces }
+        : {};
+      for (const [id, list] of results) interfaces[id] = { fetchedAt, devices: list };
+      await storage.writeJson(DISCOVERY_CACHE_FILE, { version: 1, interfaces });
+    } catch (err) {
+      console.warn('[ui] cannot save %s: %s', DISCOVERY_CACHE_FILE, err.message);
+    }
+  }
+
+  /**
+   * The last saved device list (discovery.json, written by the plugin at
+   * start and by a live discovery from the UI),
    * without asking the CCU. `devices: []` if there is none (plugin never
    * started) or it is unreadable; the UI then discovers live.
    */
