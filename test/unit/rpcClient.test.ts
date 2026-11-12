@@ -94,6 +94,22 @@ describe('RpcClient', () => {
     expect(c.isSubscribed()).toBe(false);
   });
 
+  it('logs a successful unsubscribe (info) and a failed one (warn)', async () => {
+    const log = makeLog();
+    const t = makeTransport();
+    const c = new RpcClient({
+      interfaceId: 'BidCos-RF', host: '127.0.0.1', callbackUrl: 'http://example/cb', callbackId: 'cbid',
+      log: new PrefixedLogger(log, 'rpc-test'), transport: t,
+    });
+    await c.subscribe();
+    await c.unsubscribe();
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining('Unsubscribed (%s)'), 'cbid');
+    await c.subscribe();
+    (t.call as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
+    await c.unsubscribe();
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Unsubscribe failed'), 'cbid', 'boom');
+  });
+
   it('getValue and setValue forward to transport', async () => {
     const t = makeTransport();
     const c = makeClient(t);

@@ -249,8 +249,9 @@ export class RpcClient {
       const t = await this.ensureTransport();
       // CCU convention: empty interfaceId removes the subscription.
       await t.call('init', [this.callbackUrl, '']);
+      this.log.info('Unsubscribed (%s)', this.callbackId);
     } catch (err) {
-      this.log.debug('unsubscribe error (ignored): %s', (err as Error).message);
+      this.log.warn('Unsubscribe failed (%s): %s', this.callbackId, (err as Error).message);
     } finally {
       this.subscribed = false;
     }
