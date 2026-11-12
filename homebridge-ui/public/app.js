@@ -978,7 +978,8 @@ async function init() {
       interfacePorts: { ...(b.interfacePorts ?? {}) },
     };
     // Fields of removed features; channel mappings now live in devices.json.
-    for (const k of ['ccuAuth', 'variables', 'programs', '_bridge', 'channels']) delete state.cfg[k];
+    // `_bridge` (child bridge settings incl. debugModeEnabled) is kept as is.
+    for (const k of ['ccuAuth', 'variables', 'programs', 'channels']) delete state.cfg[k];
     delete state.cfg.eventServer.watchdogSeconds; // replaced by per-interface ping/PONG
   } catch (err) {
     toast('error', `Could not load config: ${err.message}`);

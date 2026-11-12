@@ -87,6 +87,7 @@ export class InterfaceSupervisor extends EventEmitter {
   private nextRetryAt = 0;
   private lastPingAt = 0;
   private lastActivityAt = 0;
+  private lastPongAt = 0;
   private subscribedAt = 0;
   private handshakeSeen = true;
   private lastError = '';
@@ -143,10 +144,20 @@ export class InterfaceSupervisor extends EventEmitter {
    * `listDevices` completes the init handshake.
    */
   noteActivity(kind: 'event' | 'pong' | 'listDevices' | 'other'): void {
-    this.lastActivityAt = this.now();
+    const now = this.now();
+    this.lastActivityAt = now;
     if (kind === 'listDevices') {
       this.handshakeSeen = true;
+      this.log.debug('%s: handshake (listDevices) %d ms after init', this.interfaceId, now - this.subscribedAt);
+    } else if (kind === 'pong') {
+      this.lastPongAt = now;
+      this.log.debug('%s: PONG %d ms after ping', this.interfaceId, now - this.lastPingAt);
     }
+  }
+
+  /** "12 s ago" / "never" for the stale warning. */
+  private ago(at: number, now: number): string {
+    return at > 0 ? `${Math.round((now - at) / 1000)} s ago` : 'never';
   }
 
   // --- internals -----------------------------------------------------
@@ -177,8 +188,9 @@ export class InterfaceSupervisor extends EventEmitter {
         if (now - this.lastActivityAt >= this.t.staleAfterMs) {
           await this.run(async () => {
             this.setState('STALE');
-            this.log.warn('%s: no PONG and no events for %d s; subscribing again',
-              this.interfaceId, Math.round((now - this.lastActivityAt) / 1000));
+            this.log.warn('%s: no PONG and no events for %d s (last PONG %s, subscribed %s); subscribing again',
+              this.interfaceId, Math.round((now - this.lastActivityAt) / 1000),
+              this.ago(this.lastPongAt, now), this.ago(this.subscribedAt, now));
             await this.subscribe('stale');
           });
           return;
@@ -196,6 +208,7 @@ export class InterfaceSupervisor extends EventEmitter {
     this.lastPingAt = this.now();
     try {
       await this.client.ping(this.pingId);
+      this.log.debug('%s: ping call returned (last callback %s)', this.interfaceId, this.ago(this.lastActivityAt, this.now()));
     } catch (err) {
       this.disconnected(err as Error);
     }

@@ -17,15 +17,48 @@
  * (also inside system.multicall) is reported as `activity`, which the
  * per-interface supervisors use as a sign of life and as the init
  * handshake (the CCU calls listDevices right after init).
+ *
+ * Debug log: every TCP connection of the CCU (open / close, requests on
+ * it) and every call with a short summary, the response size and time,
+ * and responses that never reached the CCU.
  */
 
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 import * as http from 'node:http';
+import type { Socket } from 'node:net';
 import { parseXml, serializeFault, serializeResponse } from './xmlRpc.js';
 import type { PrefixedLogger } from '../util/logger.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** Sub-calls of a system.multicall listed in the debug summary. */
+const SUMMARY_CALLS = 5;
+
+interface ConnectionInfo {
+  id: number;
+  requests: number;
+}
+
+/** Short text for the debug log, e.g. `event(cb) ABC:1.STATE=true`. */
+export function describeCall(method: string, params: unknown[]): string {
+  if (method === 'event') {
+    const [cb, address, dp, value] = params;
+    return `event(${String(cb)}) ${String(address)}.${String(dp)}=${short(value)}`;
+  }
+  if (method === 'system.multicall') {
+    const calls = Array.isArray(params[0]) ? (params[0] as Array<{ methodName?: unknown; params?: unknown }>) : [];
+    const parts = calls.slice(0, SUMMARY_CALLS).map((c) =>
+      describeCall(String(c?.methodName ?? '?'), Array.isArray(c?.params) ? c.params : []));
+    const more = calls.length > SUMMARY_CALLS ? `; … ${calls.length - SUMMARY_CALLS} more` : '';
+    return `system.multicall[${calls.length}] ${parts.join('; ')}${more}`;
+  }
+  return typeof params[0] === 'string' ? `${method}(${params[0]})` : method;
+}
+
+function short(value: unknown): string {
+  const s = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+  return s.length > 40 ? `${s.slice(0, 40)}…` : s;
+}
 
 export interface EventServerOptions {
   host: string;
@@ -60,6 +93,8 @@ export class EventServer extends EventEmitter {
   private readonly port: number;
   private readonly log: PrefixedLogger;
   private server: http.Server | undefined;
+  private connectionSeq = 0;
+  private readonly connections = new WeakMap<Socket, ConnectionInfo>();
 
   constructor(opts: EventServerOptions) {
     super();
@@ -78,6 +113,7 @@ export class EventServer extends EventEmitter {
   async start(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const server = http.createServer((req, res) => this.handleRequest(req, res));
+      server.on('connection', (socket: Socket) => this.trackConnection(socket));
       server.on('error', (err) => {
         this.emit('error', err);
         reject(err);
@@ -102,7 +138,28 @@ export class EventServer extends EventEmitter {
     });
   }
 
+  private trackConnection(socket: Socket): void {
+    const info: ConnectionInfo = { id: ++this.connectionSeq, requests: 0 };
+    this.connections.set(socket, info);
+    this.log.debug('connection #%d from %s:%s', info.id, socket.remoteAddress ?? '?', String(socket.remotePort ?? '?'));
+    socket.on('close', (hadError: boolean) => {
+      this.log.debug('connection #%d closed after %d request(s)%s', info.id, info.requests, hadError ? ' (error)' : '');
+    });
+  }
+
   private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    const started = Date.now();
+    const conn = this.connections.get(req.socket);
+    if (conn) {
+      conn.requests++;
+    }
+    const tag = conn ? `#${conn.id}.${conn.requests}` : '#?';
+    res.on('close', () => {
+      if (!res.writableFinished) {
+        this.log.debug('%s response not delivered (connection closed)', tag);
+      }
+    });
+    res.on('error', (err) => this.log.debug('%s response error: %s', tag, err.message));
     if (req.method !== 'POST') {
       res.writeHead(405, { 'Content-Type': 'text/plain' });
       res.end('Method Not Allowed');
@@ -124,10 +181,13 @@ export class EventServer extends EventEmitter {
         const body = Buffer.concat(chunks).toString('utf8');
         const parsed = parseXml(body);
         const result = this.dispatch(parsed.method, parsed.params);
+        const xml = serializeResponse(result);
         res.writeHead(200, { 'Content-Type': 'text/xml' });
-        res.end(serializeResponse(result));
+        res.end(xml);
+        this.log.debug('%s %s → %d bytes in %d ms', tag, describeCall(parsed.method, parsed.params),
+          Buffer.byteLength(xml), Date.now() - started);
       } catch (err) {
-        this.log.error('Event server handler error: %s', (err as Error).message);
+        this.log.error('Event server handler error (%s): %s', tag, (err as Error).message);
         res.writeHead(200, { 'Content-Type': 'text/xml' });
         res.end(serializeFault(-1, (err as Error).message));
       }
