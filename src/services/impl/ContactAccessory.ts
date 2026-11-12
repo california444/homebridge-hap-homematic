@@ -15,24 +15,33 @@ const CONTACT_CHANNEL_TYPES = [
 const ERROR_SABOTAGE = 7;
 
 /**
- * Door / window contact. STATE true = open. Options: `invert` swaps
- * open / closed (contacts mounted the other way round).
- * Unknown state → "No Response"; ERROR = SABOTAGE → StatusTampered;
- * UNREACH / interface down → StatusFault (ContactSensor only).
+ * Door / window contact as HomeKit ContactSensor. STATE true = open.
+ * Option `invert` swaps open / closed (contacts mounted the other way
+ * round). Unknown state → "No Response"; ERROR = SABOTAGE →
+ * StatusTampered; UNREACH / interface down → StatusFault.
+ *
+ * The former variants `door` / `window` (upstream) used the HAP services
+ * for motorised doors and windows: Home showed a position slider that did
+ * nothing. They are mapped to the contact sensor now (warning in the log)
+ * and a Door / Window service left in the accessory cache is removed.
  */
 class ContactHandler extends AccessoryBase implements ChannelService {
   private open: boolean | undefined;
 
   attach(channel: CcuChannel): void {
-    const subtype = (this.accessory.context.subtype ?? 'contact').toLowerCase();
+    const subtype = String(this.accessory.context.subtype ?? 'contact').toLowerCase();
+    if (subtype === 'door' || subtype === 'window') {
+      this.log.warn('%s: variant "%s" is no longer supported; using a contact sensor. '
+        + 'Set the variant to "Contact sensor" in the plugin settings.', this.accessory.displayName, subtype);
+    }
+    for (const legacy of [this.Service.Door, this.Service.Window]) {
+      const old = this.accessory.getService(legacy);
+      if (old) {
+        this.accessory.removeService(old);
+      }
+    }
     const invert = this.accessory.context.settings?.invert === true;
-    const svcType = subtype === 'door'
-      ? this.Service.Door
-      : subtype === 'window'
-        ? this.Service.Window
-        : this.Service.ContactSensor;
-    const service = this.getOrAddService(svcType, channel.name);
-    const isSensor = svcType === this.Service.ContactSensor;
+    const service = this.getOrAddService(this.Service.ContactSensor, channel.name);
 
     const contactValue = (): number => {
       if (this.open === undefined) {
@@ -42,40 +51,21 @@ class ContactHandler extends AccessoryBase implements ChannelService {
         ? this.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
         : this.Characteristic.ContactSensorState.CONTACT_DETECTED;
     };
-    const position = (): number => {
-      if (this.open === undefined) {
-        return this.unknown();
-      }
-      return this.open ? 100 : 0;
-    };
 
-    if (isSensor) {
-      service.getCharacteristic(this.Characteristic.ContactSensorState).onGet(this.wrapGet<number>(contactValue));
-    } else {
-      service.getCharacteristic(this.Characteristic.CurrentPosition).onGet(this.wrapGet<number>(position));
-      service.getCharacteristic(this.Characteristic.TargetPosition).onGet(this.wrapGet<number>(position));
-      service.getCharacteristic(this.Characteristic.PositionState).onGet(this.wrapGet<number>(() => 2));
-    }
+    service.getCharacteristic(this.Characteristic.ContactSensorState).onGet(this.wrapGet<number>(contactValue));
 
     this.need(channel.address, 'STATE', (raw) => {
       this.open = isTrue(raw) !== invert;
-      if (isSensor) {
-        this.update(service, this.Characteristic.ContactSensorState, contactValue());
-      } else {
-        this.update(service, this.Characteristic.CurrentPosition, position());
-        this.update(service, this.Characteristic.TargetPosition, position());
-      }
+      this.update(service, this.Characteristic.ContactSensorState, contactValue());
     });
 
-    if (isSensor) {
-      this.need(channel.address, 'ERROR', (raw) => {
-        const tampered = Number(raw) === ERROR_SABOTAGE;
-        service.updateCharacteristic(this.Characteristic.StatusTampered, tampered
-          ? this.Characteristic.StatusTampered.TAMPERED
-          : this.Characteristic.StatusTampered.NOT_TAMPERED);
-      });
-      this.watchFault(service, channel.address);
-    }
+    this.need(channel.address, 'ERROR', (raw) => {
+      const tampered = Number(raw) === ERROR_SABOTAGE;
+      service.updateCharacteristic(this.Characteristic.StatusTampered, tampered
+        ? this.Characteristic.StatusTampered.TAMPERED
+        : this.Characteristic.StatusTampered.NOT_TAMPERED);
+    });
+    this.watchFault(service, channel.address);
 
     this.attachBattery(channel.address);
   }
@@ -86,11 +76,6 @@ export const contactService: ServiceDefinition = {
   description: 'Door / window contact sensor',
   channelTypes: CONTACT_CHANNEL_TYPES,
   priority: 10,
-  variants: [
-    { id: 'contact', label: 'Contact sensor', hapServices: ['ContactSensor'] },
-    { id: 'door', label: 'Door', hapServices: ['Door'] },
-    { id: 'window', label: 'Window', hapServices: ['Window'] },
-  ],
   options: [
     { key: 'invert', label: 'Invert open / closed', type: 'boolean', default: false },
   ],

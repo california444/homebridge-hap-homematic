@@ -279,6 +279,7 @@ export interface AccessoryStub<TContext = unknown> {
   getService: Mock;
   getServiceById: Mock;
   addService: Mock;
+  removeService: Mock;
 }
 
 export function makeAccessory<TContext>(uuid: string, displayName: string, context: TContext): AccessoryStub<TContext> {
@@ -290,7 +291,11 @@ export function makeAccessory<TContext>(uuid: string, displayName: string, conte
     getService: vi.fn() as Mock,
     getServiceById: vi.fn() as Mock,
     addService: vi.fn() as Mock,
+    removeService: vi.fn() as Mock,
   };
+  a.removeService.mockImplementation((s: ServiceStub) => {
+    a.services = a.services.filter((x) => x !== s);
+  });
   a.getService.mockImplementation((svc: { UUID: string }) =>
     a.services.find((s) => s.UUID === svc.UUID && s.subtype === undefined),
   );

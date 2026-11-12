@@ -72,7 +72,7 @@ in the channel entry.
 | --- | --- | --- | --- |
 | `SwitchAccessory` | `variant` | `switch` | `switch`, `outlet` or `lightbulb` (case-insensitive) |
 | `BlindAccessory` | `invert` | `false` | HomeKit 100 % = LEVEL 0 (awnings) |
-| `ContactAccessory` | `invert` | `false` | swap open / closed; `variant` `contact`, `door`, `window` |
+| `ContactAccessory` | `invert` | `false` | swap open / closed. Always a HomeKit contact sensor; the former variants `door` / `window` (motorised-door services with a useless position slider) are mapped to it |
 | `SmokeAccessory` | `secondaryAlarm` | `true` | `false`: an alarm of another detector of the group does not show smoke on this one |
 | `DoorbellAccessory` | `trigger` | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge) |
 | `DoorbellAccessory` | `debounceSeconds` | `2` | repeats within this time are ignored |
@@ -92,7 +92,7 @@ HmIP-DRSI4 channels 5 / 9 / 13 / 17 (one per output). The plugin reads the
 state there and sends commands to the first `*_VIRTUAL_RECEIVER` after it.
 Mapping a receiver of the group works the same. The custom UI lists only one
 channel per group and hides channels no service can handle as well as the
-CCU's virtual remote (RCV-50) and the built-in buttons (`KEY_TRANSCEIVER`) of actuators; "Show all channels" lists every channel.
+CCU's virtual remote (RCV-50) and the built-in buttons / wall-button inputs (`KEY_TRANSCEIVER`, `MULTI_MODE_INPUT_TRANSMITTER`) of actuators; "Show all channels" lists every channel.
 
 ## Accessory identity (decision D6)
 

@@ -103,19 +103,12 @@ describe('ContactAccessory', () => {
     expect(a.char(s, 'StatusTampered').value).toBe(0);
   });
 
-  it('invert swaps open/closed; Window variant maps to positions', async () => {
+  it('invert swaps open/closed', async () => {
     const env = makeSvcEnv();
     const a = build(env, contactService, C, { settings: { invert: true } });
+    await expect(a.char(a.svc('ContactSensor'), 'ContactSensorState').onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
     env.fire(C.address, 'STATE', true);
     expect(a.char(a.svc('ContactSensor'), 'ContactSensorState').value).toBe(0);
-
-    const b = build(env, contactService, C, { subtype: 'Window' });
-    const w = b.svc('Window');
-    await expect(b.char(w, 'CurrentPosition').onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
-    env.fire(C.address, 'STATE', true);
-    expect(b.char(w, 'CurrentPosition').value).toBe(100);
-    expect(await b.char(w, 'TargetPosition').onGetHandler!()).toBe(100);
-    expect(await b.char(w, 'PositionState').onGetHandler!()).toBe(2);
   });
 });
 

@@ -264,21 +264,19 @@ describe('ContactAccessory', () => {
     expect(getChar(service, 'ContactSensorState').value).toBe(0);
   });
 
-  it('door variant uses position characteristics', async () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ContactAccessory', subtype: 'door' });
-    await attachAndRefresh(contactService.build(ctx), channel);
-    const service = accessory.services[0]!;
-    expect(service.UUID).toBe('srv:Door');
-    env.fireEvent('HmIP.000123:1', 'STATE', true);
-    expect(getChar(service, 'CurrentPosition').value).toBe(100);
-  });
-
-  it('window variant uses Window service', async () => {
-    const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ContactAccessory', subtype: 'window' });
-    await attachAndRefresh(contactService.build(ctx), channel);
-    expect(accessory.services[0]!.UUID).toBe('srv:Window');
+  it('legacy door / window variants become a contact sensor; a cached Door service is removed', async () => {
+    for (const subtype of ['door', 'Window']) {
+      const env = makeEnv();
+      const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ContactAccessory', subtype });
+      accessory.addService({ UUID: 'srv:Door' });
+      const warn = vi.spyOn(ctx.log, 'warn');
+      await attachAndRefresh(contactService.build(ctx), channel);
+      expect(accessory.services.map((s) => s.UUID)).not.toContain('srv:Door');
+      expect(accessory.services.map((s) => s.UUID)).toContain('srv:ContactSensor');
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('no longer supported'))).toBe(true);
+      env.fireEvent('HmIP.000123:1', 'STATE', true);
+      expect(getChar(accessory.services.find((s) => s.UUID === 'srv:ContactSensor')!, 'ContactSensorState').value).toBe(1);
+    }
   });
 });
 
