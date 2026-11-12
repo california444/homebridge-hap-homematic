@@ -89,6 +89,8 @@ export class InterfaceSupervisor extends EventEmitter {
   private lastActivityAt = 0;
   private lastPongAt = 0;
   private subscribedAt = 0;
+  /** Start of the last init call; the CCU calls listDevices during it. */
+  private initStartedAt = 0;
   private handshakeSeen = true;
   private lastError = '';
 
@@ -148,7 +150,7 @@ export class InterfaceSupervisor extends EventEmitter {
     this.lastActivityAt = now;
     if (kind === 'listDevices') {
       this.handshakeSeen = true;
-      this.log.debug('%s: handshake (listDevices) %d ms after init', this.interfaceId, now - this.subscribedAt);
+      this.log.debug('%s: handshake (listDevices) %d ms after init', this.interfaceId, now - this.initStartedAt);
     } else if (kind === 'pong') {
       this.lastPongAt = now;
       this.log.debug('%s: PONG %d ms after ping', this.interfaceId, now - this.lastPingAt);
@@ -229,6 +231,7 @@ export class InterfaceSupervisor extends EventEmitter {
 
   private async subscribe(reason: SubscribeReason): Promise<void> {
     this.handshakeSeen = false;
+    this.initStartedAt = this.now();
     try {
       await this.client.subscribe();
     } catch (err) {

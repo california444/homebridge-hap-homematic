@@ -229,4 +229,14 @@ describe('InterfaceSupervisor', () => {
     await seconds(5);
     expect(spies.debug.mock.calls.some((c) => String(c[1]).includes('tick boom'))).toBe(true);
   });
+
+  it('measures the handshake from the start of init (listDevices arrives during init)', async () => {
+    const { ccu, client } = fakeCcu('up');
+    const { sup, spies } = makeSup(client, ccu);
+    await sup.start();
+    const line = spies.debug.mock.calls.find((c) => String(c[0]).includes('handshake'));
+    expect(line).toBeDefined();
+    expect(Number(line![2])).toBeLessThan(1000);
+    await sup.stop();
+  });
 });

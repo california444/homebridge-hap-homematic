@@ -154,6 +154,12 @@ export class EventServer extends EventEmitter {
       conn.requests++;
     }
     const tag = conn ? `#${conn.id}.${conn.requests}` : '#?';
+    // One request per connection. rfd keeps the last connection of a burst
+    // open and later reuses it after Node's keep-alive timeout has closed
+    // it; that delivery fails and rfd drops the subscription (BidCos-RF
+    // going STALE every few minutes). With `Connection: close` the CCU
+    // never reuses a connection.
+    res.setHeader('Connection', 'close');
     res.on('close', () => {
       if (!res.writableFinished) {
         this.log.debug('%s response not delivered (connection closed)', tag);
