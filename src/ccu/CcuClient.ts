@@ -90,6 +90,9 @@ export class CcuClient extends EventEmitter {
 
   constructor(opts: CcuClientOptions) {
     super();
+    // Every accessory with a fault indicator listens to 'interfaceState'
+    // (removed again on dispose), so more than 10 listeners are normal.
+    this.setMaxListeners(0);
     this.config = opts.config;
     this.log = opts.log;
 

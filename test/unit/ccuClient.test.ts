@@ -13,6 +13,20 @@ function makeCcu(): CcuClient {
 }
 
 describe('CcuClient registerListener / event dispatch', () => {
+  it('allows many interfaceState listeners without a MaxListeners warning', () => {
+    const ccu = makeCcu();
+    const warn = vi.fn();
+    process.on('warning', warn);
+    try {
+      for (let i = 0; i < 50; i++) ccu.on('interfaceState', () => undefined);
+      expect(ccu.getMaxListeners()).toBe(0);
+      expect(ccu.listenerCount('interfaceState')).toBe(50);
+    } finally {
+      process.off('warning', warn);
+    }
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('routes events to all matching listeners', () => {
     const ccu = makeCcu();
     const a = vi.fn();
