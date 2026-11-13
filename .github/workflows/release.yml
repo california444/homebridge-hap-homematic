@@ -56,9 +56,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Creates the tag and the GitHub release and commits CHANGELOG.md back
-      # to main ("chore(release): x.y.z [skip ci]"); the tag points to that
-      # commit. Nothing is published to npm here.
+      # Creates the tag and the GitHub release; the release notes (from the
+      # conventional commits) are the changelog. No commit to main, which
+      # requires PRs. Nothing is published to npm here.
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
