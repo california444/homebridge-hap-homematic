@@ -82,11 +82,11 @@ const state = {
   discovered: { devices: [] },
   services: { channelServices: [] },
   ui: {
-    search:     { channels: '',           picker: '' },
+    search:     { channels: '' },
     filter:     { channels: 'configured' }, // configured | all | unconfigured
     filterType: { channels: 'all' },        // CCU channel type, e.g. SWITCH_VIRTUAL_RECEIVER, or 'all'
     sort:       { channels: 'name' },       // name | device | address | type
-    page:       { channels: 1,            picker: 1 },
+    page:       { channels: 1 },
     /** false: hide channels that are not worth mapping (see hiddenChannels). */
     showAll: false,
     /** Channels help text expanded (collapsed by default). */
@@ -368,8 +368,7 @@ function viewChannels(host) {
         <input class="form-check-input" type="checkbox" id="hgui-showall-channels" ${state.ui.showAll ? 'checked' : ''} />
         <label class="form-check-label" for="hgui-showall-channels">Show all channels</label>
       </div>
-      <button class="btn btn-primary ms-auto" id="hgui-add-channel">+ Add channel</button>
-      <span class="hgui-meta" id="hgui-channels-count"></span>
+      <span class="hgui-meta ms-auto" id="hgui-channels-count"></span>
     </div>
     ${devicesErrorHTML()}
     <div id="hgui-rows-host"></div>
@@ -405,15 +404,6 @@ function viewChannels(host) {
     state.ui.showAll = e.target.checked;
     state.ui.page.channels = 1;
     rerender(); // the type filter list depends on it too
-  });
-  $('hgui-add-channel').addEventListener('click', () => {
-    if (state.devicesErrors) {
-      toast('warning', 'Fix devices.json first', 'Add channel'); return;
-    }
-    if (!state.discovered.devices.length) {
-      toast('warning', 'Run "Discover" first', 'Add channel'); return;
-    }
-    pushNav({ kind: 'pickChannel' });
   });
 
   drawChannelRows();
@@ -503,7 +493,7 @@ function drawChannelRows() {
   if (rows.length === 0) {
     host.innerHTML = `<div class="hgui-empty">No channels match. ${
       filter === 'configured' && configured.length === 0
-        ? 'Click "+ Add channel" to add one.'
+        ? 'Switch the filter to "Not in HomeKit" and click "+ Add" on a channel.'
         : 'Try clearing the search or switching the filter.'}</div>`;
     pagerHost.innerHTML = '';
     return;
@@ -526,31 +516,50 @@ function effectiveHkName(r) {
   return r._info?.channel?.name || r.address;
 }
 
+/** CCU default names are "<TYPE> <SERIAL>[:<CH>]" — nothing a tile needs to repeat. */
+function isPlaceholderName(name, type, serial) {
+  const n = String(name ?? '');
+  return !n || (n.startsWith(type ?? '\u0000') && n.includes(serial));
+}
+
+/**
+ * Tile text, three short lines:
+ *   1. HomeKit name if one was chosen, else the device type (HmIP-BROLL)
+ *   2. serial (with the type in front if line 1 is the HomeKit name), plus
+ *      the CCU name if it was renamed on the CCU
+ *   3. address · channel type
+ */
+function tileText(r) {
+  const info = r._info;
+  const serial = String(r.address).split(':')[0];
+  const type = info?.device?.type ?? '';
+  const ccuName = info?.channel?.name || info?.device?.name || '';
+  const custom = typeof r.name === 'string' && r.name && r.name !== ccuName && !isPlaceholderName(r.name, type, serial);
+  const title = custom ? r.name : (type || effectiveHkName(r));
+  const parts = [custom && type ? `${type} · ${serial}` : serial];
+  if (!isPlaceholderName(ccuName, type, serial)) parts.push(`CCU: ${ccuName}`);
+  return { title, sub: parts.join(' · '), channelType: info?.channel?.type ?? '' };
+}
+
 function channelTileHTML(r) {
   const info = r._info;
   const inHK = r.isConfigured ?? r.service !== undefined;
-  const hkName = effectiveHkName(r);
-  // Subtitle: prefer device name/type from discovery; if discovery
-  // hasn't run, show a hint so the user knows to click Discover for
-  // the rich data. The address always shows in the meta line.
-  const subtitle = info?.device
-    ? `${h(info.device.name ?? '')}${info.device.type && !String(info.device.name ?? '').startsWith(info.device.type) ? ` · ${h(info.device.type)}` : ''}${info.channel?.name && info.channel.name !== hkName ? ` · ch ${h(info.channel.name)}` : ''}`
-    : '<span class="hgui-meta">discovery data not loaded — click "Discover" for device + CCU names</span>';
-  const channelType = info?.channel?.type ?? '';
+  const t = tileText(r);
   return `
     <div class="hgui-tile ${inHK ? '' : 'muted'}">
       <div class="hgui-tile-head">
-        <div class="hgui-tile-name">${h(hkName)}</div>
+        <div class="hgui-tile-name">${h(t.title)}</div>
         <div class="hgui-tile-actions">
           ${inHK
             ? `<button class="btn btn-sm btn-outline-primary" data-edit-channel="${h(r.address)}">Edit</button>`
             : `<button class="btn btn-sm btn-primary" data-add-from="${h(r.address)}">+ Add</button>`}
         </div>
       </div>
-      <div class="hgui-tile-sub">${subtitle}</div>
-      <div class="hgui-tile-meta"><code>${h(r.address)}</code>${channelType ? ` · ${h(channelType)}` : ''}</div>
+      <div class="hgui-tile-sub">${info?.device ? h(t.sub)
+        : '<span class="hgui-meta">discovery data not loaded — click "Discover"</span>'}</div>
+      <div class="hgui-tile-meta"><code>${h(r.address)}</code>${t.channelType ? ` · ${h(t.channelType)}` : ''}</div>
       ${r.kind === 'device' && Object.keys(r.channels ?? {}).length ? `
-        <div class="hgui-tile-meta">${Object.entries(r.channels).map(([i, c]) => `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}</span>`).join('')}</div>` : ''}
+        <div class="hgui-tile-meta">${Object.entries(r.channels).map(([i, c]) => `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}${c.duration ? ` ${h(c.duration)} s` : ''}</span>`).join('')}</div>` : ''}
       <div class="hgui-tile-pills">
         ${inHK ? `<span class="hgui-pill primary">${h(r.service ?? '?')}</span>` : '<span class="hgui-pill muted">not in HomeKit</span>'}
         ${r.subtype ? `<span class="hgui-pill">${h(r.subtype)}</span>` : ''}
@@ -707,7 +716,6 @@ function viewSettings(host) {
 // ---------------------------------------------------------------- subviews
 
 const SUBVIEWS = {
-  pickChannel:  subPickChannel,
   editChannel:  subEditChannel,
 };
 
@@ -722,89 +730,6 @@ function subviewHeader(host, title, breadcrumb) {
     <div id="hgui-sub-footer" class="hgui-floating-bar"></div>
   `;
   $('hgui-back').addEventListener('click', popNav);
-}
-
-// --- pickChannel: searchable picker
-
-function subPickChannel(host) {
-  subviewHeader(host, 'Add channel — pick from CCU',
-    state.ui.showAll ? 'all channels' : 'channels worth mapping ("Show all channels" lists every one)');
-  const body = $('hgui-sub-body');
-  body.innerHTML = `
-    <div class="hgui-toolbar">
-      <input type="search" id="hgui-picker-search" class="form-control"
-             placeholder="Search by name, address, type…" autofocus
-             value="${h(state.ui.search.picker)}" />
-      <span class="hgui-meta ms-auto" id="hgui-picker-count"></span>
-    </div>
-    <div id="hgui-picker-host"></div>
-    <div id="hgui-picker-pager"></div>
-  `;
-  $('hgui-picker-search').addEventListener('input', (e) => {
-    state.ui.search.picker = e.target.value;
-    state.ui.page.picker = 1;
-    drawPicker();
-  });
-  drawPicker();
-}
-
-function drawPicker() {
-  const host = $('hgui-picker-host');
-  const pagerHost = $('hgui-picker-pager');
-  const configuredByAddr = new Map(configuredChannels().map((c) => [c.address, c]));
-  const hidden = hiddenAddresses();
-  const all = [];
-  for (const d of state.discovered.devices) {
-    for (const c of d.channels) {
-      if (c.index === 0 || hidden.has(c.address)) continue;
-      all.push({ device: d, channel: c });
-    }
-  }
-  const q = state.ui.search.picker.trim().toLowerCase();
-  let rows = q
-    ? all.filter((x) => `${x.device.name} ${x.device.type} ${x.channel.name} ${x.channel.address} ${x.channel.type}`.toLowerCase().includes(q))
-    : all;
-  rows = sortBy(rows, (x) => `${x.device.name} ${x.channel.address}`.toLowerCase());
-
-  let page = state.ui.page.picker;
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  if (page > pageCount) page = state.ui.page.picker = 1;
-  const slice = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  $('hgui-picker-count').textContent = `${rows.length} candidates`;
-
-  if (rows.length === 0) {
-    host.innerHTML = '<div class="hgui-empty">No channels match.</div>';
-    pagerHost.innerHTML = '';
-    return;
-  }
-  host.innerHTML = `<div class="hgui-tiles">${slice.map((x) => {
-    const isAdded = configuredByAddr.has(x.channel.address);
-    return `
-      <div class="hgui-tile ${isAdded ? 'muted' : ''}">
-        <div class="hgui-tile-head">
-          <div class="hgui-tile-name">${h(x.channel.name || x.channel.address)}</div>
-          <div class="hgui-tile-actions">
-            ${isAdded
-              ? '<span class="hgui-pill warning">already added</span>'
-              : `<button class="btn btn-sm btn-primary" data-pick="${h(x.channel.address)}">Select</button>`}
-          </div>
-        </div>
-        <div class="hgui-tile-sub">${h(x.device.name)} · ${h(x.device.type)}</div>
-        <div class="hgui-tile-meta"><code>${h(x.channel.address)}</code> · ${h(x.channel.type)}</div>
-      </div>`;
-  }).join('')}</div>`;
-  pagerHost.innerHTML = pagerHTML('picker', page, pageCount);
-  host.querySelectorAll('[data-pick]').forEach((b) =>
-    b.addEventListener('click', () => {
-      // Replace the picker on the nav stack with the editor so Back returns
-      // to the channels list rather than the picker.
-      state.nav.pop();
-      state.nav.push({ kind: 'editChannel', props: { address: b.dataset.pick, mode: 'add' } });
-      rerender();
-    }));
-  pagerHost.querySelectorAll('[data-pager]').forEach((b) =>
-    b.addEventListener('click', () => { state.ui.page.picker = parseInt(b.dataset.pager, 10); drawPicker(); }));
 }
 
 // --- editChannel: form

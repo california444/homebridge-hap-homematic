@@ -53,11 +53,11 @@
      align-items: stretch). Each tile's inner grid pins content to
      the top via align-content: start, so a short tile doesn't float
      its pills row vertically. */
-  .hgui-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; padding: 0.75rem 0; }
+  .hgui-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.5rem; padding: 0.5rem 0; }
   /* --bs-tertiary-bg adapts: a near-white in light mode (#f8f9fa)
      and a slightly-lighter dark in dark mode (#2b3035). Gives tiles
      subtle separation from the page background in either theme. */
-  .hgui-tile { background: var(--bs-tertiary-bg); color: var(--bs-body-color); border: 1px solid var(--bs-border-color-translucent); border-radius: 8px; padding: 0.85rem 1rem; display: grid; grid-auto-rows: auto; gap: 0.35rem; align-content: start; }
+  .hgui-tile { background: var(--bs-tertiary-bg); color: var(--bs-body-color); border: 1px solid var(--bs-border-color-translucent); border-radius: 8px; padding: 0.5rem 0.75rem; display: grid; grid-auto-rows: auto; gap: 0.15rem; align-content: start; }
   /* Mute the textual content of un-configured tiles, but keep the
      action button (the "+ Add") at full opacity so it's obvious it
      can be clicked. CSS opacity is multiplicative through the tree,
@@ -66,8 +66,9 @@
   .hgui-tile.muted .hgui-tile-sub,
   .hgui-tile.muted .hgui-tile-meta,
   .hgui-tile.muted .hgui-tile-pills { opacity: 0.6; }
-  .hgui-tile-head { display: flex; align-items: flex-start; gap: 0.5rem; }
-  .hgui-tile-name { font-weight: 600; font-size: 1rem; flex: 1; min-width: 0; word-break: break-word; color: var(--bs-body-color); }
+  .hgui-tile-head { display: flex; align-items: center; gap: 0.5rem; }
+  .hgui-tile-actions .btn { padding: 0.1rem 0.5rem; font-size: 0.8rem; }
+  .hgui-tile-name { font-weight: 600; font-size: 0.95rem; line-height: 1.3; flex: 1; min-width: 0; word-break: break-word; color: var(--bs-body-color); }
   .hgui-tile-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
   .hgui-tile-sub  { color: var(--bs-secondary-color); font-size: 0.875rem; }
   /* tile-meta is the address line. The `<code>` wrapped on the
@@ -123,7 +124,7 @@
       <button class="nav-link" type="button" role="tab" data-tab="settings">⚙️ Settings</button>
     </li>
     <li class="nav-item" role="presentation">
-      <button class="nav-link" type="button" role="tab" data-tab="channels">💡 Channels</button>
+      <button class="nav-link" type="button" role="tab" data-tab="channels">🏠 Channels</button>
     </li>
     <li class="nav-item ms-auto d-flex align-items-center">
       <span class="hgui-version" id="hgui-version-banner"></span>
