@@ -72,7 +72,23 @@ describe('SmokeAccessory (plan 8.3)', () => {
     env.fire(SMOKE.address, 'ERROR_DEGRADED_CHAMBER', false);
     expect(fault.value).toBe(0);
     env.fire(SMOKE.address, 'SMOKE_DETECTOR_TEST_RESULT', 1);
-    expect(info.mock.calls.some((c) => String(c[0]).includes('test result'))).toBe(true);
+    expect(info).toHaveBeenCalledWith('%s: test result %s', 'Acc', 'SMOKE_TEST_OK');
+  });
+
+  it('test result: NONE and unknown values only at debug level, FAILED as a warning', () => {
+    const { env } = setup();
+    const info = vi.spyOn(env.log, 'info');
+    const warn = vi.spyOn(env.log, 'warn');
+    const debug = vi.spyOn(env.log, 'debug');
+    env.fire(SMOKE.address, 'SMOKE_DETECTOR_TEST_RESULT', 0);
+    env.fire(SMOKE.address, 'SMOKE_DETECTOR_TEST_RESULT', 'NONE');
+    env.fire(SMOKE.address, 'SMOKE_DETECTOR_TEST_RESULT', 9);
+    expect(info.mock.calls.some((c) => String(c[0]).includes('test result'))).toBe(false);
+    expect(debug).toHaveBeenCalledWith('%s: test result NONE', 'Acc');
+    env.fire(SMOKE.address, 'SMOKE_DETECTOR_TEST_RESULT', 2);
+    expect(warn).toHaveBeenCalledWith('%s: smoke test FAILED', 'Acc');
+    env.fire(SMOKE.address, 'SMOKE_DETECTOR_TEST_RESULT', 'COMMUNICATION_TEST_OK');
+    expect(info).toHaveBeenCalledWith('%s: test result %s', 'Acc', 'COMMUNICATION_TEST_OK');
   });
 
   it('BidCos detectors keep the STATE path', () => {
