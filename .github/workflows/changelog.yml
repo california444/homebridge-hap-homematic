@@ -1,0 +1,70 @@
+name: Changelog
+
+# Every PR documents its change in CHANGELOG.md under "## Unreleased".
+# Required status check on main (together with Build).
+#
+# Passes without an entry for:
+#   - the label "skip-changelog"
+#   - PR titles of type docs, ci, test, build, style, refactor, chore
+#     (but not chore(deps), which is released as a patch)
+#   - Dependabot
+#
+# After a release the next PR has to rename "## Unreleased" to the
+# released version, because the release workflow does not commit.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check CHANGELOG.md
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          SKIP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          fail=0
+
+          # 1. The last released version needs its own heading.
+          tag=$(git describe --tags --abbrev=0 --match 'v*' "$BASE" 2>/dev/null || true)
+          if [ -n "$tag" ]; then
+            version="${tag#v}"
+            if ! grep -Eq "^## \[?${version//./\\.}\]?([ (]|$)" CHANGELOG.md; then
+              echo "::error file=CHANGELOG.md::$tag is released but CHANGELOG.md has no heading for $version. Rename '## Unreleased' to '## $version ($(git log -1 --format=%cs "$tag"))' and start a new '## Unreleased'."
+              fail=1
+            fi
+          fi
+
+          # 2. This PR adds an entry, unless it is exempt.
+          if [ "$SKIP_LABEL" = "true" ]; then
+            echo "Label skip-changelog set: no entry needed."
+          elif [ "$AUTHOR" = "dependabot[bot]" ]; then
+            echo "Dependabot: no entry needed."
+          elif echo "$TITLE" | grep -Eq '^(docs|ci|test|build|style|refactor)(\(.+\))?!?:' \
+            || { echo "$TITLE" | grep -Eq '^chore(\(.+\))?!?:' && ! echo "$TITLE" | grep -Eq '^chore\(deps\)'; }; then
+            echo "PR type does not need an entry: $TITLE"
+          elif ! git diff --name-only "$BASE" "$HEAD" | grep -qx 'CHANGELOG.md'; then
+            echo "::error file=CHANGELOG.md::Add your change to CHANGELOG.md under '## Unreleased' (or set the label skip-changelog)."
+            fail=1
+          elif ! grep -q '^## Unreleased' CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md has no '## Unreleased' section."
+            fail=1
+          else
+            echo "CHANGELOG.md updated."
+          fi
+
+          exit $fail

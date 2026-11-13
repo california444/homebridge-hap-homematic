@@ -56,9 +56,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Creates the tag and the GitHub release and commits CHANGELOG.md back
-      # to main ("chore(release): x.y.z [skip ci]"); the tag points to that
-      # commit. Nothing is published to npm here.
+      # Creates the tag and the GitHub release. It does not commit (main
+      # requires PRs); CHANGELOG.md is maintained by hand in the PRs.
+      # Nothing is published to npm here.
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -121,6 +121,18 @@ jobs:
             exit 1
           fi
           npm version --no-git-tag-version --allow-same-version "$VERSION"
+
+      # In the repo the entries of this release still sit under
+      # "## Unreleased" (the next PR renames it). The package gets the
+      # version heading; the repo is not touched.
+      - name: Put the version into CHANGELOG.md
+        run: |
+          VERSION="${TAG#v}"
+          DATE=$(git log -1 --format=%cs)
+          if grep -q '^## Unreleased' CHANGELOG.md; then
+            sed -i "0,/^## Unreleased.*/s//## ${VERSION} (${DATE})/" CHANGELOG.md
+          fi
+          sed -n '1,15p' CHANGELOG.md
 
       # prepack runs the build (dist/ and homebridge-ui/server.js are not in git).
       - name: Publish to npm
