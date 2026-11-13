@@ -244,6 +244,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       settings,
       name: displayName,
     });
+    this.setAccessoryInformation(accessory, mapping.device, device);
     const ctx: ServiceContext = {
       accessory,
       ccu: this.ccu,
@@ -259,6 +260,28 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     const handler = def.build(ctx);
     handler.attach(channel, device);
     this.managed.set(uuid, { accessory, handler, interface: mapping.interface });
+  }
+
+  /**
+   * Accessory info in Home: manufacturer = the plugin, model = the device
+   * type (e.g. HM-LC-Sw1PBU-FM), serial = the device address (the serial
+   * on the device label), firmware from listDevices when it is a plain
+   * version number (HAP expects x[.y[.z]]).
+   */
+  private setAccessoryInformation(accessory: PlatformAccessory, serial: string, device: CcuDevice | undefined): void {
+    const info = accessory.getService(this.Service.AccessoryInformation);
+    if (!info) {
+      return;
+    }
+    const C = this.Characteristic;
+    info
+      .setCharacteristic(C.Manufacturer, PLUGIN_NAME)
+      .setCharacteristic(C.Model, device?.type || 'HomeMatic')
+      .setCharacteristic(C.SerialNumber, serial);
+    const fw = device?.firmware;
+    if (fw && /^\d+(\.\d+){0,2}$/.test(fw)) {
+      info.setCharacteristic(C.FirmwareRevision, fw);
+    }
   }
 
   /**

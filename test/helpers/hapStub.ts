@@ -183,6 +183,7 @@ class CharacteristicRoot {
 export function makeHapStub() {
   return {
     Service: {
+      AccessoryInformation: makeServiceClass('AccessoryInformation'),
       Switch: makeServiceClass('Switch'),
       Outlet: makeServiceClass('Outlet'),
       Lightbulb: makeServiceClass('Lightbulb'),
@@ -209,6 +210,10 @@ export function makeHapStub() {
       On: makeCharacteristicClass('On'),
       Brightness: makeCharacteristicClass('Brightness'),
       Name: makeCharacteristicClass('Name'),
+      Manufacturer: makeCharacteristicClass('Manufacturer'),
+      Model: makeCharacteristicClass('Model'),
+      SerialNumber: makeCharacteristicClass('SerialNumber'),
+      FirmwareRevision: makeCharacteristicClass('FirmwareRevision'),
       CurrentPosition: makeCharacteristicClass('CurrentPosition'),
       TargetPosition: makeCharacteristicClass('TargetPosition'),
       PositionState: makeCharacteristicClass('PositionState'),

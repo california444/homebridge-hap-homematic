@@ -436,6 +436,38 @@ describe('HomematicPlatform', () => {
     expect(info.some((l) => /accessories: %d added/.test(l) && l.includes(' 1 1 0 0 '))).toBe(true);
   });
 
+  it('fills manufacturer, model, serial and firmware of the accessory information', async () => {
+    await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '3': { service: 'SwitchAccessory' } } } } });
+    const run = async (firmware: string | undefined) => {
+      const api = makeApi();
+      const platform = new HomematicPlatform(makeLog(), CFG, api as unknown as API);
+      const cached = new (api.platformAccessory as new (n: string, u: string) => PlatformAccessory)(
+        'x', `uuid:HmIP-RF:${PS}:3:SwitchAccessory`);
+      const values = new Map<unknown, unknown>();
+      const infoSvc = { setCharacteristic: vi.fn((c: unknown, v: unknown) => { values.set(c, v); return infoSvc; }) };
+      const info = api.hap.Service.AccessoryInformation;
+      (cached as unknown as { getService: unknown }).getService = vi.fn((svc: unknown) => (svc === info ? infoSvc : undefined));
+      platform.configureAccessory(cached);
+      stubCcu(platform, { 'HmIP-RF': [
+        { ADDRESS: PS, TYPE: 'HMIP-PS', PARENT: '', ...(firmware ? { FIRMWARE: firmware } : {}) },
+        { ADDRESS: `${PS}:2`, TYPE: 'SWITCH_TRANSMITTER', PARENT: PS, INDEX: 2 },
+        { ADDRESS: `${PS}:3`, TYPE: 'SWITCH_VIRTUAL_RECEIVER', PARENT: PS, INDEX: 3 },
+      ] });
+      vi.spyOn(switchService, 'build').mockImplementation(() => ({ attach: vi.fn() }));
+      api.emit(APIEvent.DID_FINISH_LAUNCHING);
+      await flushAsync();
+      vi.mocked(switchService.build).mockRestore();
+      return { C: api.hap.Characteristic, values };
+    };
+    const { C, values } = await run('2.24.8');
+    expect(values.get(C.Manufacturer)).toBe('homebridge-hap-homematic');
+    expect(values.get(C.Model)).toBe('HMIP-PS');
+    expect(values.get(C.SerialNumber)).toBe(PS);
+    expect(values.get(C.FirmwareRevision)).toBe('2.24.8');
+    const odd = await run('1.4 beta');
+    expect(odd.values.has(odd.C.FirmwareRevision)).toBe(false);
+  });
+
   it('a failing refresh is logged and does not stop the start', async () => {
     await writeDevices({ version: 1, devices: { [`HmIP-RF:${PS}`]: { channels: { '1': { service: 'SwitchAccessory' } } } } });
     const log = makeLog();
