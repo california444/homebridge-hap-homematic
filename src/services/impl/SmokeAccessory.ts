@@ -12,14 +12,21 @@ const SMOKE_CHANNEL_TYPES = [
 /** HmIP-SWSD SMOKE_DETECTOR_ALARM_STATUS (plan 3.1 / 8.3). */
 export const ALARM_STATUS = ['IDLE_OFF', 'PRIMARY_ALARM', 'INTRUSION_ALARM', 'SECONDARY_ALARM'] as const;
 
+/** HmIP-SWSD SMOKE_DETECTOR_TEST_RESULT (VALUE_LIST from the CCU). */
+export const TEST_RESULT = [
+  'NONE', 'SMOKE_TEST_OK', 'SMOKE_TEST_FAILED', 'COMMUNICATION_TEST_SENT', 'COMMUNICATION_TEST_OK',
+] as const;
+
 /** ENUM index or name → name; undefined for anything else. */
-function alarmName(raw: unknown): (typeof ALARM_STATUS)[number] | undefined {
-  if (typeof raw === 'string' && (ALARM_STATUS as readonly string[]).includes(raw)) {
-    return raw as (typeof ALARM_STATUS)[number];
+function enumName<T extends string>(list: readonly T[], raw: unknown): T | undefined {
+  if (typeof raw === 'string' && (list as readonly string[]).includes(raw)) {
+    return raw as T;
   }
   const n = typeof raw === 'number' ? raw : Number(raw);
-  return Number.isInteger(n) ? ALARM_STATUS[n] : undefined;
+  return Number.isInteger(n) ? list[n] : undefined;
 }
+
+const alarmName = (raw: unknown) => enumName(ALARM_STATUS, raw);
 
 /**
  * Smoke detector.
@@ -88,8 +95,23 @@ class SmokeHandler extends AccessoryBase implements ChannelService {
           this.log.debug('unknown SMOKE_DETECTOR_ALARM_STATUS %s', String(raw));
       }
     });
+    // NONE is the idle / reset value (also reported at start): debug only.
     this.registerListener(channel.address, 'SMOKE_DETECTOR_TEST_RESULT', (raw) => {
-      this.log.info('%s: test result %s', this.accessory.displayName, String(raw));
+      const name = this.accessory.displayName;
+      const result = enumName(TEST_RESULT, raw);
+      switch (result) {
+        case 'NONE':
+          this.log.debug('%s: test result NONE', name);
+          break;
+        case 'SMOKE_TEST_FAILED':
+          this.log.warn('%s: smoke test FAILED', name);
+          break;
+        case undefined:
+          this.log.debug('%s: unknown SMOKE_DETECTOR_TEST_RESULT %s', name, String(raw));
+          break;
+        default:
+          this.log.info('%s: test result %s', name, result);
+      }
     });
     this.need(channel.address, 'ERROR_DEGRADED_CHAMBER', (raw) => {
       this.degraded = isTrue(raw);
