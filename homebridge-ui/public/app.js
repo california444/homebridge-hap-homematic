@@ -526,31 +526,50 @@ function effectiveHkName(r) {
   return r._info?.channel?.name || r.address;
 }
 
+/** CCU default names are "<TYPE> <SERIAL>[:<CH>]" — nothing a tile needs to repeat. */
+function isPlaceholderName(name, type, serial) {
+  const n = String(name ?? '');
+  return !n || (n.startsWith(type ?? '\u0000') && n.includes(serial));
+}
+
+/**
+ * Tile text, three short lines:
+ *   1. HomeKit name if one was chosen, else the device type (HmIP-BROLL)
+ *   2. serial (with the type in front if line 1 is the HomeKit name), plus
+ *      the CCU name if it was renamed on the CCU
+ *   3. address · channel type
+ */
+function tileText(r) {
+  const info = r._info;
+  const serial = String(r.address).split(':')[0];
+  const type = info?.device?.type ?? '';
+  const ccuName = info?.channel?.name || info?.device?.name || '';
+  const custom = typeof r.name === 'string' && r.name && r.name !== ccuName && !isPlaceholderName(r.name, type, serial);
+  const title = custom ? r.name : (type || effectiveHkName(r));
+  const parts = [custom && type ? `${type} · ${serial}` : serial];
+  if (!isPlaceholderName(ccuName, type, serial)) parts.push(`CCU: ${ccuName}`);
+  return { title, sub: parts.join(' · '), channelType: info?.channel?.type ?? '' };
+}
+
 function channelTileHTML(r) {
   const info = r._info;
   const inHK = r.isConfigured ?? r.service !== undefined;
-  const hkName = effectiveHkName(r);
-  // Subtitle: prefer device name/type from discovery; if discovery
-  // hasn't run, show a hint so the user knows to click Discover for
-  // the rich data. The address always shows in the meta line.
-  const subtitle = info?.device
-    ? `${h(info.device.name ?? '')}${info.device.type && !String(info.device.name ?? '').startsWith(info.device.type) ? ` · ${h(info.device.type)}` : ''}${info.channel?.name && info.channel.name !== hkName ? ` · ch ${h(info.channel.name)}` : ''}`
-    : '<span class="hgui-meta">discovery data not loaded — click "Discover" for device + CCU names</span>';
-  const channelType = info?.channel?.type ?? '';
+  const t = tileText(r);
   return `
     <div class="hgui-tile ${inHK ? '' : 'muted'}">
       <div class="hgui-tile-head">
-        <div class="hgui-tile-name">${h(hkName)}</div>
+        <div class="hgui-tile-name">${h(t.title)}</div>
         <div class="hgui-tile-actions">
           ${inHK
             ? `<button class="btn btn-sm btn-outline-primary" data-edit-channel="${h(r.address)}">Edit</button>`
             : `<button class="btn btn-sm btn-primary" data-add-from="${h(r.address)}">+ Add</button>`}
         </div>
       </div>
-      <div class="hgui-tile-sub">${subtitle}</div>
-      <div class="hgui-tile-meta"><code>${h(r.address)}</code>${channelType ? ` · ${h(channelType)}` : ''}</div>
+      <div class="hgui-tile-sub">${info?.device ? h(t.sub)
+        : '<span class="hgui-meta">discovery data not loaded — click "Discover"</span>'}</div>
+      <div class="hgui-tile-meta"><code>${h(r.address)}</code>${t.channelType ? ` · ${h(t.channelType)}` : ''}</div>
       ${r.kind === 'device' && Object.keys(r.channels ?? {}).length ? `
-        <div class="hgui-tile-meta">${Object.entries(r.channels).map(([i, c]) => `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}</span>`).join('')}</div>` : ''}
+        <div class="hgui-tile-meta">${Object.entries(r.channels).map(([i, c]) => `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}${c.duration ? ` ${h(c.duration)} s` : ''}</span>`).join('')}</div>` : ''}
       <div class="hgui-tile-pills">
         ${inHK ? `<span class="hgui-pill primary">${h(r.service ?? '?')}</span>` : '<span class="hgui-pill muted">not in HomeKit</span>'}
         ${r.subtype ? `<span class="hgui-pill">${h(r.subtype)}</span>` : ''}
@@ -783,14 +802,14 @@ function drawPicker() {
     return `
       <div class="hgui-tile ${isAdded ? 'muted' : ''}">
         <div class="hgui-tile-head">
-          <div class="hgui-tile-name">${h(x.channel.name || x.channel.address)}</div>
+          <div class="hgui-tile-name">${h(x.device.type || x.channel.address)}</div>
           <div class="hgui-tile-actions">
             ${isAdded
               ? '<span class="hgui-pill warning">already added</span>'
               : `<button class="btn btn-sm btn-primary" data-pick="${h(x.channel.address)}">Select</button>`}
           </div>
         </div>
-        <div class="hgui-tile-sub">${h(x.device.name)} · ${h(x.device.type)}</div>
+        <div class="hgui-tile-sub">${h(x.device.address)}${isPlaceholderName(x.device.name, x.device.type, x.device.address) ? '' : ` · CCU: ${h(x.device.name)}`}</div>
         <div class="hgui-tile-meta"><code>${h(x.channel.address)}</code> · ${h(x.channel.type)}</div>
       </div>`;
   }).join('')}</div>`;
