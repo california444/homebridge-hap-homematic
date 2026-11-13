@@ -65,24 +65,18 @@ Stateless Programmable Switch, slats, battery and fault states.
 
 **Settings:** CCU address, callback address, authentication, connection test.
 
-![Settings tab](https://raw.githubusercontent.com/california444/homebridge-hap-homematic/main/docs/images/ui-settings.png)
+![Settings tab](docs/images/ui-settings.png)
 
 **Channels:** discovered devices, filter, add a channel to HomeKit.
 
-![Channels tab](https://raw.githubusercontent.com/california444/homebridge-hap-homematic/main/docs/images/ui-channels.png)
+![Channels tab](docs/images/ui-channels.png)
 
 ## Status
 
-Version 0.9, in daily use on a real installation. Acceptance before 1.0
-is still running. Stable so far:
-
-- Discovery from the CCU with a saved list, so the UI opens without
-  waiting for the CCU.
-- Events from BidCos-RF and HmIP-RF, ping/PONG watchdog,
-  re-subscription after a restart, clean unsubscribe on shutdown.
-- Start values via `getParamset`. Unreachable devices show
-  "No Response" in Home.
-- Custom UI for settings, channel mapping and service options.
+Actively developed and in daily use. The core (connection, events,
+discovery, UI) is stable; device support grows with feedback. Until
+1.0, details of the configuration may still change; changes are listed
+in the [CHANGELOG](CHANGELOG.md).
 
 ## Tested devices
 
