@@ -76,7 +76,8 @@ Stateless Programmable Switch, slats, battery and fault states.
 Actively developed and in daily use. The core (connection, events,
 discovery, UI) is stable; device support grows with feedback. Until
 1.0, details of the configuration may still change; changes are listed
-in the [CHANGELOG](CHANGELOG.md).
+in the
+[release notes](https://github.com/california444/homebridge-hap-homematic/releases).
 
 ## Tested devices
 
