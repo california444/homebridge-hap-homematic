@@ -2,43 +2,109 @@
 
 <!-- Modified by california444 (2026). See NOTICE. -->
 
-[![Release](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml)
+[![npm](https://img.shields.io/npm/v/homebridge-hap-homematic)](https://www.npmjs.com/package/homebridge-hap-homematic)
+[![CI](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml)
+[![node](https://img.shields.io/node/v/homebridge-hap-homematic)](package.json)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A Homebridge plugin for **HomeMatic** (BidCos-RF) and **HomematicIP** (HmIP-RF)
-devices on a CCU / OpenCCU. It talks to `rfd` and `HMIPServer` over **XML-RPC
-only**: no JSON-RPC, no ReGa, no CCU login.
+A Homebridge plugin that brings **HomeMatic** (BidCos-RF) and
+**HomematicIP** (HmIP-RF) devices from a CCU / OpenCCU into Apple Home.
 
-## Which project is which?
+## What it does
 
-The names are close, so to be clear:
+- Talks to the CCU's radio services (`rfd`, `HMIPServer`) over
+  **XML-RPC only**. It needs no CCU login, no JSON-RPC and no ReGa
+  scripts, and nothing is installed on the CCU.
+- **Events in real time.** The CCU pushes state changes to the plugin. A
+  ping/PONG watchdog checks each interface, and the plugin subscribes
+  again after a CCU restart.
+- **You choose what goes to HomeKit.** The custom UI lists the devices
+  found on the CCU. You add single channels, or for an irrigation
+  system the whole device, and pick the HomeKit service and its options.
+- **Services:** switch, outlet, light, dimmer, tunable white, RGB,
+  blind / shutter (also with slats), garage door, door opener, lock,
+  thermostat, contact, motion, smoke, leak, temperature, humidity,
+  weather station, energy meter, push button / remote, doorbell and
+  **irrigation system with several valves**.
+- HomematicIP specifics are handled for you: transmitter / receiver
+  channel groups, `SMOKE_DETECTOR_ALARM_STATUS`, built-in buttons of
+  actuators hidden in the UI.
+- Accessory information in Home shows the device type as model and the
+  device serial as serial number.
+- Optional TLS (ports 42001 / 42010) and Basic auth on the XML-RPC ports.
 
-| Project | What it is |
-| --- | --- |
-| **homebridge-hap-homematic** (this repo) | Homebridge plugin, hard fork of Homebridge-Homematic-HAP, XML-RPC only, one child bridge |
-| [Homebridge-Homematic-HAP](https://github.com/matthiaseinig/Homebridge-Homematic-HAP) (npm `homebridge-homematic-hap`) | The upstream Homebridge plugin this fork is based on (JSON-RPC + XML-RPC, variables, programs, multi-bridge, hap-homematic import) |
-| [hap-homematic](https://github.com/thkl/hap-homematic) | thkl's original HomeKit bridge, running as a CCU add-on |
+## What it does not do
 
-This fork is maintained independently. No changes are sent upstream or
-taken from it.
+- No CCU system variables, programs, rooms or favourites. These need
+  JSON-RPC / ReGa, which the plugin deliberately does not use.
+- No automatic import: nothing appears in Home until you add it in the UI.
+- No Homematic IP cloud (Access Point / HCU) and no wired interfaces.
+  Supported are BidCos-RF and HmIP-RF on a CCU / OpenCCU.
+- No cameras.
+
+## Why HAP and not Matter
+
+HomeKit Accessory Protocol (HAP) through Homebridge is a deliberate
+choice. Apple Home supports only part of the Matter device types, and many
+HomeMatic devices have no counterpart there. One example is an
+irrigation system with several valves and run times. Over HAP, Apple Home
+offers the full set of services: IrrigationSystem with Valves, Doorbell,
+Stateless Programmable Switch, slats, battery and fault states.
+
+## How it differs from other plugins
+
+| | homebridge-hap-homematic | Other HomeMatic plugins for Homebridge / CCU add-ons |
+| --- | --- | --- |
+| CCU access | XML-RPC only, no login | often JSON-RPC / ReGa with a CCU user |
+| Runs on | Homebridge, one child bridge | Homebridge (partly several bridges) or as a CCU add-on |
+| Configuration | custom UI, channel by channel, stored in `devices.json` | config.json lists or the add-on's UI |
+| System variables, programs | no | yes, in some of them |
+| Irrigation | IrrigationSystem with valves, fixed or Home-set run time | depends on the plugin |
+
+## Screenshots
+
+**Settings:** CCU address, callback address, authentication, connection test.
+
+![Settings tab](https://raw.githubusercontent.com/california444/homebridge-hap-homematic/main/docs/images/ui-settings.png)
+
+**Channels:** discovered devices, filter, add a channel to HomeKit.
+
+![Channels tab](https://raw.githubusercontent.com/california444/homebridge-hap-homematic/main/docs/images/ui-channels.png)
 
 ## Status
 
-Work in progress. Based on upstream v1.2.12; JSON-RPC, system
-variables, programs, rooms, the hap-homematic import and multi-bridge
-support are removed (see NOTICE). Discovery runs over XML-RPC
-`listDevices` with a cache, mappings live in
-`<storagePath>/homebridge-hap-homematic/devices.json`
-([docs/DEVICES.md](docs/DEVICES.md)), TLS and Basic auth on the XML-RPC
-ports are supported. Each interface is supervised with ping/PONG and
-re-subscribed after a CCU restart. Start values come from `getParamset`;
-new services: irrigation (IrrigationSystem + Valves), doorbell
-(HmIP-DSD-PCB); HmIP smoke detector via `SMOKE_DETECTOR_ALARM_STATUS`;
-HmIP transmitter/receiver channel pairing. The custom UI maps channels
-or whole devices (irrigation), edits service options and offers the
-local IPv4 addresses as callback address. Planned:
+Version 0.9, in daily use on a real installation. Acceptance before 1.0
+is still running. Stable so far:
 
-- release pipeline, installation and acceptance on the real system
+- Discovery from the CCU with a saved list, so the UI opens without
+  waiting for the CCU.
+- Events from BidCos-RF and HmIP-RF, ping/PONG watchdog,
+  re-subscription after a restart, clean unsubscribe on shutdown.
+- Start values via `getParamset`. Unreachable devices show
+  "No Response" in Home.
+- Custom UI for settings, channel mapping and service options.
+
+## Tested devices
+
+Tested on real hardware with an OpenCCU:
+
+| Device | Interface | Service |
+| --- | --- | --- |
+| HM-LC-Sw1PBU-FM | BidCos-RF | Switch / Light |
+| HM-LC-Sw1-DR | BidCos-RF | Switch / Light |
+| HM-LC-Sw4-DR-2 | BidCos-RF | Irrigation system (4 valves) |
+| HM-LC-Bl1PBU-FM | BidCos-RF | Blind |
+| HM-Sec-SCo | BidCos-RF | Contact sensor |
+| HmIP-PS | HmIP-RF | Switch / Outlet |
+| HmIP-DRSI4 | HmIP-RF | Switch / Light (4 outputs) |
+| HmIP-BROLL | HmIP-RF | Blind |
+| HmIP-SWSD | HmIP-RF | Smoke detector |
+| HmIP-DSD-PCB | HmIP-RF | Doorbell |
+
+The other services are implemented and unit-tested, but have not been
+checked on real devices yet. Reports are welcome as an
+[issue](https://github.com/california444/homebridge-hap-homematic/issues).
+Mapping details per device: [docs/DEVICES.md](docs/DEVICES.md).
 
 ## Requirements
 
@@ -47,41 +113,6 @@ local IPv4 addresses as callback address. Planned:
 - CCU / OpenCCU with the XML-RPC ports reachable from the Homebridge host
   (default 2001 for BidCos-RF, 2010 for HmIP-RF), and the plugin's event
   server port (default 9875) reachable from the CCU
-
-## Install (local build)
-
-`dist/` is not checked in. Build a package and install it on the
-Homebridge host:
-
-```bash
-npm ci
-npm run build
-npm pack                      # → homebridge-hap-homematic-<version>.tgz
-# on the Homebridge host:
-npm install -g ./homebridge-hap-homematic-<version>.tgz
-```
-
-## Development
-
-```bash
-npm ci
-npm run lint
-npm run build
-npm run coverage
-```
-
-## Releases
-
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
-(`feat:`, `fix:`, `chore(deps):` …). Every push to `main` builds and tests;
-[semantic-release](https://github.com/semantic-release/semantic-release)
-then tags `vX.Y.Z` and creates the GitHub release with notes
-(`feat` → minor, `fix` / `chore(deps)` → patch, breaking change → major).
-`package.json` keeps the placeholder `0.0.0-development`; the tag is the
-version. Publishing to npm (trusted publishing, provenance) is a separate
-job that needs approval in the `npm` environment and is switched off
-until the plugin has passed acceptance (repository variable
-`NPM_PUBLISH`).
 
 ## Acknowledgements
 
