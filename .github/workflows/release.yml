@@ -46,28 +46,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # all tags
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Creates the tag and the GitHub release; the release notes (from the
-      # conventional commits) are the changelog. No commit to main, which
-      # requires PRs. Nothing is published to npm here.
-      - name: Semantic Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release
-
-      # Empty unless semantic-release tagged this commit.
-      - name: Detect new tag
+      # The version in package.json decides: a PR that raises it (npm version
+      # <patch|minor|major> --no-git-tag-version) releases on merge. If the
+      # tag already exists, nothing happens.
+      - name: Create tag and GitHub release for a new version
         id: tag
-        run: echo "tag=$(git tag --points-at HEAD | grep '^v' || true)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists: no release."
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PRERELEASE=()
+          if echo "$VERSION" | grep -q -- '-'; then PRERELEASE=(--prerelease); fi
+          # Creates the tag on this commit; notes list the merged PRs since
+          # the previous release.
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes "${PRERELEASE[@]}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   npm:
     needs: release
@@ -92,7 +93,8 @@ jobs:
 
     env:
       TAG: ${{ inputs.tag || needs.release.outputs.tag }}
-      CHANNEL: ${{ inputs.channel || 'latest' }}
+      # Prereleases (1.0.0-beta.1) go to "beta" unless chosen otherwise.
+      CHANNEL: ${{ inputs.channel || (contains(needs.release.outputs.tag, '-') && 'beta') || 'latest' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -111,16 +113,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # package.json on main only holds a placeholder; the tag is the source
-      # of truth for the version.
-      - name: Set version from tag
+      # package.json carries the version since 0.9.2. Tags up to v0.9.1 hold
+      # the placeholder 0.0.0-development; for those the tag sets it.
+      - name: Check version against the tag
         run: |
           VERSION="${TAG#v}"
           if [ "$CHANNEL" = "latest" ] && echo "$VERSION" | grep -q -- '-'; then
             echo "Refusing to publish a prerelease version to latest: $VERSION" >&2
             exit 1
           fi
-          npm version --no-git-tag-version --allow-same-version "$VERSION"
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$CURRENT" = "0.0.0-development" ]; then
+            npm version --no-git-tag-version "$VERSION"
+          elif [ "$CURRENT" != "$VERSION" ]; then
+            echo "package.json has $CURRENT but the tag is $TAG" >&2
+            exit 1
+          fi
 
       # prepack runs the build (dist/ and homebridge-ui/server.js are not in git).
       - name: Publish to npm

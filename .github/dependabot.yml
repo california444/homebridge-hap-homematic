@@ -7,8 +7,7 @@ updates:
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
-  # One PR per group instead of one per package: every merged runtime update
-  # triggers a release, so bundle them into at most one patch release a week.
+  # One PR per group instead of one per package.
   # Major updates are not grouped and still arrive as separate PRs.
   groups:
     runtime:
@@ -34,11 +33,6 @@ updates:
       update-types: [version-update:semver-major]
     # TypeScript 7 (native compiler) is not supported by typescript-eslint yet.
     - dependency-name: typescript
-      update-types: [version-update:semver-major]
-    # v10 needs conventional-changelog-writer@9, but
-    # @semantic-release/release-notes-generator still ships writer@8.
-    # Lift this once the generator moves to writer@9.
-    - dependency-name: conventional-changelog-conventionalcommits
       update-types: [version-update:semver-major]
 - package-ecosystem: github-actions
   directory: "/"
