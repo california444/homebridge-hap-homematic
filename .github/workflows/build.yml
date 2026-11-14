@@ -10,14 +10,14 @@ permissions:
 
 jobs:
   test:
-    name: Lint, build, test, audit (Node 24, latest Homebridge)
+    name: Lint, build, test, audit (Node 26, latest Homebridge)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
 
       - run: npm ci
@@ -38,14 +38,14 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   # Homebridge verification requires every supported Node LTS; the main
-  # job above runs on 24, this one covers the others.
+  # job above runs on 26 (current LTS), this one covers the older ones.
   test-node:
     name: Build and test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: ['22', '26']
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v7
 

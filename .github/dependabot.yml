@@ -27,8 +27,8 @@ updates:
       dependency-type: development
       update-types: [minor, patch]
   ignore:
-    # Types must match the lowest supported Node (engines: node >=24);
-    # newer majors would allow APIs that Node 24 does not have.
+    # Types must match the lowest supported Node (engines: node >=22);
+    # newer majors would allow APIs that Node 22 does not have.
     - dependency-name: "@types/node"
       update-types: [version-update:semver-major]
     # TypeScript 7 (native compiler) is not supported by typescript-eslint yet.
