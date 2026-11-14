@@ -12,14 +12,12 @@
       "name": {
         "title": "Platform name",
         "type": "string",
-        "default": "HapHomematic",
-        "required": true
+        "default": "HapHomematic"
       },
       "ccuIp": {
         "title": "CCU IP / hostname",
         "type": "string",
         "format": "hostname",
-        "required": true,
         "placeholder": "192.168.1.10",
         "description": "Address of your CCU / OpenCCU / RaspberryMatic."
       },
@@ -100,7 +98,6 @@
           "callbackHost": {
             "title": "Callback address",
             "type": "string",
-            "required": true,
             "placeholder": "192.168.0.13",
             "description": "IP or hostname under which the CCU reaches this Homebridge host. Required."
           },
@@ -111,8 +108,15 @@
             "minimum": 1024,
             "maximum": 65535
           }
-        }
+        },
+        "required": [
+          "callbackHost"
+        ]
       }
-    }
+    },
+    "required": [
+      "name",
+      "ccuIp"
+    ]
   }
 }

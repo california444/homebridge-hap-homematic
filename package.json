@@ -9,6 +9,7 @@
   },
   "keywords": [
     "homebridge-plugin",
+    "supports-hap",
     "homematic",
     "homematicip",
     "ccu",
@@ -18,10 +19,7 @@
   ],
   "main": "dist/src/index.js",
   "engines": {
-    "node": ">=24",
-    "homebridge": ">=2.4.0"
-  },
-  "peerDependencies": {
+    "node": ">=22",
     "homebridge": ">=2.4.0"
   },
   "files": [

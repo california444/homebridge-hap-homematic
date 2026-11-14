@@ -103,7 +103,7 @@ Mapping details per device: [docs/DEVICES.md](docs/DEVICES.md).
 
 ## Requirements
 
-- Node.js ≥ 24
+- Node.js 22 or newer (tested with 22, 24 and 26)
 - Homebridge ≥ 2.4.0
 - CCU / OpenCCU with the XML-RPC ports reachable from the Homebridge host
   (default 2001 for BidCos-RF, 2010 for HmIP-RF), and the plugin's event
