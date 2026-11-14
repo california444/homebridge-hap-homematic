@@ -38,16 +38,20 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   # Homebridge verification requires every supported Node LTS; the main
-  # job above runs on 24, this one covers 22.
-  test-node22:
-    name: Build and test (Node 22)
+  # job above runs on 24, this one covers the others.
+  test-node:
+    name: Build and test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '26']
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: 'npm'
 
       - run: npm ci
