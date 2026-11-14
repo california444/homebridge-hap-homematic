@@ -36,3 +36,22 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+  # Homebridge verification requires every supported Node LTS; the main
+  # job above runs on 24, this one covers 22.
+  test-node22:
+    name: Build and test (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm test
