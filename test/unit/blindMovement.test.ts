@@ -21,7 +21,7 @@ function setup(type: string, address: string, opts: { settings?: Record<string, 
   vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);
   const fireAt = (channelAddress: string, datapoint: string, value: unknown) => {
     (ccu as unknown as { handleEvent(ev: object): void }).handleEvent({
-      callbackId: 'c', channelAddress, datapoint, value, receivedAt: 0,
+      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress, datapoint, value, receivedAt: 0,
     });
   };
   const fire = (datapoint: string, value: unknown) => fireAt(opts.stateAddress ?? address, datapoint, value);

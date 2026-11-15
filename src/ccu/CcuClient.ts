@@ -100,6 +100,7 @@ export class CcuClient extends EventEmitter {
       host: this.config.eventServer.host,
       port: this.config.eventServer.port,
       log: this.log.child('events'),
+      allowedSenders: [this.config.ccuIp],
     });
 
     this.eventServer.on('event', (ev) => this.handleEvent(ev));
@@ -377,15 +378,17 @@ export class CcuClient extends EventEmitter {
   private handleEvent(ev: ChannelEvent): void {
     const sup = this.byCallbackId.get(ev.callbackId);
     if (!sup) {
-      this.log.debug('Event for unknown callback id %s: %s.%s', ev.callbackId, ev.channelAddress, ev.datapoint);
+      // Not one of our subscriptions: ignore it instead of dispatching.
+      this.log.debug('Ignored event for unknown callback id %s: %s.%s', ev.callbackId, ev.channelAddress, ev.datapoint);
+      return;
     }
     if (ev.datapoint === 'PONG' && (ev.channelAddress === 'CENTRAL' || ev.channelAddress === 'CENTRAL:0')) {
       // Own PONG (value = our caller id) or a foreign client's; both prove
       // that our subscription on this interface is alive.
-      sup?.noteActivity(ev.value === ev.callbackId ? 'pong' : 'event');
+      sup.noteActivity(ev.value === ev.callbackId ? 'pong' : 'event');
       return;
     }
-    sup?.noteActivity('event');
+    sup.noteActivity('event');
     const fullAddress = `${ev.channelAddress}.${ev.datapoint}`;
     const set = this.datapointListeners.get(fullAddress);
     if (!set) {

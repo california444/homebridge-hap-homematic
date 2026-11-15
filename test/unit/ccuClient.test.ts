@@ -34,7 +34,7 @@ describe('CcuClient registerListener / event dispatch', () => {
     ccu.registerListener('HmIP.0:1.STATE', a);
     ccu.registerListener('HmIP.0:1.STATE', b);
     const ev: ChannelEvent = {
-      callbackId: 'cb',
+      callbackId: 'homebridge-hap-homematic:HmIP-RF',
       channelAddress: 'HmIP.0:1',
       datapoint: 'STATE',
       value: true,
@@ -51,7 +51,7 @@ describe('CcuClient registerListener / event dispatch', () => {
     const off = ccu.registerListener('HmIP.0:1.STATE', a);
     off();
     (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'c', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: 1, receivedAt: 0,
+      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: 1, receivedAt: 0,
     });
     expect(a).not.toHaveBeenCalled();
   });
@@ -63,15 +63,25 @@ describe('CcuClient registerListener / event dispatch', () => {
     ccu.registerListener('HmIP.0:1.STATE', a);
     ccu.registerListener('HmIP.0:1.STATE', b);
     expect(() => (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'c', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: 1, receivedAt: 0,
+      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: 1, receivedAt: 0,
     })).not.toThrow();
     expect(b).toHaveBeenCalled();
+  });
+
+  it('ignores events for an unknown callback id', () => {
+    const ccu = makeCcu();
+    const a = vi.fn();
+    ccu.registerListener('HmIP.0:1.STATE', a);
+    (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
+      callbackId: 'someone-else', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: true, receivedAt: 0,
+    });
+    expect(a).not.toHaveBeenCalled();
   });
 
   it('drops unrouted events silently', () => {
     const ccu = makeCcu();
     expect(() => (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'c', channelAddress: 'HmIP.X:9', datapoint: 'STATE', value: 1, receivedAt: 0,
+      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'HmIP.X:9', datapoint: 'STATE', value: 1, receivedAt: 0,
     })).not.toThrow();
   });
 
