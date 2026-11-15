@@ -18,6 +18,13 @@
  * per-interface supervisors use as a sign of life and as the init
  * handshake (the CCU calls listDevices right after init).
  *
+ * Only the CCU may call in: with `allowedSenders` set, requests from any
+ * other source address are answered with 403 before the body is read, so
+ * another device on the network cannot inject fake events (a smoke alarm,
+ * a contact change) that trigger HomeKit automations. Host names are
+ * resolved at start and again (at most once a minute) when an unknown
+ * sender shows up, in case the CCU's address changed.
+ *
  * Debug log: every TCP connection of the CCU (open / close, requests on
  * it) and every call with a short summary, the response size and time,
  * and responses that never reached the CCU.
@@ -25,14 +32,23 @@
 
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
+import { lookup } from 'node:dns/promises';
 import * as http from 'node:http';
-import type { Socket } from 'node:net';
+import { isIP, type Socket } from 'node:net';
 import { parseXml, serializeFault, serializeResponse } from './xmlRpc.js';
 import type { PrefixedLogger } from '../util/logger.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /** Sub-calls of a system.multicall listed in the debug summary. */
 const SUMMARY_CALLS = 5;
+/** Minimum time between two re-resolutions of the allowed host names. */
+const RESOLVE_INTERVAL_MS = 60_000;
+
+/** `::ffff:192.168.0.42` → `192.168.0.42`, lower case for IPv6. */
+export function normalizeAddress(address: string): string {
+  const a = address.toLowerCase();
+  return a.startsWith('::ffff:') && isIP(a.slice(7)) === 4 ? a.slice(7) : a;
+}
 
 interface ConnectionInfo {
   id: number;
@@ -77,6 +93,11 @@ export interface EventServerOptions {
   host: string;
   port: number;
   log: PrefixedLogger;
+  /**
+   * Host names or IP addresses allowed to call in (the CCU). Unset or
+   * empty: any sender is accepted.
+   */
+  allowedSenders?: string[];
 }
 
 export interface ChannelEvent {
@@ -108,12 +129,18 @@ export class EventServer extends EventEmitter {
   private server: http.Server | undefined;
   private connectionSeq = 0;
   private readonly connections = new WeakMap<Socket, ConnectionInfo>();
+  private readonly allowedSenders: string[];
+  private allowedAddresses = new Set<string>();
+  private resolvedAt = 0;
+  private resolving: Promise<void> | undefined;
+  private readonly warnedSenders = new Set<string>();
 
   constructor(opts: EventServerOptions) {
     super();
     this.host = opts.host;
     this.port = opts.port;
     this.log = opts.log;
+    this.allowedSenders = (opts.allowedSenders ?? []).filter((h) => h.length > 0);
   }
 
   override on<K extends keyof EventServerEvents>(event: K, listener: EventServerEvents[K]): this {
@@ -124,6 +151,7 @@ export class EventServer extends EventEmitter {
   }
 
   async start(): Promise<void> {
+    await this.resolveAllowedSenders();
     return new Promise<void>((resolve, reject) => {
       const server = http.createServer((req, res) => this.handleRequest(req, res));
       server.on('connection', (socket: Socket) => this.trackConnection(socket));
@@ -151,6 +179,60 @@ export class EventServer extends EventEmitter {
     });
   }
 
+  /** Resolve `allowedSenders` to addresses; keeps the old set on failure. */
+  private resolveAllowedSenders(): Promise<void> {
+    if (this.allowedSenders.length === 0) {
+      return Promise.resolve();
+    }
+    this.resolving ??= (async () => {
+      const next = new Set<string>();
+      for (const host of this.allowedSenders) {
+        if (isIP(host)) {
+          next.add(normalizeAddress(host));
+          continue;
+        }
+        try {
+          for (const { address } of await lookup(host, { all: true })) {
+            next.add(normalizeAddress(address));
+          }
+        } catch (err) {
+          this.log.warn('Cannot resolve %s for the event server sender check: %s', host, (err as Error).message);
+          for (const a of this.allowedAddresses) {
+            next.add(a);
+          }
+        }
+      }
+      this.allowedAddresses = next;
+      this.resolvedAt = Date.now();
+      this.log.debug('Accepting callbacks from %s', [...next].join(', ') || '(nobody)');
+    })().finally(() => {
+      this.resolving = undefined;
+    });
+    return this.resolving;
+  }
+
+  /** True if the request comes from an allowed sender (or no check is set). */
+  private senderAllowed(req: http.IncomingMessage, tag: string): boolean {
+    if (this.allowedSenders.length === 0) {
+      return true;
+    }
+    const remote = normalizeAddress(req.socket.remoteAddress ?? '');
+    if (this.allowedAddresses.has(remote)) {
+      return true;
+    }
+    if (!this.warnedSenders.has(remote)) {
+      this.warnedSenders.add(remote);
+      this.log.warn('Rejected a callback from %s: only the CCU (%s) may send events',
+        remote || '?', this.allowedSenders.join(', '));
+    } else {
+      this.log.debug('%s rejected callback from %s', tag, remote || '?');
+    }
+    if (Date.now() - this.resolvedAt > RESOLVE_INTERVAL_MS && this.allowedSenders.some((h) => !isIP(h))) {
+      void this.resolveAllowedSenders();
+    }
+    return false;
+  }
+
   private trackConnection(socket: Socket): void {
     const info: ConnectionInfo = { id: ++this.connectionSeq, requests: 0 };
     this.connections.set(socket, info);
@@ -175,6 +257,11 @@ export class EventServer extends EventEmitter {
       }
     });
     res.on('error', (err) => this.log.debug('%s response error: %s', tag, err.message));
+    if (!this.senderAllowed(req, tag)) {
+      send(res, 403, 'text/plain', 'Forbidden');
+      req.resume();
+      return;
+    }
     if (req.method !== 'POST') {
       send(res, 405, 'text/plain', 'Method Not Allowed');
       return;

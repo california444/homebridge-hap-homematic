@@ -34,7 +34,7 @@ export function makeSvcEnv(): SvcEnv {
   } as SvcEnv;
   env.setValue = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined) as unknown as Mock;
   env.readValues = vi.spyOn(ccu, 'readValues').mockImplementation(async (a: string) => env.values[a]) as unknown as Mock;
-  env.fire = (address, datapoint, value, callbackId = 'c') => {
+  env.fire = (address, datapoint, value, callbackId = 'homebridge-hap-homematic:HmIP-RF') => {
     (ccu as unknown as { handleEvent(ev: object): void }).handleEvent({
       callbackId, channelAddress: address, datapoint, value, receivedAt: Date.now(),
     });

@@ -44,7 +44,7 @@ function makeEnv(): TestEnv {
       (ccu as unknown as {
         handleEvent(ev: { callbackId: string; channelAddress: string; datapoint: string; value: unknown; receivedAt: number }): void;
       }).handleEvent({
-        callbackId: 'c', channelAddress: address, datapoint, value, receivedAt: 0,
+        callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: address, datapoint, value, receivedAt: 0,
       });
     },
   };

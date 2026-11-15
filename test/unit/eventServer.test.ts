@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { Buffer } from 'node:buffer';
 import { connect } from 'node:net';
 import type { Logging } from 'homebridge';
-import { EventServer, describeCall } from '../../src/ccu/EventServer.js';
+import { EventServer, describeCall, normalizeAddress } from '../../src/ccu/EventServer.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
 
@@ -198,6 +198,70 @@ describe('EventServer', () => {
     sock.destroy();
     await until(() => debugLines().some((l) => l.includes('not delivered')));
     expect(debugLines().some((l) => l.includes('not delivered'))).toBe(true);
+  });
+});
+
+describe('EventServer sender check', () => {
+  const EVENT = '<methodCall><methodName>event</methodName><params>'
+    + '<param><value>cb</value></param><param><value>ABC:1</value></param>'
+    + '<param><value>STATE</value></param><param><value><boolean>1</boolean></value></param>'
+    + '</params></methodCall>';
+
+  async function startWith(allowedSenders: string[]): Promise<{ srv: EventServer; p: number; l: Logging }> {
+    const l = makeLog();
+    const srv = new EventServer({ host: '127.0.0.1', port: 0, log: new PrefixedLogger(l, 'ev'), allowedSenders });
+    await srv.start();
+    const p = ((srv as unknown as { server: { address(): { port: number } } }).server.address()).port;
+    return { srv, p, l };
+  }
+
+  it('accepts events from an allowed address', async () => {
+    const { srv, p } = await startWith(['127.0.0.1']);
+    const onEvent = vi.fn();
+    srv.on('event', onEvent);
+    try {
+      expect((await call(p, EVENT)).status).toBe(200);
+      expect(onEvent).toHaveBeenCalledOnce();
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('resolves a host name', async () => {
+    const { srv, p } = await startWith(['localhost']);
+    const onEvent = vi.fn();
+    srv.on('event', onEvent);
+    try {
+      expect((await call(p, EVENT)).status).toBe(200);
+      expect(onEvent).toHaveBeenCalledOnce();
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('rejects other senders with 403, warns once, emits nothing', async () => {
+    const { srv, p, l } = await startWith(['192.0.2.1']);
+    const onEvent = vi.fn();
+    const onActivity = vi.fn();
+    srv.on('event', onEvent);
+    srv.on('activity', onActivity);
+    try {
+      expect((await call(p, EVENT)).status).toBe(403);
+      expect((await call(p, EVENT)).status).toBe(403);
+      expect(onEvent).not.toHaveBeenCalled();
+      expect(onActivity).not.toHaveBeenCalled();
+      expect(l.warn).toHaveBeenCalledOnce();
+    } finally {
+      await srv.stop();
+    }
+  });
+});
+
+describe('normalizeAddress', () => {
+  it('strips the IPv4-mapped IPv6 prefix', () => {
+    expect(normalizeAddress('::ffff:192.168.0.42')).toBe('192.168.0.42');
+    expect(normalizeAddress('192.168.0.42')).toBe('192.168.0.42');
+    expect(normalizeAddress('FE80::1')).toBe('fe80::1');
   });
 });
 

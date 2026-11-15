@@ -6,6 +6,7 @@
 [![CI](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml/badge.svg)](https://github.com/california444/homebridge-hap-homematic/actions/workflows/release.yml)
 [![node](https://img.shields.io/node/v/homebridge-hap-homematic)](package.json)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![verified-by-homebridge](https://img.shields.io/badge/homebridge-verified-blueviolet?color=%23491F59&style=flat)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 
 A Homebridge plugin that brings **HomeMatic** (BidCos-RF) and
 **HomematicIP** (HmIP-RF) devices from a CCU / OpenCCU into Apple Home.
@@ -107,7 +108,9 @@ Mapping details per device: [docs/DEVICES.md](docs/DEVICES.md).
 - Homebridge ≥ 2.4.0
 - CCU / OpenCCU with the XML-RPC ports reachable from the Homebridge host
   (default 2001 for BidCos-RF, 2010 for HmIP-RF), and the plugin's event
-  server port (default 9875) reachable from the CCU
+  server port (default 9875) reachable from the CCU. The event server only
+  accepts callbacks from the configured CCU address, so the CCU must reach
+  Homebridge directly, not through NAT or a proxy.
 
 ## Acknowledgements
 
