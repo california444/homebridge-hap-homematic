@@ -69,7 +69,8 @@ the upstream project. Modified files carry a "Modified by california444
 
   * 2026-11-11  Forked at d635ecf. Renamed package to
                 homebridge-hap-homematic and the platform to HapHomematic;
-                Node >= 24 and Homebridge >= 2.4.0 only; CI on Node 24.
+                Homebridge >= 2.4.0 only; Node.js as in package.json
+                `engines` (currently >= 22, CI on 22, 24 and 26).
   * 2026-11-11  Window-covering movement reporting
                 (src/services/impl/BlindAccessory.ts and
                 test/unit/blindMovement.test.ts) taken from upstream
