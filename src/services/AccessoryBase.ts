@@ -233,9 +233,9 @@ export abstract class AccessoryBase {
 
   /**
    * One line per failed command: Homebridge name, datapoint and value,
-   * the CCU's reason and the device's signal strength, e.g.
-   * `Garten Licht: STATE=true not delivered, device did not answer
-   * (Generic error (UNREACH) (-1)); signal -72 dBm at the CCU, -67 dBm at the device`.
+   * the CCU's answer and the last known signal strength, e.g.
+   * `Garten Licht: STATE=true not delivered, (Generic error (UNREACH) (-1))
+   * last known signal:-72 dBm(CCU)/-67 dBm(device)`.
    */
   private async logSetFailure(err: SetValueError): Promise<void> {
     let signal: SignalInfo = {};
@@ -246,15 +246,15 @@ export abstract class AccessoryBase {
     }
     const parts: string[] = [];
     if (signal.device !== undefined) {
-      parts.push(`${signal.device} dBm at the CCU`);
+      parts.push(`${signal.device} dBm(CCU)`);
     }
     if (signal.peer !== undefined) {
-      parts.push(`${signal.peer} dBm at the device`);
+      parts.push(`${signal.peer} dBm(device)`);
     }
     // The log prefix names the accessory's channel; name others (Sw4 valves).
     const where = this.log.prefix.endsWith(err.address) ? '' : ` on ${err.address}`;
-    this.log.warn('%s: %s=%s%s not delivered, %s%s', this.accessory.displayName, err.datapoint, String(err.value),
-      where, err.reason, parts.length > 0 ? `; signal ${parts.join(', ')}` : '');
+    this.log.warn('%s: %s=%s%s not delivered, (%s)%s', this.accessory.displayName, err.datapoint, String(err.value),
+      where, err.reason, parts.length > 0 ? ` last known signal:${parts.join('/')}` : '');
   }
 
   protected wrapGet<T extends CharacteristicValue>(handler: () => Promise<T> | T) {

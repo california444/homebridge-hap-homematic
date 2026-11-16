@@ -21,7 +21,7 @@ const fire = (ccu: CcuClient, channelAddress: string, datapoint: string, value: 
   });
 
 describe('CcuClient.setValue errors', () => {
-  it('throws a SetValueError with a readable reason', async () => {
+  it('throws a SetValueError with the CCU answer as reason', async () => {
     const ccu = makeCcu();
     vi.spyOn(ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
       setValue: async () => { throw new Error('setValue failed: Generic error (UNREACH) (-1)'); },
@@ -30,11 +30,11 @@ describe('CcuClient.setValue errors', () => {
     expect(err).toBeInstanceOf(SetValueError);
     expect(err).toMatchObject({
       address: 'ABC0000001:14', datapoint: 'STATE', value: true,
-      reason: 'device did not answer (Generic error (UNREACH) (-1))',
+      reason: 'Generic error (UNREACH) (-1)',
     });
   });
 
-  it('keeps other CCU errors as they are', async () => {
+  it('keeps other CCU answers as they are', async () => {
     const ccu = makeCcu();
     vi.spyOn(ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
       setValue: async () => { throw new Error('setValue failed: Failure (-1)'); },
@@ -83,14 +83,14 @@ describe('failed commands in the log', () => {
     const raw = makeLog();
     env.log = new PrefixedLogger(raw, 'svc:SwitchAccessory:ABC0000001:14');
     env.setValue.mockRejectedValue(
-      new SetValueError('ABC0000001:14', 'STATE', true, 'device did not answer (Generic error (UNREACH) (-1))'));
+      new SetValueError('ABC0000001:14', 'STATE', true, 'Generic error (UNREACH) (-1)'));
     env.values['ABC0000001:0'] = { RSSI_DEVICE: -72, RSSI_PEER: -67 };
     const a = build(env, switchService, ch, { name: 'Garten Licht' });
     await expect(a.char(a.svc('Switch'), 'On').onSetHandler!(true)).rejects.toMatchObject(NO_RESPONSE);
     await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
     expect(warnings(raw)).toEqual([
       '[svc:SwitchAccessory:ABC0000001:14] Garten Licht: STATE=true not delivered, '
-      + 'device did not answer (Generic error (UNREACH) (-1)); signal -72 dBm at the CCU, -67 dBm at the device',
+      + '(Generic error (UNREACH) (-1)) last known signal:-72 dBm(CCU)/-67 dBm(device)',
     ]);
   });
 
@@ -103,7 +103,21 @@ describe('failed commands in the log', () => {
     await expect(a.char(a.svc('Switch'), 'On').onSetHandler!(false)).rejects.toMatchObject(NO_RESPONSE);
     await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
     expect(warnings(raw)).toEqual([
-      '[svc:SwitchAccessory:ABC0000001:13] Ventil: STATE=false on ABC0000001:14 not delivered, Failure (-1)',
+      '[svc:SwitchAccessory:ABC0000001:13] Ventil: STATE=false on ABC0000001:14 not delivered, (Failure (-1))',
+    ]);
+  });
+
+  it('shows a one-sided signal', async () => {
+    const env = makeSvcEnv();
+    const raw = makeLog();
+    env.log = new PrefixedLogger(raw, 'svc:SwitchAccessory:ABC0000001:14');
+    env.setValue.mockRejectedValue(new SetValueError('ABC0000001:14', 'STATE', true, 'Failure (-1)'));
+    env.values['ABC0000001:0'] = { RSSI_DEVICE: -88, RSSI_PEER: -65535 };
+    const a = build(env, switchService, ch, { name: 'Licht' });
+    await expect(a.char(a.svc('Switch'), 'On').onSetHandler!(true)).rejects.toMatchObject(NO_RESPONSE);
+    await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
+    expect(warnings(raw)).toEqual([
+      '[svc:SwitchAccessory:ABC0000001:14] Licht: STATE=true not delivered, (Failure (-1)) last known signal:-88 dBm(CCU)',
     ]);
   });
 });

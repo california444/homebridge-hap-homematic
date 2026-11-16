@@ -92,10 +92,9 @@ function channel0(address: string): string {
   return `${colon === -1 ? address : address.slice(0, colon)}:0`;
 }
 
-/** Make the CCU's error text readable: "UNREACH" means no radio answer. */
+/** The CCU's answer without the "setValue failed:" prefix. */
 function describeFailure(message: string): string {
-  const detail = message.replace(/^setValue failed: /, '');
-  return /\bUNREACH\b/.test(detail) ? `device did not answer (${detail})` : detail;
+  return message.replace(/^setValue failed: /, '');
 }
 
 const ENABLED_INTERFACES: ReadonlyArray<{
