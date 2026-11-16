@@ -55,6 +55,48 @@ type DatapointListener = (value: unknown) => void;
 /** Paramset description lookup (Discovery's cache), see setDescriber(). */
 export type Describer = (address: string) => Record<string, ParameterDescription> | undefined;
 
+/**
+ * A setValue the CCU did not carry out. `reason` is the CCU's answer
+ * without the "setValue failed:" prefix, e.g. "Generic error (UNREACH) (-1)".
+ */
+export class SetValueError extends Error {
+  constructor(
+    readonly address: string,
+    readonly datapoint: string,
+    readonly value: unknown,
+    readonly reason: string,
+    override readonly cause?: unknown,
+  ) {
+    super(`${address} ${datapoint}=${String(value)} not delivered: ${reason}`);
+    this.name = 'SetValueError';
+  }
+}
+
+/** Last known signal strength of a device in dBm, both directions. */
+export interface SignalInfo {
+  /** How well the CCU received the device (RSSI_DEVICE). */
+  device?: number;
+  /** How well the device received the CCU (RSSI_PEER). */
+  peer?: number;
+}
+
+/** Plausible RSSI in dBm; the CCU uses e.g. -65535 or 0 for "unknown". */
+export function validRssi(raw: unknown): number | undefined {
+  const n = typeof raw === 'number' ? raw : Number.NaN;
+  return Number.isFinite(n) && n < 0 && n > -128 ? n : undefined;
+}
+
+/** `ABC:14` → `ABC:0`, the device's maintenance channel. */
+function channel0(address: string): string {
+  const colon = address.lastIndexOf(':');
+  return `${colon === -1 ? address : address.slice(0, colon)}:0`;
+}
+
+/** The CCU's answer without the "setValue failed:" prefix. */
+function describeFailure(message: string): string {
+  return message.replace(/^setValue failed: /, '');
+}
+
 const ENABLED_INTERFACES: ReadonlyArray<{
   id: CcuInterfaceId;
   flag: keyof ResolvedConfig['interfaces'];
@@ -85,6 +127,8 @@ export class CcuClient extends EventEmitter {
   private describer: Describer = () => undefined;
   /** In-flight getParamset per channel, so handlers sharing a channel ask once. */
   private readonly inflight = new Map<string, Promise<Record<string, unknown> | undefined>>();
+  /** Last RSSI_DEVICE / RSSI_PEER events per maintenance channel (`ABC:0`). */
+  private readonly lastSignal = new Map<string, SignalInfo>();
   /** address → interface map, filled by listDevices(). */
   private readonly addressInterface: Map<string, CcuInterfaceId> = new Map();
 
@@ -299,7 +343,25 @@ export class CcuClient extends EventEmitter {
    */
   async setValue(address: string, datapoint: string, value: unknown): Promise<void> {
     const typed = toTyped(this.describe(address, datapoint)?.TYPE, value);
-    await this.clientFor(address).setValue(address, datapoint, typed);
+    try {
+      await this.clientFor(address).setValue(address, datapoint, typed);
+    } catch (err) {
+      throw new SetValueError(address, datapoint, value, describeFailure((err as Error).message), err);
+    }
+  }
+
+  /**
+   * Signal strength of the device behind `address`: the CCU's current
+   * values of channel 0 (no radio traffic), else the last RSSI events.
+   * Empty when neither is known (unreachable HmIP devices report none).
+   */
+  async signalInfo(address: string): Promise<SignalInfo> {
+    const ch0 = channel0(address);
+    const values = await this.readValues(ch0);
+    const last = this.lastSignal.get(ch0) ?? {};
+    const device = validRssi(values?.['RSSI_DEVICE']) ?? last.device;
+    const peer = validRssi(values?.['RSSI_PEER']) ?? last.peer;
+    return { ...(device !== undefined ? { device } : {}), ...(peer !== undefined ? { peer } : {}) };
   }
 
   /** Read a CCU datapoint via XML-RPC on the channel's interface. */
@@ -389,6 +451,14 @@ export class CcuClient extends EventEmitter {
       return;
     }
     sup.noteActivity('event');
+    if (ev.datapoint === 'RSSI_DEVICE' || ev.datapoint === 'RSSI_PEER') {
+      const rssi = validRssi(ev.value);
+      if (rssi !== undefined) {
+        const entry = this.lastSignal.get(ev.channelAddress) ?? {};
+        entry[ev.datapoint === 'RSSI_DEVICE' ? 'device' : 'peer'] = rssi;
+        this.lastSignal.set(ev.channelAddress, entry);
+      }
+    }
     const fullAddress = `${ev.channelAddress}.${ev.datapoint}`;
     const set = this.datapointListeners.get(fullAddress);
     if (!set) {
