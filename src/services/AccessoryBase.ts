@@ -15,7 +15,7 @@
  */
 
 import type { Characteristic, CharacteristicValue, PlatformAccessory, Service, WithUUID } from 'homebridge';
-import type { CcuClient } from '../ccu/CcuClient.js';
+import { SetValueError, type CcuClient, type SignalInfo } from '../ccu/CcuClient.js';
 import type { PrefixedLogger } from '../util/logger.js';
 import type { AccessoryContext, CcuInterfaceId } from '../types.js';
 import type { HapStatus, ServiceContext } from './types.js';
@@ -218,13 +218,43 @@ export abstract class AccessoryBase {
       try {
         await handler(value as T);
       } catch (err) {
-        this.log.warn('setValue failed: %s', (err as Error).message);
+        if (err instanceof SetValueError) {
+          void this.logSetFailure(err);
+        } else {
+          this.log.warn('setValue failed: %s', (err as Error).message);
+        }
         if (this.hap && !(err instanceof this.hap.HapStatusError)) {
           throw new this.hap.HapStatusError(this.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
         }
         throw err;
       }
     };
+  }
+
+  /**
+   * One line per failed command: Homebridge name, datapoint and value,
+   * the CCU's reason and the device's signal strength, e.g.
+   * `Garten Licht: STATE=true not delivered, device did not answer
+   * (Generic error (UNREACH) (-1)); signal -72 dBm at the CCU, -67 dBm at the device`.
+   */
+  private async logSetFailure(err: SetValueError): Promise<void> {
+    let signal: SignalInfo = {};
+    try {
+      signal = await this.ccu.signalInfo(err.address);
+    } catch {
+      // signal is optional
+    }
+    const parts: string[] = [];
+    if (signal.device !== undefined) {
+      parts.push(`${signal.device} dBm at the CCU`);
+    }
+    if (signal.peer !== undefined) {
+      parts.push(`${signal.peer} dBm at the device`);
+    }
+    // The log prefix names the accessory's channel; name others (Sw4 valves).
+    const where = this.log.prefix.endsWith(err.address) ? '' : ` on ${err.address}`;
+    this.log.warn('%s: %s=%s%s not delivered, %s%s', this.accessory.displayName, err.datapoint, String(err.value),
+      where, err.reason, parts.length > 0 ? `; signal ${parts.join(', ')}` : '');
   }
 
   protected wrapGet<T extends CharacteristicValue>(handler: () => Promise<T> | T) {
