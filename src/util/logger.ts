@@ -12,7 +12,7 @@ import type { Logging } from 'homebridge';
 const SECRET_KEY_RE = /password|secret|token|apikey|api[_-]?key/i;
 
 export function scrubArgs(args: unknown[]): unknown[] {
-  return args.map(scrubValue);
+  return args.map((a) => scrubValue(a));
 }
 
 function scrubValue(value: unknown, depth = 0): unknown {

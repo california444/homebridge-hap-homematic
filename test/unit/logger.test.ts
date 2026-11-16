@@ -3,6 +3,10 @@ import { PrefixedLogger, scrubArgs } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
 
 describe('scrubArgs', () => {
+  it('keeps every argument, not only the first five', () => {
+    expect(scrubArgs(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+  });
+
   it('redacts password-like keys', () => {
     expect(scrubArgs([{ user: 'u', password: 'p' }])).toEqual([{ user: 'u', password: '[redacted]' }]);
   });
