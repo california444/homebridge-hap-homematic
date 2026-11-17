@@ -148,8 +148,13 @@ graph analysable.
 ## Values: start values, unknown values, limits
 
 - **Start values** come from `getParamset(channel, 'VALUES')` — never
-  `getValue`, which triggers radio traffic on BidCos (plan 3.1,
-  finding 11). Handlers declare what they depend on with
+  `getValue`, which triggers radio traffic on BidCos for every call (plan
+  3.1, finding 11). `getParamset` usually answers from the CCU's cache.
+  Exception seen on 17.11.2026: right after `init`, `rfd` sent one
+  `CONFIG_STATUS_REQ` by radio to each BidCos actuator whose cached value
+  was old (`STATE age=…` in the CCU log), one after the other. This only
+  happens at start and after a re-subscribe; `rfd` serializes these
+  requests itself. Handlers declare what they depend on with
   `need(address, datapoint, apply)`; `refresh()` (at start and after
   every re-subscribe) reads each channel once and applies the values that
   are present. ACTION datapoints (`PRESS_*`) are never applied.
@@ -159,6 +164,19 @@ graph analysable.
   detectors report "no smoke" plus StatusFault (decision D12).
 - **Writes** are typed by the paramset description: FLOAT as explicit
   double, INTEGER / ENUM rounded, BOOL / ACTION boolean.
+- **Send queue** (`ccu/SendQueue.ts`): BidCos-RF and HmIP-RF share one
+  radio module, and parallel `setValue` calls lost their confirmations.
+  So every write goes through one queue, one `setValue` at a time across
+  both interfaces: at most `sendQueue.timeoutMs` (5 s) per command, a
+  pause of `sendQueue.gapMs` (100 ms) after a success, the next command
+  at once after a failure or timeout. A newer write to the same
+  datapoint replaces a waiting one; writes that belong together
+  (irrigation `ON_TIME` + `STATE`) are one job. `onSet` returns at once,
+  so a command the CCU did not deliver shows up in the log only, with
+  the accessory's name. Verified on 17.11.2026 with a Home scene: four
+  commands (three BidCos blinds, one HmIP switch) went out strictly one
+  after the other, each acknowledged after 90–155 ms, about 1 s in total.
+  `getParamset`, `ping` and `init` do not go through the queue.
 - **Limits**: `update()` clamps to the characteristic's
   `minValue` / `maxValue` / `validValues` and drops invalid values.
 - **StatusFault** (where the HAP service supports it): device `UNREACH`,

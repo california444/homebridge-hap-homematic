@@ -62,6 +62,12 @@ export abstract class AccessoryBase {
     this.Characteristic = ctx.Characteristic;
     this.hap = ctx.hap;
     this.persistFn = ctx.persist;
+    // The command channel: for paired HmIP channels the receiver (e.g. :3),
+    // which the accessory does not listen on (state comes from :2).
+    const { kind, id } = this.accessory.context;
+    if (kind === 'channel' && id) {
+      this.disposers.push(this.ccu.setOwner(id, this.reportSetFailure));
+    }
   }
 
   protected getOrAddService<T extends WithUUID<typeof Service>>(svc: T, name?: string, subtype?: string): Service {
