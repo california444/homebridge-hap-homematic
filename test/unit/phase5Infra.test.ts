@@ -87,6 +87,7 @@ describe('CcuClient values and typing', () => {
     await c.setValue('A:1', 'LEVEL', 1);
     await c.setValue('A:1', 'STATE', 0);
     await c.setValue('B:1', 'LEVEL', 1);
+    await c.sendQueue.idle();
     expect(set.mock.calls.map((x) => x[2])).toEqual([{ explicitDouble: 1 }, false, 1]);
     expect(c.describe('A:1', 'LEVEL')?.TYPE).toBe('FLOAT');
     expect(c.interfaceOf('00000000000A01:1')).toBe('HmIP-RF');

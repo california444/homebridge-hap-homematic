@@ -66,6 +66,7 @@ const DEFAULT_BLOCK = () => ({
   interfacePorts: {},
   rpcAuth: { enabled: false, username: '', password: '' },
   eventServer: { host: '0.0.0.0', callbackHost: '', port: 9875 },
+  sendQueue: {},
 });
 
 const state = {
@@ -600,6 +601,14 @@ function statHTML(label, value, sub) {
     </div>`;
 }
 
+/** sendQueue.* in config.json; limits as in src/util/config.ts. */
+const SEND_QUEUE_FIELDS = [
+  { key: 'timeoutMs', label: 'Timeout per command (ms)', def: 5000, min: 100, max: 60000,
+    hint: 'How long to wait for the CCU\'s answer before the next command is sent.' },
+  { key: 'gapMs', label: 'Pause after success (ms)', def: 100, min: 0, max: 10000,
+    hint: 'Pause after a delivered command. 0 = no pause.' },
+];
+
 function viewSettings(host) {
   const m = state.cfg;
   host.innerHTML = `
@@ -678,6 +687,18 @@ function viewSettings(host) {
             </div>`).join('')}
       </div>
     </div>
+    <div class="hgui-card">
+      <h6>Send queue</h6>
+      <p class="hgui-meta">Commands go to the CCU one at a time, across BidCos-RF and HmIP-RF. Leave blank for the defaults.</p>
+      <div class="row g-2">
+        ${SEND_QUEUE_FIELDS.map((f) => `
+            <div class="col-md-3">
+              <label class="form-label">${h(f.label)}</label>
+              <input class="form-control" type="number" min="${f.min}" max="${f.max}" step="1" id="cf-sq-${f.key}" placeholder="${f.def}" value="${h(m.sendQueue?.[f.key] ?? '')}" />
+              <div class="hgui-hint">${h(f.hint)}</div>
+            </div>`).join('')}
+      </div>
+    </div>
     <div class="hgui-card d-flex align-items-center gap-2 flex-wrap">
       <button class="btn btn-outline-primary" id="hgui-test-btn">Test CCU</button>
       <span class="small" id="hgui-test-result">${state.testResult
@@ -700,6 +721,16 @@ function viewSettings(host) {
   $('cf-auth-pass').addEventListener('input', (e) => propagate((b) => b.rpcAuth.password = e.target.value));
   for (const k of ['bidcosRf','hmIpRf']) {
     $(`cf-if-${k}`).addEventListener('change', (e) => propagate((b) => b.interfaces[k] = e.target.checked));
+  }
+  for (const f of SEND_QUEUE_FIELDS) {
+    $(`cf-sq-${f.key}`).addEventListener('input', (e) => {
+      const v = e.target.value.trim();
+      propagate((b) => {
+        b.sendQueue = { ...b.sendQueue };
+        if (v === '') delete b.sendQueue[f.key];
+        else b.sendQueue[f.key] = parseInt(v, 10);
+      });
+    });
   }
   for (const k of ['BidCos-RF','HmIP-RF']) {
     $(`cf-port-${k}`).addEventListener('input', (e) => {
@@ -1045,6 +1076,7 @@ async function init() {
       rpcAuth: { ...def.rpcAuth, ...(b.rpcAuth ?? {}) },
       eventServer: { ...def.eventServer, ...(b.eventServer ?? {}) },
       interfacePorts: { ...(b.interfacePorts ?? {}) },
+      sendQueue: { ...(b.sendQueue ?? {}) },
     };
     // Fields of removed features; channel mappings now live in devices.json.
     // `_bridge` (child bridge settings incl. debugModeEnabled) is kept as is.

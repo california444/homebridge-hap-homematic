@@ -112,6 +112,29 @@
         "required": [
           "callbackHost"
         ]
+      },
+      "sendQueue": {
+        "title": "Send queue",
+        "type": "object",
+        "description": "Commands go to the CCU one at a time, across BidCos-RF and HmIP-RF.",
+        "properties": {
+          "timeoutMs": {
+            "title": "Timeout per command (ms)",
+            "type": "integer",
+            "default": 5000,
+            "minimum": 100,
+            "maximum": 60000,
+            "description": "How long to wait for the CCU's answer before the next command is sent."
+          },
+          "gapMs": {
+            "title": "Pause after success (ms)",
+            "type": "integer",
+            "default": 100,
+            "minimum": 0,
+            "maximum": 10000,
+            "description": "Pause after a delivered command before the next one. 0 = no pause."
+          }
+        }
       }
     },
     "required": [

@@ -121,6 +121,11 @@ export function resolveConfig(raw: RawConfig, opts: ResolveOptions = {}): Resolv
     }
   }
 
+  const sendQueue = {
+    timeoutMs: queueNumber(raw.sendQueue?.timeoutMs, 5000, 100, 60000, 'sendQueue.timeoutMs'),
+    gapMs: queueNumber(raw.sendQueue?.gapMs, 100, 0, 10000, 'sendQueue.gapMs'),
+  };
+
   return {
     name: typeof raw.name === 'string' && raw.name.length > 0 ? raw.name : 'HapHomematic',
     ccuIp,
@@ -133,5 +138,18 @@ export function resolveConfig(raw: RawConfig, opts: ResolveOptions = {}): Resolv
       callbackHost: callbackHost ?? '',
       port: evPort,
     },
+    sendQueue,
   };
+}
+
+/** Optional integer in [min, max]; empty (UI) means the default. */
+function queueNumber(raw: unknown, def: number, min: number, max: number, key: string): number {
+  if (raw === undefined || raw === null || raw === '') {
+    return def;
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new ConfigError(`${key} must be an integer in [${min}, ${max}]`);
+  }
+  return n;
 }
