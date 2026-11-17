@@ -283,8 +283,10 @@ export class RpcClient {
   }
 
   /**
-   * XML-RPC `getParamset(address, 'VALUES')`: current values of a channel
-   * from the CCU's cache, without radio traffic (plan 3.1, finding 11).
+   * XML-RPC `getParamset(address, 'VALUES')`: current values of a channel,
+   * usually from the CCU's cache without radio traffic (plan 3.1, finding
+   * 11). For BidCos values that are old, rfd may ask the device by radio
+   * (CONFIG_STATUS_REQ, seen right after init on 17.11.2026).
    * Unreachable HmIP devices answer `{}` (finding 2).
    */
   async getParamset(address: string): Promise<Record<string, unknown>> {
