@@ -603,8 +603,8 @@ function statHTML(label, value, sub) {
 
 /** sendQueue.* in config.json; limits as in src/util/config.ts. */
 const SEND_QUEUE_FIELDS = [
-  { key: 'timeoutMs', label: 'Timeout per command (ms)', def: 5000, min: 100, max: 60000,
-    hint: 'How long to wait for the CCU\'s answer before the next command is sent.' },
+  { key: 'timeoutMs', label: 'Timeout (ms)', def: 5000, min: 100, max: 60000,
+    hint: 'How long to wait for the CCU\'s answer to a command before the next one is sent.' },
   { key: 'gapMs', label: 'Pause after success (ms)', def: 100, min: 0, max: 10000,
     hint: 'Pause after a delivered command. 0 = no pause.' },
 ];
@@ -692,7 +692,7 @@ function viewSettings(host) {
       <p class="hgui-meta">Commands go to the CCU one at a time, across BidCos-RF and HmIP-RF. Leave blank for the defaults.</p>
       <div class="row g-2">
         ${SEND_QUEUE_FIELDS.map((f) => `
-            <div class="col-md-3">
+            <div class="col-md-4">
               <label class="form-label">${h(f.label)}</label>
               <input class="form-control" type="number" min="${f.min}" max="${f.max}" step="1" id="cf-sq-${f.key}" placeholder="${f.def}" value="${h(m.sendQueue?.[f.key] ?? '')}" />
               <div class="hgui-hint">${h(f.hint)}</div>
