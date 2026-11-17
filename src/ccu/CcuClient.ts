@@ -34,6 +34,7 @@ import {
   type ParameterDescription,
   type RpcDeviceDescription,
 } from './RpcClient.js';
+import { SendQueue, SendTimeoutError, formatSeconds } from './SendQueue.js';
 import type {
   CcuChannel,
   CcuDevice,
@@ -57,7 +58,9 @@ export type Describer = (address: string) => Record<string, ParameterDescription
 
 /**
  * A setValue the CCU did not carry out. `reason` is the CCU's answer
- * without the "setValue failed:" prefix, e.g. "Generic error (UNREACH) (-1)".
+ * without the "setValue failed:" prefix, e.g. "Generic error (UNREACH) (-1)",
+ * or "no answer within 5.0 s" when the send queue's timeout hit.
+ * `durationMs`: time from sending until the answer (or the timeout).
  */
 export class SetValueError extends Error {
   constructor(
@@ -66,11 +69,23 @@ export class SetValueError extends Error {
     readonly value: unknown,
     readonly reason: string,
     override readonly cause?: unknown,
+    readonly durationMs?: number,
   ) {
     super(`${address} ${datapoint}=${String(value)} not delivered: ${reason}`);
     this.name = 'SetValueError';
   }
+
+  /** True when the CCU did not answer within the send queue's timeout. */
+  get timedOut(): boolean {
+    return this.cause instanceof SendTimeoutError;
+  }
 }
+
+/** Receives the failed commands to the addresses it owns, see setOwner(). */
+export type SetFailureReporter = (err: SetValueError) => void;
+
+/** sendQueue defaults (plan-sendequeue.md). */
+export const SEND_QUEUE_DEFAULTS = { timeoutMs: 5000, gapMs: 100 } as const;
 
 /** Last known signal strength of a device in dBm, both directions. */
 export interface SignalInfo {
@@ -92,9 +107,9 @@ function channel0(address: string): string {
   return `${colon === -1 ? address : address.slice(0, colon)}:0`;
 }
 
-/** The CCU's answer without the "setValue failed:" prefix. */
+/** The CCU's answer without the (sometimes doubled) "setValue failed:" prefix. */
 function describeFailure(message: string): string {
-  return message.replace(/^setValue failed: /, '');
+  return message.replace(/^(?:setValue failed:\s*)+/, '');
 }
 
 const ENABLED_INTERFACES: ReadonlyArray<{
@@ -131,6 +146,10 @@ export class CcuClient extends EventEmitter {
   private readonly lastSignal = new Map<string, SignalInfo>();
   /** address → interface map, filled by listDevices(). */
   private readonly addressInterface: Map<string, CcuInterfaceId> = new Map();
+  /** channel address → reporter of the accessory that uses it, see setOwner(). */
+  private readonly owners = new Map<string, SetFailureReporter>();
+  /** One setValue at a time, across all interfaces. */
+  readonly sendQueue: SendQueue;
 
   constructor(opts: CcuClientOptions) {
     super();
@@ -139,6 +158,11 @@ export class CcuClient extends EventEmitter {
     this.setMaxListeners(0);
     this.config = opts.config;
     this.log = opts.log;
+    this.sendQueue = new SendQueue({
+      log: this.log.child('send'),
+      timeoutMs: this.config.sendQueue?.timeoutMs ?? SEND_QUEUE_DEFAULTS.timeoutMs,
+      gapMs: this.config.sendQueue?.gapMs ?? SEND_QUEUE_DEFAULTS.gapMs,
+    });
 
     this.eventServer = new EventServer({
       host: this.config.eventServer.host,
@@ -195,6 +219,7 @@ export class CcuClient extends EventEmitter {
     }
     await this.eventServer.start();
     this.started = true;
+    this.sendQueue.start();
     for (const id of this.supervisors.keys()) {
       this.log.info('Using XML-RPC port %d for %s%s', this.portFor(id), id, this.config.useTls ? ' (TLS)' : '');
     }
@@ -208,6 +233,7 @@ export class CcuClient extends EventEmitter {
       return;
     }
     this.started = false;
+    this.sendQueue.stop();
     for (const sup of this.supervisors.values()) {
       await sup.stop();
     }
@@ -336,12 +362,77 @@ export class CcuClient extends EventEmitter {
   }
 
   /**
-   * Set a CCU datapoint via XML-RPC on the channel's interface, typed by
-   * the paramset description (plan 4.3): FLOAT as explicit double (the
-   * CCU rejects `1` as int for a FLOAT), INTEGER/ENUM rounded, BOOL and
-   * ACTION as boolean. Without a description the value is sent as is.
+   * `reporter` logs failed commands to `address` (AccessoryBase: one line
+   * with the accessory's name). The first owner of an address keeps it;
+   * the returned function releases it again.
+   */
+  setOwner(address: string, reporter: SetFailureReporter): () => void {
+    if (!this.owners.has(address)) {
+      this.owners.set(address, reporter);
+    }
+    return () => {
+      if (this.owners.get(address) === reporter) {
+        this.owners.delete(address);
+      }
+    };
+  }
+
+  /**
+   * Queue a CCU datapoint write (plan-sendequeue.md) and return at once.
+   * The send queue sends one setValue at a time across all interfaces; a
+   * newer write to the same datapoint replaces a waiting one. A failure
+   * goes to the address's owner (setOwner), else to the log.
    */
   async setValue(address: string, datapoint: string, value: unknown): Promise<void> {
+    this.setValues(address, [[datapoint, value]]);
+  }
+
+  /**
+   * Queue writes that belong together as one job, sent in order without
+   * other commands in between (irrigation: ON_TIME, then STATE). The
+   * first failure ends the job. Throws at once for an address on a
+   * disabled interface.
+   */
+  setValues(address: string, writes: ReadonlyArray<readonly [datapoint: string, value: unknown]>): void {
+    if (writes.length === 0) {
+      return;
+    }
+    let current = 0;
+    const label = `${address} ${writes.map(([dp, v]) => `${dp}=${String(v)}`).join(', ')}`;
+    this.clientFor(address); // a disabled interface fails at once, not in the queue
+    const intf = this.interfaceForAddress(address);
+    this.sendQueue.enqueue({
+      key: `${intf}:${address}:${writes.map(([dp]) => dp).join('+')}`,
+      label,
+      run: async () => {
+        for (current = 0; current < writes.length; current++) {
+          const [dp, v] = writes[current]!;
+          await this.sendValue(address, dp, v);
+        }
+      },
+      onError: (err, ms) => {
+        const [dp, v] = writes[Math.min(current, writes.length - 1)]!;
+        const failure = new SetValueError(address, dp, v,
+          err instanceof SetValueError ? err.reason : describeFailure((err as Error).message),
+          err instanceof SetValueError ? err.cause : err, ms);
+        const reporter = this.owners.get(address);
+        if (reporter) {
+          reporter(failure);
+        } else {
+          this.log.warn('%s=%s on %s not delivered after %s, (%s)', dp, String(v), address,
+            formatSeconds(ms), failure.reason);
+        }
+      },
+    });
+  }
+
+  /**
+   * One setValue via XML-RPC on the channel's interface, typed by the
+   * paramset description (plan 4.3): FLOAT as explicit double (the CCU
+   * rejects `1` as int for a FLOAT), INTEGER/ENUM rounded, BOOL and
+   * ACTION as boolean. Without a description the value is sent as is.
+   */
+  private async sendValue(address: string, datapoint: string, value: unknown): Promise<void> {
     const typed = toTyped(this.describe(address, datapoint)?.TYPE, value);
     try {
       await this.clientFor(address).setValue(address, datapoint, typed);

@@ -202,6 +202,8 @@ describe('CcuClient address → interface routing', () => {
     });
     await ccu.setValue('0008DBE9971A0F:4', 'LEVEL', 0.5);
     await ccu.setValue('0008DBE9971A0F:9', 'LEVEL', 0.5); // device-level fallback
+    await vi.advanceTimersByTimeAsync(200); // gap between the two commands
+    await ccu.sendQueue.idle();
     expect(calls).toEqual(['BidCos-RF', 'BidCos-RF']);
   });
 

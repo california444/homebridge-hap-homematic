@@ -15,6 +15,8 @@ import { asPlatformAccessory, makeAccessory, makeHapStub, makeLog, type Characte
 export interface SvcEnv {
   ccu: CcuClient;
   setValue: Mock;
+  /** ccu.setValues: writes queued as one job (irrigation ON_TIME + STATE). */
+  setValues: Mock;
   readValues: Mock;
   log: PrefixedLogger;
   hap: ReturnType<typeof makeHapStub>;
@@ -33,6 +35,7 @@ export function makeSvcEnv(): SvcEnv {
     log: new PrefixedLogger(makeLog(), 'svc'),
   } as SvcEnv;
   env.setValue = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined) as unknown as Mock;
+  env.setValues = vi.spyOn(ccu, 'setValues').mockReturnValue(undefined) as unknown as Mock;
   env.readValues = vi.spyOn(ccu, 'readValues').mockImplementation(async (a: string) => env.values[a]) as unknown as Mock;
   env.fire = (address, datapoint, value, callbackId = 'homebridge-hap-homematic:HmIP-RF') => {
     (ccu as unknown as { handleEvent(ev: object): void }).handleEvent({

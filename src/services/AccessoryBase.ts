@@ -16,6 +16,7 @@
 
 import type { Characteristic, CharacteristicValue, PlatformAccessory, Service, WithUUID } from 'homebridge';
 import { SetValueError, type CcuClient, type SignalInfo } from '../ccu/CcuClient.js';
+import { formatSeconds } from '../ccu/SendQueue.js';
 import type { PrefixedLogger } from '../util/logger.js';
 import type { AccessoryContext, CcuInterfaceId } from '../types.js';
 import type { HapStatus, ServiceContext } from './types.js';
@@ -93,6 +94,8 @@ export abstract class AccessoryBase {
     const key = `${address}.${datapoint}`;
     const off = this.ccu.registerListener(key, listener);
     this.disposers.push(off);
+    // Failed commands to this address are logged with this accessory's name.
+    this.disposers.push(this.ccu.setOwner(address, this.reportSetFailure));
     return off;
   }
 
@@ -212,7 +215,12 @@ export abstract class AccessoryBase {
     return evaluate;
   }
 
-  /** Tracked async setter that maps thrown errors to a HAP-friendly fault. */
+  /**
+   * Tracked async setter that maps thrown errors to a HAP-friendly fault.
+   * setValue only queues the command (plan-sendequeue.md), so HomeKit gets
+   * its answer at once; a command the CCU did not deliver is logged later
+   * via reportSetFailure.
+   */
   protected wrapSet<T extends CharacteristicValue>(handler: (v: T) => Promise<void> | void) {
     return async (value: CharacteristicValue) => {
       try {
@@ -231,11 +239,16 @@ export abstract class AccessoryBase {
     };
   }
 
+  /** Owner callback for the CCU client's send queue (see registerListener). */
+  private readonly reportSetFailure = (err: SetValueError): void => {
+    void this.logSetFailure(err);
+  };
+
   /**
    * One line per failed command: Homebridge name, datapoint and value,
-   * the CCU's answer and the last known signal strength, e.g.
-   * `Garten Licht: STATE=true not delivered, (Generic error (UNREACH) (-1))
-   * last known signal:-72 dBm(CCU)/-67 dBm(device)`.
+   * time until the answer, the CCU's answer and the last known signal
+   * strength, e.g. `Garten Licht: STATE=true not delivered after 1.2 s,
+   * (Generic error (UNREACH) (-1)) last known signal:-72 dBm(CCU)/-67 dBm(device)`.
    */
   private async logSetFailure(err: SetValueError): Promise<void> {
     let signal: SignalInfo = {};
@@ -253,8 +266,16 @@ export abstract class AccessoryBase {
     }
     // The log prefix names the accessory's channel; name others (Sw4 valves).
     const where = this.log.prefix.endsWith(err.address) ? '' : ` on ${err.address}`;
-    this.log.warn('%s: %s=%s%s not delivered, (%s)%s', this.accessory.displayName, err.datapoint, String(err.value),
-      where, err.reason, parts.length > 0 ? ` last known signal:${parts.join('/')}` : '');
+    const signalText = parts.length > 0 ? ` last known signal:${parts.join('/')}` : '';
+    if (err.timedOut) {
+      this.log.warn('%s: %s=%s%s no answer from the CCU within %s (it may still be sent)%s',
+        this.accessory.displayName, err.datapoint, String(err.value), where,
+        formatSeconds(err.durationMs ?? 0), signalText);
+      return;
+    }
+    const after = err.durationMs !== undefined ? ` after ${formatSeconds(err.durationMs)}` : '';
+    this.log.warn('%s: %s=%s%s not delivered%s, (%s)%s', this.accessory.displayName, err.datapoint, String(err.value),
+      where, after, err.reason, signalText);
   }
 
   protected wrapGet<T extends CharacteristicValue>(handler: () => Promise<T> | T) {

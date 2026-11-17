@@ -7,9 +7,10 @@
  *     "channels": { "1": { "name": "Rasen vorne", "valveType": "Irrigation" }, … } }
  *
  * Switching on: first ON_TIME (seconds, from the valve's SetDuration), then
- * STATE=true. The actuator switches itself off — the plugin never sends a
- * timed STATE=false. RemainingDuration is display only; the end time is
- * kept in accessory.context so it survives a Homebridge restart.
+ * STATE=true, as one job in the send queue. The actuator switches itself
+ * off — the plugin never sends a timed STATE=false. RemainingDuration is
+ * display only; the end time is kept in accessory.context so it survives
+ * a Homebridge restart.
  * SetDuration = 0: no ON_TIME, the valve stays on until switched off.
  *
  * Run time per valve: channel option `duration` (seconds) fixes it — used
@@ -152,13 +153,14 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       ?? store.durations![key]
       ?? clampDuration(Number(settings.defaultDuration ?? DEFAULT_DURATION_S));
     if (duration > 0) {
-      // The actuator switches off by itself after ON_TIME (D3).
-      await this.ccu.setValue(valve.address, 'ON_TIME', duration);
+      // The actuator switches off by itself after ON_TIME (D3). ON_TIME and
+      // STATE are one job in the send queue, nothing gets in between.
+      this.ccu.setValues(valve.address, [['ON_TIME', duration], ['STATE', true]]);
       store.ends![key] = Date.now() + duration * 1000;
     } else {
       delete store.ends![key];
+      await this.ccu.setValue(valve.address, 'STATE', true);
     }
-    await this.ccu.setValue(valve.address, 'STATE', true);
     this.persist();
     this.update(valve.service, this.Characteristic.RemainingDuration, this.remaining(key));
   }

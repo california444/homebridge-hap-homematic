@@ -24,6 +24,15 @@ describe('resolveConfig', () => {
   const base: RawConfig = { platform: 'HapHomematic', ccuIp: '192.168.1.10', eventServer: { callbackHost: '192.168.1.20' } };
   const ev = (e: Record<string, unknown>): RawConfig => ({ ...base, eventServer: { callbackHost: '192.168.1.20', ...e } });
 
+  it('sendQueue: values, empty fields and range checks', () => {
+    expect(resolveConfig({ ...base, sendQueue: { timeoutMs: 3000, gapMs: 0 } }).sendQueue).toEqual({ timeoutMs: 3000, gapMs: 0 });
+    expect(resolveConfig({ ...base, sendQueue: { timeoutMs: '' as never, gapMs: null as never } }).sendQueue)
+      .toEqual({ timeoutMs: 5000, gapMs: 100 });
+    expect(() => resolveConfig({ ...base, sendQueue: { timeoutMs: 50 } })).toThrow(/sendQueue.timeoutMs/);
+    expect(() => resolveConfig({ ...base, sendQueue: { gapMs: -1 } })).toThrow(/sendQueue.gapMs/);
+    expect(() => resolveConfig({ ...base, sendQueue: { gapMs: 1.5 } })).toThrow(/sendQueue.gapMs/);
+  });
+
   it('fills defaults for everything else', () => {
     const c = resolveConfig(base);
     expect(c.ccuIp).toBe('192.168.1.10');
@@ -31,6 +40,7 @@ describe('resolveConfig', () => {
     expect(c.eventServer).toEqual({ host: '0.0.0.0', callbackHost: '192.168.1.20', port: 9875 });
     expect(c.useTls).toBe(false);
     expect(c.rpcAuth).toEqual({ enabled: false });
+    expect(c.sendQueue).toEqual({ timeoutMs: 5000, gapMs: 100 });
     expect(c).not.toHaveProperty('ccuAuth');
     expect(c).not.toHaveProperty('channels');
   });

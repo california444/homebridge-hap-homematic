@@ -200,10 +200,11 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     dur.onSetHandler!(900);
     expect(a.persist).toHaveBeenCalled();
     await a.char(valve(1), 'Active').onSetHandler!(1);
-    expect(env.setValue.mock.calls).toEqual([
-      [`${SERIAL}:1`, 'ON_TIME', 900],
-      [`${SERIAL}:1`, 'STATE', true],
+    // One job in the send queue, nothing gets in between:
+    expect(env.setValues.mock.calls).toEqual([
+      [`${SERIAL}:1`, [['ON_TIME', 900], ['STATE', true]]],
     ]);
+    expect(env.setValue).not.toHaveBeenCalled();
     env.fire(`${SERIAL}:1`, 'STATE', true);
     expect(a.char(valve(1), 'InUse').value).toBe(1);
     expect(a.char(valve(1), 'RemainingDuration').value).toBe(900);
@@ -211,7 +212,8 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     expect(a.char(valve(1), 'RemainingDuration').onGetHandler!()).toBe(600);
     // No timed STATE=false from the plugin:
     vi.advanceTimersByTime(700_000);
-    expect(env.setValue).toHaveBeenCalledTimes(2);
+    expect(env.setValues).toHaveBeenCalledTimes(1);
+    expect(env.setValue).not.toHaveBeenCalled();
     expect(a.char(valve(1), 'RemainingDuration').onGetHandler!()).toBe(0);
     env.fire(`${SERIAL}:1`, 'STATE', false); // actuator timed out
     expect(a.char(valve(1), 'Active').value).toBe(0);
@@ -230,7 +232,7 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     expect(dur.value).toBe(90);
     expect(dur.onGetHandler!()).toBe(90);
     await a.char(valve(1), 'Active').onSetHandler!(1);
-    expect(env.setValue.mock.calls[0]).toEqual([`${SERIAL}:1`, 'ON_TIME', 90]);
+    expect(env.setValues.mock.calls[0]).toEqual([`${SERIAL}:1`, [['ON_TIME', 90], ['STATE', true]]]);
     // invalid → not fixed: Home / default apply
     expect(a.char(valve(2), 'SetDuration').onGetHandler!()).toBe(300);
     a.char(valve(2), 'SetDuration').onSetHandler!(120);
@@ -287,7 +289,7 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     a.char(valve(1), 'SetDuration').onSetHandler!('x');
     expect(a.char(valve(1), 'SetDuration').onGetHandler!()).toBe(600);
     await a.char(valve(4), 'Active').onSetHandler!(1);
-    expect(env.setValue.mock.calls[0]).toEqual([`${SERIAL}:4`, 'ON_TIME', 3600]);
+    expect(env.setValues.mock.calls[0]).toEqual([`${SERIAL}:4`, [['ON_TIME', 3600], ['STATE', true]]]);
   });
 });
 

@@ -42,6 +42,15 @@ export interface ResolvedConfig {
   useTls: boolean;
   rpcAuth: RpcAuthConfig;
   eventServer: EventServerConfig;
+  /** setValue send queue (plan-sendequeue.md); defaults 5000 / 100 ms. */
+  sendQueue?: SendQueueConfig;
+}
+
+export interface SendQueueConfig {
+  /** Upper bound for one setValue, ms. */
+  timeoutMs: number;
+  /** Pause after a successful setValue, ms; 0 = none. */
+  gapMs: number;
 }
 
 /**
@@ -115,6 +124,7 @@ export interface RawConfig extends PlatformConfig {
   useTls?: boolean;
   rpcAuth?: Partial<RpcAuthConfig>;
   eventServer?: Partial<EventServerConfig>;
+  sendQueue?: Partial<SendQueueConfig>;
 }
 
 /** Discovery result from the CCU (XML-RPC `listDevices`). */

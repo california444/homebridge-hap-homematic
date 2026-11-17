@@ -84,6 +84,8 @@ Device mappings are **not** part of `config.json`; they live in
 | `eventServer.host` | Local bind address of the event server. Default `0.0.0.0` (all interfaces). |
 | `eventServer.callbackHost` | **Required.** Address the CCU calls back. |
 | `eventServer.port` | Default 9875. Pick anything in 1024–65535. |
+| `sendQueue.timeoutMs` | Optional. Commands go to the CCU one at a time, across both interfaces. Longest wait for the CCU's answer before the next command is sent. Default 5000 ms. |
+| `sendQueue.gapMs` | Optional. Pause after a delivered command. Default 100 ms, 0 = no pause. |
 
 ### Service registry
 

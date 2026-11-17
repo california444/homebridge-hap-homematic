@@ -21,25 +21,53 @@ const fire = (ccu: CcuClient, channelAddress: string, datapoint: string, value: 
   });
 
 describe('CcuClient.setValue errors', () => {
-  it('throws a SetValueError with the CCU answer as reason', async () => {
-    const ccu = makeCcu();
+  const failing = (ccu: CcuClient, message: string) =>
     vi.spyOn(ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
-      setValue: async () => { throw new Error('setValue failed: Generic error (UNREACH) (-1)'); },
+      setValue: async () => { throw new Error(message); },
     });
-    const err = await ccu.setValue('ABC0000001:14', 'STATE', true).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(SetValueError);
-    expect(err).toMatchObject({
+
+  it('reports a SetValueError with the CCU answer as reason and the duration', async () => {
+    const ccu = makeCcu();
+    failing(ccu, 'setValue failed: setValue failed: Generic error (UNREACH) (-1)');
+    const reported: SetValueError[] = [];
+    ccu.setOwner('ABC0000001:14', (e) => reported.push(e));
+    await ccu.setValue('ABC0000001:14', 'STATE', true);
+    await ccu.sendQueue.idle();
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toBeInstanceOf(SetValueError);
+    expect(reported[0]).toMatchObject({
       address: 'ABC0000001:14', datapoint: 'STATE', value: true,
-      reason: 'Generic error (UNREACH) (-1)',
+      reason: 'Generic error (UNREACH) (-1)', timedOut: false,
     });
+    expect(typeof reported[0]!.durationMs).toBe('number');
   });
 
-  it('keeps other CCU answers as they are', async () => {
+  it('logs the failure itself when no accessory owns the address', async () => {
+    const raw = makeLog();
+    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+    const ccu = new CcuClient({ config, log: new PrefixedLogger(raw, 'ccu') });
+    failing(ccu, 'setValue failed: Failure (-1)');
+    await ccu.setValue('PEQ0000001:1', 'LEVEL', 0.5);
+    await ccu.sendQueue.idle();
+    expect(String((raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0])).toContain('not delivered');
+    expect((raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]).toContain('Failure (-1)');
+  });
+
+  it('names the failing write of a job and skips the rest', async () => {
     const ccu = makeCcu();
+    const sent: string[] = [];
     vi.spyOn(ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
-      setValue: async () => { throw new Error('setValue failed: Failure (-1)'); },
+      setValue: async (_a: string, dp: string) => {
+        sent.push(dp);
+        if (dp === 'ON_TIME') throw new Error('setValue failed: Failure (-1)');
+      },
     });
-    await expect(ccu.setValue('PEQ0000001:1', 'LEVEL', 0.5)).rejects.toMatchObject({ reason: 'Failure (-1)' });
+    const reported: SetValueError[] = [];
+    ccu.setOwner('PEQ0000001:1', (e) => reported.push(e));
+    ccu.setValues('PEQ0000001:1', [['ON_TIME', 60], ['STATE', true]]);
+    await ccu.sendQueue.idle();
+    expect(sent).toEqual(['ON_TIME']);
+    expect(reported[0]).toMatchObject({ datapoint: 'ON_TIME', value: 60, reason: 'Failure (-1)' });
   });
 });
 
