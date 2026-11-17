@@ -233,6 +233,23 @@ describe('failed commands from the queue in the log', () => {
       + 'last known signal:-72 dBm(CCU)');
   });
 
+  it('names the accessory for its command channel it does not listen on (paired HmIP channels)', async () => {
+    const env = makeSvcEnv();
+    env.setValue.mockRestore();
+    env.setValues.mockRestore();
+    const raw = makeLog();
+    env.log = new PrefixedLogger(raw, 'svc:SwitchAccessory:00021A49A609DA:3');
+    vi.spyOn(env.ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
+      setValue: () => Promise.reject(new Error('setValue failed: Generic error (UNREACH) (-1)')),
+    });
+    const paired: CcuChannel = { address: '00021A49A609DA:3', stateAddress: '00021A49A609DA:2', index: 3,
+      type: 'SWITCH_VIRTUAL_RECEIVER', name: 'K' };
+    const a = build(env, switchService, paired, { name: 'Steckdose' });
+    await a.char(a.svc('Switch'), 'On').onSetHandler!(true);
+    await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
+    expect(String((raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[1])).toBe('Steckdose');
+  });
+
   it('dispose() releases the addresses', () => {
     const env = makeSvcEnv();
     const a = build(env, switchService, ch, { name: 'Licht' });
