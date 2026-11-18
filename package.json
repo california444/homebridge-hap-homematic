@@ -2,25 +2,31 @@
   "name": "homebridge-hap-homematic",
   "version": "1.1.0",
   "description": "Homebridge plugin for HomeMatic / HomematicIP devices on a CCU / OpenCCU, using XML-RPC only.",
-  "type": "module",
+  "keywords": [
+    "ccu",
+    "homebridge-plugin",
+    "homematic",
+    "homematicip",
+    "openccu",
+    "raspberrymatic",
+    "supports-hap",
+    "xml-rpc"
+  ],
+  "homepage": "https://github.com/california444/homebridge-hap-homematic#readme",
+  "bugs": {
+    "url": "https://github.com/california444/homebridge-hap-homematic/issues"
+  },
   "license": "Apache-2.0",
   "author": {
     "name": "california444"
   },
-  "keywords": [
-    "homebridge-plugin",
-    "supports-hap",
-    "homematic",
-    "homematicip",
-    "ccu",
-    "openccu",
-    "raspberrymatic",
-    "xml-rpc"
-  ],
-  "main": "dist/src/index.js",
-  "engines": {
-    "node": ">=22",
-    "homebridge": ">=2.4.0"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/california444/homebridge-hap-homematic.git"
+  },
+  "funding": {
+    "type": "paypal",
+    "url": "https://paypal.me/RSchlich"
   },
   "files": [
     "dist/",
@@ -30,10 +36,13 @@
     "NOTICE",
     "README.md"
   ],
+  "type": "module",
+  "main": "dist/src/index.js",
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && node ./node_modules/typescript/bin/tsc && npm run build:ui",
     "build:ui": "esbuild homebridge-ui/server.src.js --bundle --platform=node --format=esm --target=node24 --outfile=homebridge-ui/server.js --external:../dist/*",
-    "lint": "eslint . --max-warnings=0",
+    "lint": "oxlint --max-warnings=0 && oxfmt --check",
+    "format": "oxfmt",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
@@ -47,29 +56,19 @@
     "homematic-xmlrpc": "^2.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^5.1.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.14.0",
     "homebridge": "^2.5.0",
     "nodemon": "^3.1.11",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
     "rimraf": "^6.1.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.4",
+    "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   },
-  "homepage": "https://github.com/california444/homebridge-hap-homematic#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/california444/homebridge-hap-homematic.git"
-  },
-  "bugs": {
-    "url": "https://github.com/california444/homebridge-hap-homematic/issues"
-  },
-  "funding": {
-    "type": "paypal",
-    "url": "https://paypal.me/RSchlich"
+  "engines": {
+    "homebridge": ">=2.4.0",
+    "node": ">=22"
   }
 }

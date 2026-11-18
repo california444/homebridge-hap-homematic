@@ -213,7 +213,7 @@ export function toMappings(file: DevicesFile): AccessoryMapping[] {
         service: dev.service!,
         ...(dev.variant ? { variant: dev.variant } : {}),
         ...(dev.name ? { name: dev.name } : {}),
-        options: { ...(dev.options ?? {}) },
+        options: { ...dev.options },
         channels,
       });
       continue;
@@ -228,7 +228,7 @@ export function toMappings(file: DevicesFile): AccessoryMapping[] {
         service: ch.service!,
         ...(ch.variant ? { variant: ch.variant } : {}),
         ...(ch.name ? { name: ch.name } : {}),
-        options: { ...(dev.options ?? {}), ...channelExtras(ch), ...(ch.options ?? {}) },
+        options: { ...dev.options, ...channelExtras(ch), ...ch.options },
         channels: {},
       });
     }

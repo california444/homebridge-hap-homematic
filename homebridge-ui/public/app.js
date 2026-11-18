@@ -213,7 +213,7 @@ function saveChannelMapping(address, intf, fields) {
     throw new Error('This device is mapped as a whole; remove that mapping first.');
   }
   dev.channels = dev.channels ?? {};
-  dev.channels[idx] = clean({ ...(dev.channels[idx] ?? {}), ...fields });
+  dev.channels[idx] = clean({ ...dev.channels[idx], ...fields });
   devices[key] = dev;
 }
 
@@ -788,7 +788,7 @@ function subEditChannel(host, props) {
   }
 
   const draft = entry
-    ? { ...entry, name: effectiveHkName({ ...entry, _info: info }), options: { ...(entry.options ?? {}) },
+    ? { ...entry, name: effectiveHkName({ ...entry, _info: info }), options: { ...entry.options },
         channels: JSON.parse(JSON.stringify(entry.channels ?? {})) }
     : {
         address,
@@ -919,7 +919,7 @@ function subEditChannel(host, props) {
     for (const idx of chans) {
       def.channelOptions.forEach((o, j) => {
         body.querySelector(`#ec-ch-${idx}-${j}`).addEventListener('change', (e) => {
-          draft.channels[idx] = { ...(draft.channels[idx] ?? {}), [o.key]: readOption(o, e.target) };
+          draft.channels[idx] = { ...draft.channels[idx], [o.key]: readOption(o, e.target) };
         });
       });
     }
@@ -1073,10 +1073,10 @@ async function init() {
         bidcosRf: b.interfaces?.bidcosRf ?? def.interfaces.bidcosRf,
         hmIpRf: b.interfaces?.hmIpRf ?? def.interfaces.hmIpRf,
       },
-      rpcAuth: { ...def.rpcAuth, ...(b.rpcAuth ?? {}) },
-      eventServer: { ...def.eventServer, ...(b.eventServer ?? {}) },
-      interfacePorts: { ...(b.interfacePorts ?? {}) },
-      sendQueue: { ...(b.sendQueue ?? {}) },
+      rpcAuth: { ...def.rpcAuth, ...b.rpcAuth },
+      eventServer: { ...def.eventServer, ...b.eventServer },
+      interfacePorts: { ...b.interfacePorts },
+      sendQueue: { ...b.sendQueue },
     };
     // Fields of removed features; channel mappings now live in devices.json.
     // `_bridge` (child bridge settings incl. debugModeEnabled) is kept as is.

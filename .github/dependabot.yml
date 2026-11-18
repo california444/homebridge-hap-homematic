@@ -1,44 +1,41 @@
-# Taken from california444/homebridge-doorbell-telegram-photo; ignore rules
-# for @types/node and typescript added for this plugin.
+# Taken from california444/homebridge-doorbell-telegram-photo; ignore rule
+# for @types/node added for this plugin.
 version: 2
 updates:
-- package-ecosystem: npm
-  directory: "/"
-  schedule:
-    interval: weekly
-  open-pull-requests-limit: 10
-  # One PR per group instead of one per package.
-  # Major updates are not grouped and still arrive as separate PRs.
-  groups:
-    runtime:
-      dependency-type: production
-      update-types: [minor, patch]
-    dev:
-      dependency-type: development
-      update-types: [minor, patch]
-    # Groups without applies-to only cover version updates; security updates
-    # need their own groups or they keep arriving one PR per package.
-    runtime-security:
-      applies-to: security-updates
-      dependency-type: production
-      update-types: [minor, patch]
-    dev-security:
-      applies-to: security-updates
-      dependency-type: development
-      update-types: [minor, patch]
-  ignore:
-    # Types must match the lowest supported Node (engines: node >=22);
-    # newer majors would allow APIs that Node 22 does not have.
-    - dependency-name: "@types/node"
-      update-types: [version-update:semver-major]
-    # TypeScript 7 (native compiler) is not supported by typescript-eslint yet.
-    - dependency-name: typescript
-      update-types: [version-update:semver-major]
-- package-ecosystem: github-actions
-  directory: "/"
-  schedule:
-    interval: weekly
-  open-pull-requests-limit: 10
-  groups:
-    actions:
-      patterns: ["*"]
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    # One PR per group instead of one per package.
+    # Major updates are not grouped and still arrive as separate PRs.
+    groups:
+      runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+      dev:
+        dependency-type: development
+        update-types: [minor, patch]
+      # Groups without applies-to only cover version updates; security updates
+      # need their own groups or they keep arriving one PR per package.
+      runtime-security:
+        applies-to: security-updates
+        dependency-type: production
+        update-types: [minor, patch]
+      dev-security:
+        applies-to: security-updates
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Types must match the lowest supported Node (engines: node >=22);
+      # newer majors would allow APIs that Node 22 does not have.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ['*']

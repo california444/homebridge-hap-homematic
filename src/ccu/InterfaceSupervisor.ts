@@ -101,7 +101,7 @@ export class InterfaceSupervisor extends EventEmitter {
     this.log = opts.log;
     this.pingId = opts.pingId;
     this.callbackUrl = opts.callbackUrl;
-    this.t = { ...DEFAULT_TIMINGS, ...(opts.timings ?? {}) };
+    this.t = { ...DEFAULT_TIMINGS, ...opts.timings };
     this.now = opts.now ?? Date.now;
     this.backoffMs = this.t.initialBackoffMs;
   }

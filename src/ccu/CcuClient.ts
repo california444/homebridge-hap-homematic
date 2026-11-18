@@ -496,7 +496,7 @@ export class CcuClient extends EventEmitter {
   /** ACTION datapoints must never be applied as start values. */
   isAction(address: string, datapoint: string): boolean {
     const type = this.describe(address, datapoint)?.TYPE;
-    return type === 'ACTION' || (type === undefined && /^PRESS_/.test(datapoint));
+    return type === 'ACTION' || (type === undefined && datapoint.startsWith('PRESS_'));
   }
 
   /** Interface a channel / device address is routed to. */
