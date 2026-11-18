@@ -274,6 +274,14 @@ describe('BlindAccessory', () => {
 });
 
 describe('ThermostatAccessory', () => {
+  const bidcos: CcuChannel = {
+    address: 'HmIP.000123:1',
+    name: 'Test',
+    index: 1,
+    type: 'CLIMATECONTROL_RT_TRANSCEIVER',
+  };
+  const hmip: CcuChannel = { ...bidcos, type: 'HEATING_CLIMATECONTROL_TRANSCEIVER' };
+
   it('reflects ACTUAL_TEMPERATURE and SET_TEMPERATURE events', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, {
@@ -281,7 +289,7 @@ describe('ThermostatAccessory', () => {
       id: channel.address,
       service: 'ThermostatAccessory',
     });
-    await attachAndRefresh(thermostatService.build(ctx), channel);
+    await attachAndRefresh(thermostatService.build(ctx), bidcos);
     const service = accessory.services[0]!;
     env.fireEvent('HmIP.000123:1', 'ACTUAL_TEMPERATURE', 21.5);
     expect(getChar(service, 'CurrentTemperature').value).toBe(21.5);
@@ -298,7 +306,7 @@ describe('ThermostatAccessory', () => {
       id: channel.address,
       service: 'ThermostatAccessory',
     });
-    await attachAndRefresh(thermostatService.build(ctx), channel);
+    await attachAndRefresh(thermostatService.build(ctx), bidcos);
     const service = accessory.services[0]!;
     // Default: target=20, current=20 → not heating.
     expect(await getChar(service, 'CurrentHeatingCoolingState').onGetHandler!()).toBe(0);
@@ -320,14 +328,93 @@ describe('ThermostatAccessory', () => {
       id: channel.address,
       service: 'ThermostatAccessory',
     });
-    await attachAndRefresh(thermostatService.build(ctx), channel);
+    await attachAndRefresh(thermostatService.build(ctx), bidcos);
     const service = accessory.services[0]!;
     await getChar(service, 'TargetHeatingCoolingState').onSetHandler!(0);
-    expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'SET_TEMPERATURE', 4.5);
+    expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'MANU_MODE', 4.5);
     await getChar(service, 'TargetHeatingCoolingState').onSetHandler!(3);
     expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'AUTO_MODE', true);
     await getChar(service, 'TargetHeatingCoolingState').onSetHandler!(1);
-    expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'MANU_MODE', expect.any(Number));
+    // Heat after Off restores the last real target, not the off set point.
+    expect(env.setValueMock).toHaveBeenLastCalledWith('HmIP.000123:1', 'MANU_MODE', 20);
+  });
+
+  it('BidCos: CONTROL_MODE events drive TargetHeatingCoolingState', async () => {
+    const env = makeEnv();
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: bidcos.address,
+      service: 'ThermostatAccessory',
+    });
+    await attachAndRefresh(thermostatService.build(ctx), bidcos);
+    const service = accessory.services[0]!;
+    env.fireEvent('HmIP.000123:1', 'SET_TEMPERATURE', 21);
+    env.fireEvent('HmIP.000123:1', 'CONTROL_MODE', 0);
+    expect(getChar(service, 'TargetHeatingCoolingState').value).toBe(3);
+    env.fireEvent('HmIP.000123:1', 'CONTROL_MODE', 1);
+    expect(getChar(service, 'TargetHeatingCoolingState').value).toBe(1);
+    env.fireEvent('HmIP.000123:1', 'SET_TEMPERATURE', 4.5);
+    expect(getChar(service, 'TargetHeatingCoolingState').value).toBe(0);
+  });
+
+  it('HmIP: target temperature uses SET_POINT_TEMPERATURE', async () => {
+    const env = makeEnv();
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: hmip.address,
+      service: 'ThermostatAccessory',
+    });
+    env.values((_a, dp) =>
+      dp === 'SET_POINT_TEMPERATURE' ? 19 : dp === 'SET_POINT_MODE' ? 0 : undefined,
+    );
+    await attachAndRefresh(thermostatService.build(ctx), hmip);
+    const service = accessory.services[0]!;
+    expect(getChar(service, 'TargetTemperature').value).toBe(19);
+    expect(getChar(service, 'TargetHeatingCoolingState').value).toBe(3);
+    env.fireEvent('HmIP.000123:1', 'SET_POINT_TEMPERATURE', 22);
+    expect(getChar(service, 'TargetTemperature').value).toBe(22);
+    env.fireEvent('HmIP.000123:1', 'SET_TEMPERATURE', 25);
+    expect(getChar(service, 'TargetTemperature').value).toBe(22);
+    await getChar(service, 'TargetTemperature').onSetHandler!(23);
+    expect(env.setValueMock).toHaveBeenCalledWith('HmIP.000123:1', 'SET_POINT_TEMPERATURE', 23);
+    expect(env.setValueMock).not.toHaveBeenCalledWith(
+      'HmIP.000123:1',
+      'SET_TEMPERATURE',
+      expect.anything(),
+    );
+  });
+
+  it('HmIP: off / heat / auto use CONTROL_MODE and SET_POINT_TEMPERATURE', async () => {
+    const env = makeEnv();
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: hmip.address,
+      service: 'ThermostatAccessory',
+    });
+    await attachAndRefresh(thermostatService.build(ctx), hmip);
+    const service = accessory.services[0]!;
+    const mode = getChar(service, 'TargetHeatingCoolingState');
+
+    await mode.onSetHandler!(0);
+    expect(env.setValueMock.mock.calls).toEqual([
+      ['HmIP.000123:1', 'CONTROL_MODE', 1],
+      ['HmIP.000123:1', 'SET_POINT_TEMPERATURE', 4.5],
+    ]);
+    env.setValueMock.mockClear();
+
+    await mode.onSetHandler!(1);
+    expect(env.setValueMock.mock.calls).toEqual([
+      ['HmIP.000123:1', 'CONTROL_MODE', 1],
+      ['HmIP.000123:1', 'SET_POINT_TEMPERATURE', 20],
+    ]);
+    env.setValueMock.mockClear();
+
+    await mode.onSetHandler!(3);
+    expect(env.setValueMock.mock.calls).toEqual([['HmIP.000123:1', 'CONTROL_MODE', 0]]);
+
+    // Mode changed on the device: SET_POINT_MODE 1 (manual) → Heat.
+    env.fireEvent('HmIP.000123:1', 'SET_POINT_MODE', 1);
+    expect(mode.value).toBe(1);
   });
 
   it('Display units returns CELSIUS', async () => {
@@ -337,7 +424,7 @@ describe('ThermostatAccessory', () => {
       id: channel.address,
       service: 'ThermostatAccessory',
     });
-    await attachAndRefresh(thermostatService.build(ctx), channel);
+    await attachAndRefresh(thermostatService.build(ctx), bidcos);
     const service = accessory.services[0]!;
     expect(await getChar(service, 'TemperatureDisplayUnits').onGetHandler!()).toBe(0);
   });
