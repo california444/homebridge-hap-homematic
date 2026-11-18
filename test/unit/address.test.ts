@@ -4,7 +4,12 @@ import { buildAddress, deviceAddress, parseAddress } from '../../src/util/addres
 describe('parseAddress', () => {
   it('parses full datapoint address', () => {
     const p = parseAddress('HmIP.000123ABCDEF:1.STATE');
-    expect(p).toEqual({ interface: 'HmIP', serial: '000123ABCDEF', channel: 1, datapoint: 'STATE' });
+    expect(p).toEqual({
+      interface: 'HmIP',
+      serial: '000123ABCDEF',
+      channel: 1,
+      datapoint: 'STATE',
+    });
   });
 
   it('parses channel-only address', () => {
@@ -33,13 +38,16 @@ describe('parseAddress', () => {
 
 describe('buildAddress', () => {
   it('builds address from parts', () => {
-    expect(buildAddress({ interface: 'HmIP', serial: '000123', channel: 1, datapoint: 'STATE' }))
-      .toBe('HmIP.000123:1.STATE');
+    expect(
+      buildAddress({ interface: 'HmIP', serial: '000123', channel: 1, datapoint: 'STATE' }),
+    ).toBe('HmIP.000123:1.STATE');
     expect(buildAddress({ interface: 'HmIP', serial: '000123' })).toBe('HmIP.000123');
   });
 
   it('rejects datapoint without channel', () => {
-    expect(() => buildAddress({ interface: 'HmIP', serial: '000123', datapoint: 'STATE' })).toThrow();
+    expect(() =>
+      buildAddress({ interface: 'HmIP', serial: '000123', datapoint: 'STATE' }),
+    ).toThrow();
   });
 
   it('rejects missing interface or serial', () => {

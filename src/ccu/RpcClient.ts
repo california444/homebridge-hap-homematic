@@ -35,8 +35,8 @@ export const INTERFACE_TLS_PORTS: Record<CcuInterfaceId, number> = {
 
 /** One entry of a `getParamsetDescription(…, 'VALUES')` answer. */
 export interface ParameterDescription {
-  TYPE: string;           // BOOL, INTEGER, FLOAT, ENUM, ACTION, STRING
-  OPERATIONS?: number;    // bit mask: 1 read, 2 write, 4 event
+  TYPE: string; // BOOL, INTEGER, FLOAT, ENUM, ACTION, STRING
+  OPERATIONS?: number; // bit mask: 1 read, 2 write, 4 event
   FLAGS?: number;
   MIN?: unknown;
   MAX?: unknown;
@@ -91,7 +91,10 @@ export interface RpcTransport {
 }
 
 export class RpcError extends Error {
-  constructor(message: string, public override readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public override readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'RpcError';
   }
@@ -145,14 +148,17 @@ export class RpcClient {
       basic_auth?: { user: string; pass: string };
     };
     type CreateClientFn = (opts: ClientOptions) => {
-      methodCall(method: string, params: unknown[],
-        cb: (err: Error | null, value: unknown) => void): void;
+      methodCall(
+        method: string,
+        params: unknown[],
+        cb: (err: Error | null, value: unknown) => void,
+      ): void;
     };
     type XmlRpcModule = { createClient?: CreateClientFn; createSecureClient?: CreateClientFn };
     const mod = (await import('homematic-xmlrpc')) as XmlRpcModule & { default?: XmlRpcModule };
     const factory = this.tls
-      ? mod.createSecureClient ?? mod.default?.createSecureClient
-      : mod.createClient ?? mod.default?.createClient;
+      ? (mod.createSecureClient ?? mod.default?.createSecureClient)
+      : (mod.createClient ?? mod.default?.createClient);
     if (typeof factory !== 'function') {
       throw new RpcError('homematic-xmlrpc module did not expose createClient/createSecureClient');
     }
@@ -184,7 +190,7 @@ export class RpcClient {
               const e = err as { message?: string; faultString?: string; faultCode?: number };
               const detail = e.faultString
                 ? `${e.faultString}${e.faultCode !== undefined ? ` (${e.faultCode})` : ''}`
-                : e.message ?? 'unknown error';
+                : (e.message ?? 'unknown error');
               reject(new RpcError(`${method} failed: ${detail}`, err));
             } else {
               resolve(value);
@@ -227,7 +233,8 @@ export class RpcClient {
         if (settled) return;
         settled = true;
         socket.destroy();
-        if (err) reject(err); else resolve();
+        if (err) reject(err);
+        else resolve();
       };
       socket.setTimeout(PROBE_TIMEOUT_MS, () => {
         finish(new RpcError(`init failed: connect ETIMEDOUT ${this.host}:${this.port}`));

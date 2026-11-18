@@ -25,16 +25,12 @@ import { toFiniteNumber } from '../../util/sanitize.js';
  * import-time dependency on a specific @homebridge/hap-nodejs version.
  */
 
-const POWER_METER_CHANNEL_TYPES = [
-  'ENERGIE_METER_TRANSMITTER',
-  'POWERMETER',
-  'POWERMETER_IGL',
-];
+const POWER_METER_CHANNEL_TYPES = ['ENERGIE_METER_TRANSMITTER', 'POWERMETER', 'POWERMETER_IGL'];
 
-const EVE_VOLTAGE_UUID            = 'E863F10A-079E-48FF-8F27-9C2605A29F52';
-const EVE_ELECTRIC_CURRENT_UUID   = 'E863F126-079E-48FF-8F27-9C2605A29F52';
-const EVE_ELECTRIC_POWER_UUID     = 'E863F10D-079E-48FF-8F27-9C2605A29F52';
-const EVE_TOTAL_CONSUMPTION_UUID  = 'E863F10C-079E-48FF-8F27-9C2605A29F52';
+const EVE_VOLTAGE_UUID = 'E863F10A-079E-48FF-8F27-9C2605A29F52';
+const EVE_ELECTRIC_CURRENT_UUID = 'E863F126-079E-48FF-8F27-9C2605A29F52';
+const EVE_ELECTRIC_POWER_UUID = 'E863F10D-079E-48FF-8F27-9C2605A29F52';
+const EVE_TOTAL_CONSUMPTION_UUID = 'E863F10C-079E-48FF-8F27-9C2605A29F52';
 
 class PowerMeterHandler extends AccessoryBase implements ChannelService {
   private channelAddress = '';
@@ -43,23 +39,48 @@ class PowerMeterHandler extends AccessoryBase implements ChannelService {
     this.channelAddress = channel.address;
     const service = this.getOrAddService(this.Service.Outlet, channel.name);
 
-    const voltage = this.ensureCustomCharacteristic(service, EVE_VOLTAGE_UUID,
-      'Voltage', 'V', 400, 0.1);
-    const current = this.ensureCustomCharacteristic(service, EVE_ELECTRIC_CURRENT_UUID,
-      'Electric Current', 'A', 100, 0.001);
-    const power = this.ensureCustomCharacteristic(service, EVE_ELECTRIC_POWER_UUID,
-      'Consumption', 'W', 3500, 0.1);
-    const total = this.ensureCustomCharacteristic(service, EVE_TOTAL_CONSUMPTION_UUID,
-      'Total Consumption', 'kWh', 1_000_000, 0.001);
+    const voltage = this.ensureCustomCharacteristic(
+      service,
+      EVE_VOLTAGE_UUID,
+      'Voltage',
+      'V',
+      400,
+      0.1,
+    );
+    const current = this.ensureCustomCharacteristic(
+      service,
+      EVE_ELECTRIC_CURRENT_UUID,
+      'Electric Current',
+      'A',
+      100,
+      0.001,
+    );
+    const power = this.ensureCustomCharacteristic(
+      service,
+      EVE_ELECTRIC_POWER_UUID,
+      'Consumption',
+      'W',
+      3500,
+      0.1,
+    );
+    const total = this.ensureCustomCharacteristic(
+      service,
+      EVE_TOTAL_CONSUMPTION_UUID,
+      'Total Consumption',
+      'kWh',
+      1_000_000,
+      0.001,
+    );
 
     let lastPowerW = 0;
-    service.getCharacteristic(this.Characteristic.On)
+    service
+      .getCharacteristic(this.Characteristic.On)
       .onGet(this.wrapGet<boolean>(() => lastPowerW > 0));
-    service.getCharacteristic(this.Characteristic.OutletInUse)
+    service
+      .getCharacteristic(this.Characteristic.OutletInUse)
       .onGet(this.wrapGet<boolean>(() => lastPowerW > 0.1));
 
-    const subscribe = (datapoint: string,
-      apply: (value: number) => void): void => {
+    const subscribe = (datapoint: string, apply: (value: number) => void): void => {
       this.registerListener(this.channelAddress, datapoint, (raw) => {
         const v = toFiniteNumber(raw);
         if (v !== undefined) apply(v);
@@ -87,8 +108,13 @@ class PowerMeterHandler extends AccessoryBase implements ChannelService {
     });
   }
 
-  private ensureCustomCharacteristic(service: Service, uuid: string,
-    displayName: string, unit: string, maxValue: number, minStep: number,
+  private ensureCustomCharacteristic(
+    service: Service,
+    uuid: string,
+    displayName: string,
+    unit: string,
+    maxValue: number,
+    minStep: number,
   ): InstanceType<typeof this.Characteristic> {
     const existing = findCharacteristicByUuid(service, uuid);
     if (existing) {
@@ -98,15 +124,20 @@ class PowerMeterHandler extends AccessoryBase implements ChannelService {
     }
     const props: CharacteristicProps = {
       format: 'float' as CharacteristicProps['format'],
-      perms: ['pr' as CharacteristicProps['perms'][number],
-              'ev' as CharacteristicProps['perms'][number]],
+      perms: [
+        'pr' as CharacteristicProps['perms'][number],
+        'ev' as CharacteristicProps['perms'][number],
+      ],
       unit,
       minValue: 0,
       maxValue,
       minStep,
     };
-    type CharCtor = new (displayName: string, UUID: string,
-      props: CharacteristicProps) => InstanceType<typeof this.Characteristic>;
+    type CharCtor = new (
+      displayName: string,
+      UUID: string,
+      props: CharacteristicProps,
+    ) => InstanceType<typeof this.Characteristic>;
     const Ctor = this.Characteristic as unknown as CharCtor;
     const instance = new Ctor(displayName, uuid, props);
     service.addCharacteristic(instance);

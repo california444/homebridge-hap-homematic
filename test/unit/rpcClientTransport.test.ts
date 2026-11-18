@@ -10,7 +10,11 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('homematic-xmlrpc', () => {
   return {
     createClient: vi.fn(() => ({
-      methodCall: (method: string, _params: unknown[], cb: (err: Error | null, value: unknown) => void) => {
+      methodCall: (
+        method: string,
+        _params: unknown[],
+        cb: (err: Error | null, value: unknown) => void,
+      ) => {
         if (method === 'system.listMethods') {
           cb(null, ['init']);
         } else if (method === 'init') {
@@ -57,7 +61,11 @@ describe('RpcClient lazy-loaded transport', () => {
 
   it('rejects errors as RpcError', async () => {
     const c = makeClient();
-    const transport = await (c as unknown as { ensureTransport(): Promise<{ call(m: string, p: unknown[]): Promise<unknown> }> }).ensureTransport();
+    const transport = await (
+      c as unknown as {
+        ensureTransport(): Promise<{ call(m: string, p: unknown[]): Promise<unknown> }>;
+      }
+    ).ensureTransport();
     await expect(transport.call('fail', [])).rejects.toThrow(/RpcError|fail|boom/);
   });
 });

@@ -18,7 +18,8 @@ class TemperatureHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     const service = this.getOrAddService(this.Service.TemperatureSensor, channel.name);
 
-    service.getCharacteristic(this.Characteristic.CurrentTemperature)
+    service
+      .getCharacteristic(this.Characteristic.CurrentTemperature)
       .setProps({ minValue: -50, maxValue: 100, minStep: 0.1 })
       .onGet(this.wrapGet<number>(() => this.value));
 

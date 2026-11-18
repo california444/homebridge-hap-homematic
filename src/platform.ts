@@ -74,8 +74,10 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     try {
       this.resolved = resolveConfig(config as RawConfig);
       if (Array.isArray((config as { channels?: unknown }).channels)) {
-        this.log.warn('config.json "channels" is no longer used; mappings live in %s/devices.json',
-          this.storage.rootPath());
+        this.log.warn(
+          'config.json "channels" is no longer used; mappings live in %s/devices.json',
+          this.storage.rootPath(),
+        );
       }
     } catch (err) {
       if (err instanceof ConfigError) {
@@ -87,14 +89,20 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     }
 
     this.ccu = new CcuClient({ config: this.resolved, log: this.log.child('ccu') });
-    this.discovery = new Discovery({ ccu: this.ccu, storage: this.storage, log: this.log.child('discovery') });
+    this.discovery = new Discovery({
+      ccu: this.ccu,
+      storage: this.storage,
+      log: this.log.child('discovery'),
+    });
     const discovery = this.discovery;
     this.ccu.setDescriber((address) => discovery.getParamsetDescription(address));
     this.ccu.on('subscribed', (id: CcuInterfaceId, reason: string) => {
       if (reason !== 'initial') {
         this.refreshQueue = this.refreshQueue
           .then(() => this.afterResubscribe(id))
-          .catch((err) => this.log.warn('Refresh after re-subscribe failed: %s', (err as Error).message));
+          .catch((err) =>
+            this.log.warn('Refresh after re-subscribe failed: %s', (err as Error).message),
+          );
       }
     });
 
@@ -129,7 +137,9 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     await this.storage.ensureRoot();
 
     const known = new Set(SERVICE_DEFINITIONS.map((d) => d.key));
-    const deviceScoped = new Set(SERVICE_DEFINITIONS.filter((d) => d.scope === 'device').map((d) => d.key));
+    const deviceScoped = new Set(
+      SERVICE_DEFINITIONS.filter((d) => d.scope === 'device').map((d) => d.key),
+    );
     const { mappings } = await loadDevicesFile(this.storage, this.log, known, deviceScoped);
     this.mappings = mappings;
     // devices.json names the interface of every mapped device.
@@ -158,7 +168,13 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
         seen.add(uuid);
         this.attachMapping(uuid, mapping);
         const name = this.managed.get(uuid)?.accessory.displayName ?? seed;
-        this.log.info('%s "%s" (%s, %s)', cached ? 'Restored' : 'Added', name, mapping.service, seed.split(':').slice(0, -1).join(':'));
+        this.log.info(
+          '%s "%s" (%s, %s)',
+          cached ? 'Restored' : 'Added',
+          name,
+          mapping.service,
+          seed.split(':').slice(0, -1).join(':'),
+        );
         counts[cached ? 'restored' : 'added']++;
       } catch (err) {
         counts.skipped++;
@@ -178,10 +194,20 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
       }
     }
     counts.removed = toRemove.length;
-    this.log.info('%d accessories: %d added, %d restored, %d removed%s', counts.added + counts.restored,
-      counts.added, counts.restored, counts.removed, counts.skipped ? `, ${counts.skipped} skipped` : '');
+    this.log.info(
+      '%d accessories: %d added, %d restored, %d removed%s',
+      counts.added + counts.restored,
+      counts.added,
+      counts.restored,
+      counts.removed,
+      counts.skipped ? `, ${counts.skipped} skipped` : '',
+    );
     if (toRemove.length > 0) {
-      this.log.info('Removing %d stale accessories: %s', toRemove.length, toRemove.map((a) => a.displayName).join(', '));
+      this.log.info(
+        'Removing %d stale accessories: %s',
+        toRemove.length,
+        toRemove.map((a) => a.displayName).join(', '),
+      );
       this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, toRemove);
     }
   }
@@ -268,7 +294,11 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
    * on the device label), firmware from listDevices when it is a plain
    * version number (HAP expects x[.y[.z]]).
    */
-  private setAccessoryInformation(accessory: PlatformAccessory, serial: string, device: CcuDevice | undefined): void {
+  private setAccessoryInformation(
+    accessory: PlatformAccessory,
+    serial: string,
+    device: CcuDevice | undefined,
+  ): void {
     const info = accessory.getService(this.Service.AccessoryInformation);
     if (!info) {
       return;
@@ -300,7 +330,12 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     const added = [...after].filter((a) => !before.has(a));
     const removed = [...before].filter((a) => !after.has(a));
     if (added.length || removed.length) {
-      this.log.info('%s after re-subscribe: %d new, %d removed devices', id, added.length, removed.length);
+      this.log.info(
+        '%s after re-subscribe: %d new, %d removed devices',
+        id,
+        added.length,
+        removed.length,
+      );
     }
     for (const m of this.mappings) {
       if (m.interface === id && removed.includes(m.device)) {
@@ -314,13 +349,15 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   /** Re-read start values (getParamset) of the selected handlers. */
   private async refreshHandlers(select: (m: ManagedAccessory) => boolean): Promise<number> {
     const chosen = [...this.managed.values()].filter((m) => select(m) && m.handler.refresh);
-    await Promise.all(chosen.map(async (m) => {
-      try {
-        await m.handler.refresh!();
-      } catch (err) {
-        this.log.warn('refresh failed: %s', (err as Error).message);
-      }
-    }));
+    await Promise.all(
+      chosen.map(async (m) => {
+        try {
+          await m.handler.refresh!();
+        } catch (err) {
+          this.log.warn('refresh failed: %s', (err as Error).message);
+        }
+      }),
+    );
     return chosen.length;
   }
 
@@ -333,11 +370,14 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     const device = this.discovery?.findDevice(mapping.interface, mapping.device);
     if (mapping.channel !== undefined) {
       const address = `${mapping.device}:${mapping.channel}`;
-      return device?.channels.find((c) => c.address === address)
-        ?? stubChannel(address, mapping.channel, mapping.name);
+      return (
+        device?.channels.find((c) => c.address === address) ??
+        stubChannel(address, mapping.channel, mapping.name)
+      );
     }
     const channels = device?.channels ?? [];
-    const match = channels.find((c) => channelTypes.includes(c.type)) ?? channels.find((c) => c.index > 0);
+    const match =
+      channels.find((c) => channelTypes.includes(c.type)) ?? channels.find((c) => c.index > 0);
     return match ?? stubChannel(`${mapping.device}:1`, 1, mapping.name);
   }
 

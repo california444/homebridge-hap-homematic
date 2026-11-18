@@ -29,46 +29,67 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     // Read user-pinned target-temperature range; default to the CCU
     // typical 4.5..30.5 °C, which is what RaspberryMatic exposes.
     const settings = (this.accessory.context.settings ?? {}) as {
-      minTemp?: number; maxTemp?: number; minStep?: number;
+      minTemp?: number;
+      maxTemp?: number;
+      minStep?: number;
     };
-    const minTemp = typeof settings.minTemp === 'number' && Number.isFinite(settings.minTemp)
-      ? settings.minTemp : 4.5;
-    const maxTemp = typeof settings.maxTemp === 'number' && Number.isFinite(settings.maxTemp) && settings.maxTemp > minTemp
-      ? settings.maxTemp : 30.5;
-    const minStep = typeof settings.minStep === 'number' && Number.isFinite(settings.minStep) && settings.minStep > 0
-      ? settings.minStep : 0.5;
+    const minTemp =
+      typeof settings.minTemp === 'number' && Number.isFinite(settings.minTemp)
+        ? settings.minTemp
+        : 4.5;
+    const maxTemp =
+      typeof settings.maxTemp === 'number' &&
+      Number.isFinite(settings.maxTemp) &&
+      settings.maxTemp > minTemp
+        ? settings.maxTemp
+        : 30.5;
+    const minStep =
+      typeof settings.minStep === 'number' &&
+      Number.isFinite(settings.minStep) &&
+      settings.minStep > 0
+        ? settings.minStep
+        : 0.5;
 
-    service.getCharacteristic(this.Characteristic.CurrentTemperature)
+    service
+      .getCharacteristic(this.Characteristic.CurrentTemperature)
       .setProps({ minValue: -50, maxValue: 100, minStep: 0.1 })
       .onGet(this.wrapGet<number>(() => this.currentTemp));
 
-    service.getCharacteristic(this.Characteristic.TargetTemperature)
+    service
+      .getCharacteristic(this.Characteristic.TargetTemperature)
       .setProps({ minValue: minTemp, maxValue: maxTemp, minStep })
       .onGet(this.wrapGet<number>(() => this.targetTemp))
-      .onSet(this.wrapSet<number>(async (value) => {
-        this.targetTemp = value;
-        await this.ccu.setValue(this.channelAddress, 'SET_TEMPERATURE', value);
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          this.targetTemp = value;
+          await this.ccu.setValue(this.channelAddress, 'SET_TEMPERATURE', value);
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.CurrentHeatingCoolingState)
+    service
+      .getCharacteristic(this.Characteristic.CurrentHeatingCoolingState)
       .onGet(this.wrapGet<number>(() => this.deriveCurrentMode()));
 
-    service.getCharacteristic(this.Characteristic.TargetHeatingCoolingState)
+    service
+      .getCharacteristic(this.Characteristic.TargetHeatingCoolingState)
       .setProps({ validValues: [HEATING_OFF, HEATING_HEAT, HEATING_AUTO] })
       .onGet(this.wrapGet<number>(() => this.mode))
-      .onSet(this.wrapSet<number>(async (value) => {
-        this.mode = value;
-        // Auto: set CONTROL_MODE=0; Manual heat: CONTROL_MODE=1; Off: SET_TEMPERATURE=4.5
-        if (value === HEATING_OFF) {
-          await this.ccu.setValue(this.channelAddress, 'SET_TEMPERATURE', 4.5);
-        } else if (value === HEATING_AUTO) {
-          await this.ccu.setValue(this.channelAddress, 'AUTO_MODE', true);
-        } else {
-          await this.ccu.setValue(this.channelAddress, 'MANU_MODE', this.targetTemp);
-        }
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          this.mode = value;
+          // Auto: set CONTROL_MODE=0; Manual heat: CONTROL_MODE=1; Off: SET_TEMPERATURE=4.5
+          if (value === HEATING_OFF) {
+            await this.ccu.setValue(this.channelAddress, 'SET_TEMPERATURE', 4.5);
+          } else if (value === HEATING_AUTO) {
+            await this.ccu.setValue(this.channelAddress, 'AUTO_MODE', true);
+          } else {
+            await this.ccu.setValue(this.channelAddress, 'MANU_MODE', this.targetTemp);
+          }
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.TemperatureDisplayUnits)
+    service
+      .getCharacteristic(this.Characteristic.TemperatureDisplayUnits)
       .onGet(() => this.Characteristic.TemperatureDisplayUnits.CELSIUS);
 
     this.registerListener(this.channelAddress, 'ACTUAL_TEMPERATURE', (raw) => {
@@ -76,7 +97,10 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       if (v !== undefined) {
         this.currentTemp = v;
         service.updateCharacteristic(this.Characteristic.CurrentTemperature, v);
-        service.updateCharacteristic(this.Characteristic.CurrentHeatingCoolingState, this.deriveCurrentMode());
+        service.updateCharacteristic(
+          this.Characteristic.CurrentHeatingCoolingState,
+          this.deriveCurrentMode(),
+        );
       }
     });
 
@@ -102,7 +126,10 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       if (v !== undefined) {
         this.targetTemp = v;
         service.updateCharacteristic(this.Characteristic.TargetTemperature, v);
-        service.updateCharacteristic(this.Characteristic.CurrentHeatingCoolingState, this.deriveCurrentMode());
+        service.updateCharacteristic(
+          this.Characteristic.CurrentHeatingCoolingState,
+          this.deriveCurrentMode(),
+        );
       }
     });
 

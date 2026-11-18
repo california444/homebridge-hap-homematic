@@ -7,7 +7,12 @@ import { doorbellService } from '../../src/services/impl/DoorbellAccessory.js';
 import { build, makeSvcEnv, NO_RESPONSE } from '../helpers/svcEnv.js';
 import type { CcuChannel, CcuDevice } from '../../src/types.js';
 
-const SMOKE: CcuChannel = { address: '000A0000000B02:1', index: 1, type: 'SMOKE_DETECTOR', name: 'RM1' };
+const SMOKE: CcuChannel = {
+  address: '000A0000000B02:1',
+  index: 1,
+  type: 'SMOKE_DETECTOR',
+  name: 'RM1',
+};
 
 describe('SmokeAccessory (plan 8.3)', () => {
   const setup = (settings?: Record<string, unknown>) => {
@@ -21,7 +26,15 @@ describe('SmokeAccessory (plan 8.3)', () => {
   it('maps all four SMOKE_DETECTOR_ALARM_STATUS values (index or name)', async () => {
     const { env, smoke } = setup();
     const cases: Array<[unknown, number]> = [
-      [0, 0], [1, 1], [0, 0], [3, 1], [2, 0], ['PRIMARY_ALARM', 1], ['IDLE_OFF', 0], ['SECONDARY_ALARM', 1], ['INTRUSION_ALARM', 0],
+      [0, 0],
+      [1, 1],
+      [0, 0],
+      [3, 1],
+      [2, 0],
+      ['PRIMARY_ALARM', 1],
+      ['IDLE_OFF', 0],
+      ['SECONDARY_ALARM', 1],
+      ['INTRUSION_ALARM', 0],
     ];
     for (const [raw, hap] of cases) {
       env.fire(SMOKE.address, 'SMOKE_DETECTOR_ALARM_STATUS', raw);
@@ -122,7 +135,9 @@ describe('ContactAccessory', () => {
   it('invert swaps open/closed', async () => {
     const env = makeSvcEnv();
     const a = build(env, contactService, C, { settings: { invert: true } });
-    await expect(a.char(a.svc('ContactSensor'), 'ContactSensorState').onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
+    await expect(
+      a.char(a.svc('ContactSensor'), 'ContactSensorState').onGetHandler!(),
+    ).rejects.toMatchObject(NO_RESPONSE);
     env.fire(C.address, 'STATE', true);
     expect(a.char(a.svc('ContactSensor'), 'ContactSensorState').value).toBe(0);
   });
@@ -131,7 +146,13 @@ describe('ContactAccessory', () => {
 describe('SwitchAccessory with HmIP pairing (plan 8.4)', () => {
   it('reads STATE from the transmitter, writes to the receiver, ignores receiver STATE', async () => {
     const env = makeSvcEnv();
-    const ch: CcuChannel = { address: 'PS:3', stateAddress: 'PS:2', index: 3, type: 'SWITCH_VIRTUAL_RECEIVER', name: 'K' };
+    const ch: CcuChannel = {
+      address: 'PS:3',
+      stateAddress: 'PS:2',
+      index: 3,
+      type: 'SWITCH_VIRTUAL_RECEIVER',
+      name: 'K',
+    };
     const a = build(env, switchService, ch, { subtype: 'Outlet' });
     const on = a.char(a.svc('Outlet'), 'On');
     env.values['PS:2'] = { STATE: true };
@@ -150,12 +171,23 @@ describe('SwitchAccessory with HmIP pairing (plan 8.4)', () => {
 describe('IrrigationAccessory (plan 8.1)', () => {
   const SERIAL = 'ABC0000002';
   const dev: CcuDevice = {
-    address: SERIAL, type: 'HM-LC-Sw4-DR-2', name: 'n', interface: 'BidCos-RF',
-    channels: [0, 1, 2, 3, 4].map((i) => ({ address: `${SERIAL}:${i}`, index: i, type: i ? 'SWITCH' : 'MAINTENANCE', name: 'x' })),
+    address: SERIAL,
+    type: 'HM-LC-Sw4-DR-2',
+    name: 'n',
+    interface: 'BidCos-RF',
+    channels: [0, 1, 2, 3, 4].map((i) => ({
+      address: `${SERIAL}:${i}`,
+      index: i,
+      type: i ? 'SWITCH' : 'MAINTENANCE',
+      name: 'x',
+    })),
   };
   const first: CcuChannel = dev.channels[1]!;
   const settings = {
-    channels: { '1': { name: 'Rasen vorne', valveType: 'Irrigation' }, '2': { name: 'Rasen hinten', valveType: 'Water Faucet' } },
+    channels: {
+      '1': { name: 'Rasen vorne', valveType: 'Irrigation' },
+      '2': { name: 'Rasen hinten', valveType: 'Water Faucet' },
+    },
   };
 
   beforeEach(() => {
@@ -165,7 +197,10 @@ describe('IrrigationAccessory (plan 8.1)', () => {
   afterEach(() => vi.useRealTimers());
 
   /** device: null = not discovered (an explicit undefined would pick the default). */
-  const setup = (context: Record<string, unknown> = { settings }, device: CcuDevice | null = dev) => {
+  const setup = (
+    context: Record<string, unknown> = { settings },
+    device: CcuDevice | null = dev,
+  ) => {
     const env = makeSvcEnv();
     vi.spyOn(env.ccu, 'getInterfaceState').mockReturnValue('CONNECTED');
     const a = build(env, irrigationService, first, context, device ?? undefined);
@@ -187,8 +222,9 @@ describe('IrrigationAccessory (plan 8.1)', () => {
 
   it('valves from devices.json channels or 1–4 when the device is not discovered', () => {
     const viaMapping = setup({ settings: { channels: { '2': {}, '5': {} } } }, null);
-    expect(viaMapping.a.accessory.services.filter((s) => s.UUID === 'srv:Valve').map((s) => s.subtype))
-      .toEqual(['valve-2', 'valve-5']);
+    expect(
+      viaMapping.a.accessory.services.filter((s) => s.UUID === 'srv:Valve').map((s) => s.subtype),
+    ).toEqual(['valve-2', 'valve-5']);
     const fallback = setup({}, null);
     expect(fallback.a.accessory.services.filter((s) => s.UUID === 'srv:Valve')).toHaveLength(4);
   });
@@ -202,7 +238,13 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     await a.char(valve(1), 'Active').onSetHandler!(1);
     // One job in the send queue, nothing gets in between:
     expect(env.setValues.mock.calls).toEqual([
-      [`${SERIAL}:1`, [['ON_TIME', 900], ['STATE', true]]],
+      [
+        `${SERIAL}:1`,
+        [
+          ['ON_TIME', 900],
+          ['STATE', true],
+        ],
+      ],
     ]);
     expect(env.setValue).not.toHaveBeenCalled();
     env.fire(`${SERIAL}:1`, 'STATE', true);
@@ -217,12 +259,21 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     expect(a.char(valve(1), 'RemainingDuration').onGetHandler!()).toBe(0);
     env.fire(`${SERIAL}:1`, 'STATE', false); // actuator timed out
     expect(a.char(valve(1), 'Active').value).toBe(0);
-    expect((a.accessory.context as unknown as { irrigation: { ends: object } }).irrigation.ends).toEqual({});
+    expect(
+      (a.accessory.context as unknown as { irrigation: { ends: object } }).irrigation.ends,
+    ).toEqual({});
   });
 
   it('fixed run time per valve (channel option duration) wins over Home and the default', async () => {
     const { env, a, valve } = setup({
-      settings: { defaultDuration: 300, channels: { '1': { name: 'Rasen', duration: 90 }, '2': { duration: 'x' }, '3': { duration: 9999 } } },
+      settings: {
+        defaultDuration: 300,
+        channels: {
+          '1': { name: 'Rasen', duration: 90 },
+          '2': { duration: 'x' },
+          '3': { duration: 9999 },
+        },
+      },
     });
     const dur = a.char(valve(1), 'SetDuration');
     expect(dur.value).toBe(90);
@@ -232,7 +283,13 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     expect(dur.value).toBe(90);
     expect(dur.onGetHandler!()).toBe(90);
     await a.char(valve(1), 'Active').onSetHandler!(1);
-    expect(env.setValues.mock.calls[0]).toEqual([`${SERIAL}:1`, [['ON_TIME', 90], ['STATE', true]]]);
+    expect(env.setValues.mock.calls[0]).toEqual([
+      `${SERIAL}:1`,
+      [
+        ['ON_TIME', 90],
+        ['STATE', true],
+      ],
+    ]);
     // invalid → not fixed: Home / default apply
     expect(a.char(valve(2), 'SetDuration').onGetHandler!()).toBe(300);
     a.char(valve(2), 'SetDuration').onSetHandler!(120);
@@ -268,7 +325,9 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     const { env, a, sys } = setup();
     const act = a.char(sys, 'Active');
     await expect(act.onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
-    await expect(a.char(a.svc('valve-1'), 'Active').onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
+    await expect(a.char(a.svc('valve-1'), 'Active').onGetHandler!()).rejects.toMatchObject(
+      NO_RESPONSE,
+    );
     env.values[`${SERIAL}:1`] = { STATE: false };
     env.values[`${SERIAL}:3`] = { STATE: true };
     await a.handler.refresh();
@@ -289,12 +348,23 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     a.char(valve(1), 'SetDuration').onSetHandler!('x');
     expect(a.char(valve(1), 'SetDuration').onGetHandler!()).toBe(600);
     await a.char(valve(4), 'Active').onSetHandler!(1);
-    expect(env.setValues.mock.calls[0]).toEqual([`${SERIAL}:4`, [['ON_TIME', 3600], ['STATE', true]]]);
+    expect(env.setValues.mock.calls[0]).toEqual([
+      `${SERIAL}:4`,
+      [
+        ['ON_TIME', 3600],
+        ['STATE', true],
+      ],
+    ]);
   });
 });
 
 describe('DoorbellAccessory (plan 8.2)', () => {
-  const D: CcuChannel = { address: '0026E0000000C1:1', index: 1, type: 'MULTI_MODE_INPUT_TRANSMITTER', name: 'Klingel' };
+  const D: CcuChannel = {
+    address: '0026E0000000C1:1',
+    index: 1,
+    type: 'MULTI_MODE_INPUT_TRANSMITTER',
+    name: 'Klingel',
+  };
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-11T12:00:00Z'));
@@ -331,7 +401,9 @@ describe('DoorbellAccessory (plan 8.2)', () => {
 
   it('trigger STATE fires on the rising edge; PRESS_LONG and debounce options', () => {
     const env = makeSvcEnv();
-    const a = build(env, doorbellService, D, { settings: { trigger: 'STATE', debounceSeconds: 0 } });
+    const a = build(env, doorbellService, D, {
+      settings: { trigger: 'STATE', debounceSeconds: 0 },
+    });
     const ev = a.char(a.svc('Doorbell'), 'ProgrammableSwitchEvent');
     env.fire(D.address, 'STATE', true);
     env.fire(D.address, 'STATE', true);
@@ -340,7 +412,9 @@ describe('DoorbellAccessory (plan 8.2)', () => {
     env.fire(D.address, 'PRESS_SHORT', true);
     expect(ev.updateValue).toHaveBeenCalledTimes(2);
 
-    const b = build(env, doorbellService, D, { settings: { trigger: 'PRESS_LONG', debounceSeconds: 'x' } });
+    const b = build(env, doorbellService, D, {
+      settings: { trigger: 'PRESS_LONG', debounceSeconds: 'x' },
+    });
     const ev2 = b.char(b.svc('Doorbell'), 'ProgrammableSwitchEvent');
     env.fire(D.address, 'PRESS_SHORT', true);
     env.fire(D.address, 'PRESS_LONG', true);
@@ -349,6 +423,8 @@ describe('DoorbellAccessory (plan 8.2)', () => {
     const c = build(env, doorbellService, D, { settings: { trigger: 'nonsense' } });
     env.fire(D.address, 'PRESS_SHORT', true);
     vi.advanceTimersByTime(3000);
-    expect(c.char(c.svc('Doorbell'), 'ProgrammableSwitchEvent').updateValue).toHaveBeenCalledTimes(1);
+    expect(c.char(c.svc('Doorbell'), 'ProgrammableSwitchEvent').updateValue).toHaveBeenCalledTimes(
+      1,
+    );
   });
 });

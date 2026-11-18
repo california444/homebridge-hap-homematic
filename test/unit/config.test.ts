@@ -21,14 +21,28 @@ describe('isValidHost', () => {
 });
 
 describe('resolveConfig', () => {
-  const base: RawConfig = { platform: 'HapHomematic', ccuIp: '192.168.1.10', eventServer: { callbackHost: '192.168.1.20' } };
-  const ev = (e: Record<string, unknown>): RawConfig => ({ ...base, eventServer: { callbackHost: '192.168.1.20', ...e } });
+  const base: RawConfig = {
+    platform: 'HapHomematic',
+    ccuIp: '192.168.1.10',
+    eventServer: { callbackHost: '192.168.1.20' },
+  };
+  const ev = (e: Record<string, unknown>): RawConfig => ({
+    ...base,
+    eventServer: { callbackHost: '192.168.1.20', ...e },
+  });
 
   it('sendQueue: values, empty fields and range checks', () => {
-    expect(resolveConfig({ ...base, sendQueue: { timeoutMs: 3000, gapMs: 0 } }).sendQueue).toEqual({ timeoutMs: 3000, gapMs: 0 });
-    expect(resolveConfig({ ...base, sendQueue: { timeoutMs: '' as never, gapMs: null as never } }).sendQueue)
-      .toEqual({ timeoutMs: 5000, gapMs: 100 });
-    expect(() => resolveConfig({ ...base, sendQueue: { timeoutMs: 50 } })).toThrow(/sendQueue.timeoutMs/);
+    expect(resolveConfig({ ...base, sendQueue: { timeoutMs: 3000, gapMs: 0 } }).sendQueue).toEqual({
+      timeoutMs: 3000,
+      gapMs: 0,
+    });
+    expect(
+      resolveConfig({ ...base, sendQueue: { timeoutMs: '' as never, gapMs: null as never } })
+        .sendQueue,
+    ).toEqual({ timeoutMs: 5000, gapMs: 100 });
+    expect(() => resolveConfig({ ...base, sendQueue: { timeoutMs: 50 } })).toThrow(
+      /sendQueue.timeoutMs/,
+    );
     expect(() => resolveConfig({ ...base, sendQueue: { gapMs: -1 } })).toThrow(/sendQueue.gapMs/);
     expect(() => resolveConfig({ ...base, sendQueue: { gapMs: 1.5 } })).toThrow(/sendQueue.gapMs/);
   });
@@ -56,36 +70,53 @@ describe('resolveConfig', () => {
 
   describe('eventServer.callbackHost', () => {
     it('is required by default', () => {
-      expect(() => resolveConfig({ platform: 'HapHomematic', ccuIp: '192.168.1.10' })).toThrow(/callbackHost is required/);
+      expect(() => resolveConfig({ platform: 'HapHomematic', ccuIp: '192.168.1.10' })).toThrow(
+        /callbackHost is required/,
+      );
       expect(() => resolveConfig(ev({ callbackHost: '' }))).toThrow(/callbackHost is required/);
     });
 
     it('may be omitted for the UI (probe / discover only)', () => {
-      const c = resolveConfig({ platform: 'HapHomematic', ccuIp: '192.168.1.10' }, { requireCallbackHost: false });
+      const c = resolveConfig(
+        { platform: 'HapHomematic', ccuIp: '192.168.1.10' },
+        { requireCallbackHost: false },
+      );
       expect(c.eventServer.callbackHost).toBe('');
     });
 
     it('must be a valid host', () => {
-      expect(() => resolveConfig(ev({ callbackHost: 'not valid' }))).toThrow(/callbackHost must be/);
-      expect(() => resolveConfig(ev({ callbackHost: 'not valid' }), { requireCallbackHost: false })).toThrow(/callbackHost must be/);
+      expect(() => resolveConfig(ev({ callbackHost: 'not valid' }))).toThrow(
+        /callbackHost must be/,
+      );
+      expect(() =>
+        resolveConfig(ev({ callbackHost: 'not valid' }), { requireCallbackHost: false }),
+      ).toThrow(/callbackHost must be/);
     });
   });
 
   describe('rpcAuth', () => {
     it('requires username and password when enabled', () => {
       expect(() => resolveConfig({ ...base, rpcAuth: { enabled: true } })).toThrow(/rpcAuth/);
-      expect(() => resolveConfig({ ...base, rpcAuth: { enabled: true, username: 'u' } })).toThrow(/rpcAuth/);
+      expect(() => resolveConfig({ ...base, rpcAuth: { enabled: true, username: 'u' } })).toThrow(
+        /rpcAuth/,
+      );
     });
 
     it('passes credentials through', () => {
-      const c = resolveConfig({ ...base, rpcAuth: { enabled: true, username: 'u', password: 'p' } });
+      const c = resolveConfig({
+        ...base,
+        rpcAuth: { enabled: true, username: 'u', password: 'p' },
+      });
       expect(c.rpcAuth).toEqual({ enabled: true, username: 'u', password: 'p' });
     });
 
     it('keeps stored credentials while disabled and ignores non-strings', () => {
-      expect(resolveConfig({ ...base, rpcAuth: { username: 'u', password: 'p' } }).rpcAuth)
-        .toEqual({ enabled: false, username: 'u', password: 'p' });
-      expect(resolveConfig({ ...base, rpcAuth: { username: 1 as never } }).rpcAuth).toEqual({ enabled: false });
+      expect(resolveConfig({ ...base, rpcAuth: { username: 'u', password: 'p' } }).rpcAuth).toEqual(
+        { enabled: false, username: 'u', password: 'p' },
+      );
+      expect(resolveConfig({ ...base, rpcAuth: { username: 1 as never } }).rpcAuth).toEqual({
+        enabled: false,
+      });
     });
   });
 
@@ -109,7 +140,10 @@ describe('resolveConfig', () => {
   });
 
   it('ignores old "channels" (mappings live in devices.json)', () => {
-    const c = resolveConfig({ ...base, channels: [{ address: '0:1', service: 'SwitchAccessory' }] } as RawConfig);
+    const c = resolveConfig({
+      ...base,
+      channels: [{ address: '0:1', service: 'SwitchAccessory' }],
+    } as RawConfig);
     expect(c).not.toHaveProperty('channels');
   });
 
@@ -134,37 +168,50 @@ describe('resolveConfig', () => {
     });
 
     it('treats cleared UI fields (null / "") as "use the default"', () => {
-      const c = resolveConfig({ ...base, interfacePorts: { 'BidCos-RF': null, 'HmIP-RF': '' } as never });
+      const c = resolveConfig({
+        ...base,
+        interfacePorts: { 'BidCos-RF': null, 'HmIP-RF': '' } as never,
+      });
       expect(c.interfacePorts).toEqual({});
     });
 
     it('rejects unknown interface names', () => {
-      expect(() => resolveConfig({
-        ...base,
-        interfacePorts: { 'Bogus': 1234 } as never,
-      })).toThrow(/unknown interface/);
-      expect(() => resolveConfig({
-        ...base,
-        interfacePorts: { 'CUxD': 8701 } as never,
-      })).toThrow(/unknown interface/);
+      expect(() =>
+        resolveConfig({
+          ...base,
+          interfacePorts: { Bogus: 1234 } as never,
+        }),
+      ).toThrow(/unknown interface/);
+      expect(() =>
+        resolveConfig({
+          ...base,
+          interfacePorts: { CUxD: 8701 } as never,
+        }),
+      ).toThrow(/unknown interface/);
     });
 
     it('rejects out-of-range port values', () => {
-      expect(() => resolveConfig({
-        ...base,
-        interfacePorts: { 'BidCos-RF': 0 },
-      })).toThrow(/BidCos-RF/);
-      expect(() => resolveConfig({
-        ...base,
-        interfacePorts: { 'BidCos-RF': 70000 },
-      })).toThrow(/BidCos-RF/);
+      expect(() =>
+        resolveConfig({
+          ...base,
+          interfacePorts: { 'BidCos-RF': 0 },
+        }),
+      ).toThrow(/BidCos-RF/);
+      expect(() =>
+        resolveConfig({
+          ...base,
+          interfacePorts: { 'BidCos-RF': 70000 },
+        }),
+      ).toThrow(/BidCos-RF/);
     });
 
     it('rejects non-integer port values', () => {
-      expect(() => resolveConfig({
-        ...base,
-        interfacePorts: { 'BidCos-RF': 'nope' as unknown as number },
-      })).toThrow(/BidCos-RF/);
+      expect(() =>
+        resolveConfig({
+          ...base,
+          interfacePorts: { 'BidCos-RF': 'nope' as unknown as number },
+        }),
+      ).toThrow(/BidCos-RF/);
     });
 
     it('ignores non-object interfacePorts gracefully', () => {

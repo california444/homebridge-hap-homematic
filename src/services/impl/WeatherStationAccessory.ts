@@ -35,26 +35,50 @@ class WeatherStationHandler extends AccessoryBase implements ChannelService {
 
   attach(channel: CcuChannel): void {
     const baseName = channel.name || this.accessory.displayName;
-    const tempSvc  = this.getOrAddService(this.Service.TemperatureSensor, `${baseName} Temperature`, 'weather-temp');
-    const humSvc   = this.getOrAddService(this.Service.HumiditySensor,    `${baseName} Humidity`,    'weather-hum');
-    const lightSvc = this.getOrAddService(this.Service.LightSensor,       `${baseName} Light`,       'weather-light');
-    const rainSvc  = this.getOrAddService(this.Service.LeakSensor,        `${baseName} Rain`,        'weather-rain');
+    const tempSvc = this.getOrAddService(
+      this.Service.TemperatureSensor,
+      `${baseName} Temperature`,
+      'weather-temp',
+    );
+    const humSvc = this.getOrAddService(
+      this.Service.HumiditySensor,
+      `${baseName} Humidity`,
+      'weather-hum',
+    );
+    const lightSvc = this.getOrAddService(
+      this.Service.LightSensor,
+      `${baseName} Light`,
+      'weather-light',
+    );
+    const rainSvc = this.getOrAddService(
+      this.Service.LeakSensor,
+      `${baseName} Rain`,
+      'weather-rain',
+    );
 
-    tempSvc.getCharacteristic(this.Characteristic.CurrentTemperature)
+    tempSvc
+      .getCharacteristic(this.Characteristic.CurrentTemperature)
       .setProps({ minValue: -50, maxValue: 100, minStep: 0.1 })
       .onGet(this.wrapGet<number>(() => this.temp));
 
-    humSvc.getCharacteristic(this.Characteristic.CurrentRelativeHumidity)
+    humSvc
+      .getCharacteristic(this.Characteristic.CurrentRelativeHumidity)
       .onGet(this.wrapGet<number>(() => this.humidity));
 
-    lightSvc.getCharacteristic(this.Characteristic.CurrentAmbientLightLevel)
+    lightSvc
+      .getCharacteristic(this.Characteristic.CurrentAmbientLightLevel)
       .setProps({ minValue: 0.0001, maxValue: 100000, minStep: 0.0001 })
       .onGet(this.wrapGet<number>(() => this.lux));
 
-    rainSvc.getCharacteristic(this.Characteristic.LeakDetected)
-      .onGet(this.wrapGet<number>(() => this.raining
-        ? this.Characteristic.LeakDetected.LEAK_DETECTED
-        : this.Characteristic.LeakDetected.LEAK_NOT_DETECTED));
+    rainSvc
+      .getCharacteristic(this.Characteristic.LeakDetected)
+      .onGet(
+        this.wrapGet<number>(() =>
+          this.raining
+            ? this.Characteristic.LeakDetected.LEAK_DETECTED
+            : this.Characteristic.LeakDetected.LEAK_NOT_DETECTED,
+        ),
+      );
 
     // --- live updates ---------------------------------------------
 
@@ -83,17 +107,20 @@ class WeatherStationHandler extends AccessoryBase implements ChannelService {
     const applyRain = (raw: unknown): void => {
       const v = raw === true || raw === 1 || raw === '1' || raw === 'true';
       this.raining = v;
-      rainSvc.updateCharacteristic(this.Characteristic.LeakDetected, v
-        ? this.Characteristic.LeakDetected.LEAK_DETECTED
-        : this.Characteristic.LeakDetected.LEAK_NOT_DETECTED);
+      rainSvc.updateCharacteristic(
+        this.Characteristic.LeakDetected,
+        v
+          ? this.Characteristic.LeakDetected.LEAK_DETECTED
+          : this.Characteristic.LeakDetected.LEAK_NOT_DETECTED,
+      );
     };
 
-    this.registerListener(channel.address, 'TEMPERATURE',  applyTemp);
+    this.registerListener(channel.address, 'TEMPERATURE', applyTemp);
     this.registerListener(channel.address, 'ACTUAL_TEMPERATURE', applyTemp);
-    this.registerListener(channel.address, 'HUMIDITY',     applyHum);
+    this.registerListener(channel.address, 'HUMIDITY', applyHum);
     this.registerListener(channel.address, 'ILLUMINATION', applyLux);
-    this.registerListener(channel.address, 'BRIGHTNESS',   applyLux);
-    this.registerListener(channel.address, 'RAINING',      applyRain);
+    this.registerListener(channel.address, 'BRIGHTNESS', applyLux);
+    this.registerListener(channel.address, 'RAINING', applyRain);
 
     // Best-effort initial pulls so HomeKit reflects current state
     // immediately rather than waiting for the next CCU push. Same

@@ -14,7 +14,13 @@
  * Services subclass this and implement attach().
  */
 
-import type { Characteristic, CharacteristicValue, PlatformAccessory, Service, WithUUID } from 'homebridge';
+import type {
+  Characteristic,
+  CharacteristicValue,
+  PlatformAccessory,
+  Service,
+  WithUUID,
+} from 'homebridge';
 import { SetValueError, type CcuClient, type SignalInfo } from '../ccu/CcuClient.js';
 import { formatSeconds } from '../ccu/SendQueue.js';
 import type { PrefixedLogger } from '../util/logger.js';
@@ -26,9 +32,19 @@ export type DatapointListener = (value: unknown) => void;
 
 /** HAP services that have an optional StatusFault characteristic. */
 const FAULT_CAPABLE = [
-  'SmokeSensor', 'ContactSensor', 'LeakSensor', 'MotionSensor', 'TemperatureSensor',
-  'HumiditySensor', 'LightSensor', 'IrrigationSystem', 'Valve', 'CarbonMonoxideSensor',
-  'CarbonDioxideSensor', 'AirQualitySensor', 'OccupancySensor',
+  'SmokeSensor',
+  'ContactSensor',
+  'LeakSensor',
+  'MotionSensor',
+  'TemperatureSensor',
+  'HumiditySensor',
+  'LightSensor',
+  'IrrigationSystem',
+  'Valve',
+  'CarbonMonoxideSensor',
+  'CarbonDioxideSensor',
+  'AirQualitySensor',
+  'OccupancySensor',
 ] as const;
 
 /** Device-level channel 0 of any channel address. */
@@ -70,10 +86,15 @@ export abstract class AccessoryBase {
     }
   }
 
-  protected getOrAddService<T extends WithUUID<typeof Service>>(svc: T, name?: string, subtype?: string): Service {
-    const existing = subtype === undefined
-      ? this.accessory.getService(svc)
-      : this.accessory.getServiceById(svc, subtype);
+  protected getOrAddService<T extends WithUUID<typeof Service>>(
+    svc: T,
+    name?: string,
+    subtype?: string,
+  ): Service {
+    const existing =
+      subtype === undefined
+        ? this.accessory.getService(svc)
+        : this.accessory.getServiceById(svc, subtype);
     if (existing) {
       if (name !== undefined) {
         existing.setCharacteristic(this.Characteristic.Name, name);
@@ -83,12 +104,15 @@ export abstract class AccessoryBase {
     // hap-nodejs Service constructors take (displayName, subtype). The
     // overloaded addService(svc) signature cannot express that mix, so
     // we instantiate ourselves when we need a non-default name/subtype.
-    const instance = subtype === undefined
-      ? new (svc as unknown as new (displayName: string) => Service)(name ?? this.accessory.displayName)
-      : new (svc as unknown as new (displayName: string, subtype: string) => Service)(
-        name ?? this.accessory.displayName,
-        subtype,
-      );
+    const instance =
+      subtype === undefined
+        ? new (svc as unknown as new (displayName: string) => Service)(
+            name ?? this.accessory.displayName,
+          )
+        : new (svc as unknown as new (displayName: string, subtype: string) => Service)(
+            name ?? this.accessory.displayName,
+            subtype,
+          );
     return this.accessory.addService(instance);
   }
 
@@ -96,7 +120,11 @@ export abstract class AccessoryBase {
    * Attach a listener for a CCU datapoint on this accessory. Returns a
    * disposer that is also tracked for automatic cleanup in dispose().
    */
-  protected registerListener(address: string, datapoint: string, listener: DatapointListener): () => void {
+  protected registerListener(
+    address: string,
+    datapoint: string,
+    listener: DatapointListener,
+  ): () => void {
     const key = `${address}.${datapoint}`;
     const off = this.ccu.registerListener(key, listener);
     this.disposers.push(off);
@@ -166,11 +194,19 @@ export abstract class AccessoryBase {
    * updateCharacteristic with the value clamped to the characteristic's
    * minValue / maxValue / validValues; invalid values are dropped.
    */
-  protected update(service: Service, char: WithUUID<new () => Characteristic>, value: CharacteristicValue): void {
+  protected update(
+    service: Service,
+    char: WithUUID<new () => Characteristic>,
+    value: CharacteristicValue,
+  ): void {
     const c = service.getCharacteristic(char) as unknown as { props?: ValueProps };
     const v = clampToProps(value, c.props);
     if (v === undefined) {
-      this.log.debug('dropping invalid value %s for %s', String(value), (char as unknown as { name?: string }).name ?? '?');
+      this.log.debug(
+        'dropping invalid value %s for %s',
+        String(value),
+        (char as unknown as { name?: string }).name ?? '?',
+      );
       return;
     }
     service.updateCharacteristic(char, v as CharacteristicValue);
@@ -187,7 +223,11 @@ export abstract class AccessoryBase {
    * `extra()` reports a fault (e.g. ERROR_DEGRADED_CHAMBER).
    * Returns a function to re-evaluate after `extra` changed.
    */
-  protected watchFault(service: Service, channelAddress: string, extra: () => boolean = () => false): () => void {
+  protected watchFault(
+    service: Service,
+    channelAddress: string,
+    extra: () => boolean = () => false,
+  ): () => void {
     const supported = FAULT_CAPABLE.some((n) => {
       const ctor = (this.Service as unknown as Record<string, { UUID: string } | undefined>)[n];
       return ctor !== undefined && ctor.UUID === service.UUID;
@@ -203,7 +243,9 @@ export abstract class AccessoryBase {
       const fault = unreach || linkDown || extra();
       service.updateCharacteristic(
         this.Characteristic.StatusFault,
-        fault ? this.Characteristic.StatusFault.GENERAL_FAULT : this.Characteristic.StatusFault.NO_FAULT,
+        fault
+          ? this.Characteristic.StatusFault.GENERAL_FAULT
+          : this.Characteristic.StatusFault.NO_FAULT,
       );
     };
     this.need(maintenanceAddress(channelAddress), 'UNREACH', (raw) => {
@@ -274,14 +316,28 @@ export abstract class AccessoryBase {
     const where = this.log.prefix.endsWith(err.address) ? '' : ` on ${err.address}`;
     const signalText = parts.length > 0 ? ` last known signal:${parts.join('/')}` : '';
     if (err.timedOut) {
-      this.log.warn('%s: %s=%s%s no answer from the CCU within %s (it may still be sent)%s',
-        this.accessory.displayName, err.datapoint, String(err.value), where,
-        formatSeconds(err.durationMs ?? 0), signalText);
+      this.log.warn(
+        '%s: %s=%s%s no answer from the CCU within %s (it may still be sent)%s',
+        this.accessory.displayName,
+        err.datapoint,
+        String(err.value),
+        where,
+        formatSeconds(err.durationMs ?? 0),
+        signalText,
+      );
       return;
     }
     const after = err.durationMs !== undefined ? ` after ${formatSeconds(err.durationMs)}` : '';
-    this.log.warn('%s: %s=%s%s not delivered%s, (%s)%s', this.accessory.displayName, err.datapoint, String(err.value),
-      where, after, err.reason, signalText);
+    this.log.warn(
+      '%s: %s=%s%s not delivered%s, (%s)%s',
+      this.accessory.displayName,
+      err.datapoint,
+      String(err.value),
+      where,
+      after,
+      err.reason,
+      signalText,
+    );
   }
 
   protected wrapGet<T extends CharacteristicValue>(handler: () => Promise<T> | T) {
@@ -306,27 +362,38 @@ export abstract class AccessoryBase {
    * `assumeNormal`: report "battery normal" instead of "No Response"
    * while no value is known (smoke detectors, see SmokeAccessory).
    */
-  protected attachBattery(featureChannelAddress: string, opts: { assumeNormal?: boolean } = {}): void {
+  protected attachBattery(
+    featureChannelAddress: string,
+    opts: { assumeNormal?: boolean } = {},
+  ): void {
     const deviceAddress = maintenanceAddress(featureChannelAddress);
     const service = this.getOrAddService(this.Service.Battery, undefined, 'battery');
     let lowBat: boolean | undefined;
     let level: number | undefined;
 
-    service.getCharacteristic(this.Characteristic.StatusLowBattery)
-      .onGet(this.wrapGet<number>(() => {
+    service.getCharacteristic(this.Characteristic.StatusLowBattery).onGet(
+      this.wrapGet<number>(() => {
         if (lowBat === undefined && !opts.assumeNormal) {
           return this.unknown();
         }
         return lowBat
           ? this.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW
           : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL;
-      }));
-    service.getCharacteristic(this.Characteristic.BatteryLevel)
+      }),
+    );
+    service
+      .getCharacteristic(this.Characteristic.BatteryLevel)
       .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
       // Without a voltage reading only LOW_BAT is known: report 100 / 10 %.
-      .onGet(this.wrapGet<number>(() => level
-        ?? (lowBat === undefined ? (opts.assumeNormal ? 100 : this.unknown()) : lowBat ? 10 : 100)));
-    service.getCharacteristic(this.Characteristic.ChargingState)
+      .onGet(
+        this.wrapGet<number>(
+          () =>
+            level ??
+            (lowBat === undefined ? (opts.assumeNormal ? 100 : this.unknown()) : lowBat ? 10 : 100),
+        ),
+      );
+    service
+      .getCharacteristic(this.Characteristic.ChargingState)
       .onGet(() => this.Characteristic.ChargingState.NOT_CHARGEABLE);
 
     const applyLow = (raw: unknown): void => {

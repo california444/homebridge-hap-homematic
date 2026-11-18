@@ -14,30 +14,56 @@ const INC = 1;
 const DEC = 0;
 const STOP = 2;
 
-function setup(type: string, address: string, opts: { settings?: Record<string, unknown>; stateAddress?: string } = {}) {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+function setup(
+  type: string,
+  address: string,
+  opts: { settings?: Record<string, unknown>; stateAddress?: string } = {},
+) {
+  const config = resolveConfig({
+    platform: 'HapHomematic',
+    ccuIp: '127.0.0.1',
+    eventServer: { callbackHost: '127.0.0.1' },
+  });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'blind') });
   const setValue = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);
   const fireAt = (channelAddress: string, datapoint: string, value: unknown) => {
     (ccu as unknown as { handleEvent(ev: object): void }).handleEvent({
-      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress, datapoint, value, receivedAt: 0,
+      callbackId: 'homebridge-hap-homematic:HmIP-RF',
+      channelAddress,
+      datapoint,
+      value,
+      receivedAt: 0,
     });
   };
-  const fire = (datapoint: string, value: unknown) => fireAt(opts.stateAddress ?? address, datapoint, value);
+  const fire = (datapoint: string, value: unknown) =>
+    fireAt(opts.stateAddress ?? address, datapoint, value);
   const readValues = vi.spyOn(ccu, 'readValues').mockResolvedValue({});
   const hap = makeHapStub();
   const mk = (name: string) => {
-    class C { static UUID = `char:${name}`; UUID = `char:${name}`; }
+    class C {
+      static UUID = `char:${name}`;
+      UUID = `char:${name}`;
+    }
     Object.defineProperty(C, 'name', { value: name });
     return C;
   };
-  const S = class { static UUID = 'srv:WindowCovering'; UUID = 'srv:WindowCovering'; displayName = ''; subtype: string | undefined; };
+  const S = class {
+    static UUID = 'srv:WindowCovering';
+    UUID = 'srv:WindowCovering';
+    displayName = '';
+    subtype: string | undefined;
+  };
   const Characteristic = { ...hap.Characteristic } as Record<string, unknown>;
   for (const n of ['CurrentPosition', 'TargetPosition', 'PositionState', 'Name']) {
     Characteristic[n] = mk(n);
   }
-  const accessory = makeAccessory('uuid', 'Blind', { kind: 'channel' as const, id: address, service: 'BlindAccessory', settings: opts.settings });
+  const accessory = makeAccessory('uuid', 'Blind', {
+    kind: 'channel' as const,
+    id: address,
+    service: 'BlindAccessory',
+    settings: opts.settings,
+  });
   const ctx = {
     accessory: asPlatformAccessory(accessory),
     ccu,
@@ -45,13 +71,24 @@ function setup(type: string, address: string, opts: { settings?: Record<string, 
     Service: { ...hap.Service, WindowCovering: S },
     Characteristic,
   } as unknown as ServiceContext;
-  const channel: CcuChannel = { address, name: 'Blind', index: 1, type, ...(opts.stateAddress ? { stateAddress: opts.stateAddress } : {}) };
+  const channel: CcuChannel = {
+    address,
+    name: 'Blind',
+    index: 1,
+    type,
+    ...(opts.stateAddress ? { stateAddress: opts.stateAddress } : {}),
+  };
   const handler = blindService.build(ctx);
   handler.attach(channel);
   const svc = accessory.services[0]!;
   const get = (n: string) => svc.characteristics.get(`char:${n}`)!;
   return {
-    fire, fireAt, setValue, handler, get, readValues,
+    fire,
+    fireAt,
+    setValue,
+    handler,
+    get,
+    readValues,
     pos: () => get('CurrentPosition').value,
     tgt: () => get('TargetPosition').onGetHandler!() as Promise<unknown>,
     state: () => get('PositionState').value,
@@ -199,7 +236,10 @@ describe('BlindAccessory movement', () => {
   });
 
   it('invert (awning): HomeKit 100 = LEVEL 0, directions flip', async () => {
-    const t = setup('SHUTTER_VIRTUAL_RECEIVER', '0022:4', { stateAddress: '0022:3', settings: { invert: true } });
+    const t = setup('SHUTTER_VIRTUAL_RECEIVER', '0022:4', {
+      stateAddress: '0022:3',
+      settings: { invert: true },
+    });
     t.fire('LEVEL', 1);
     expect(t.pos()).toBe(0);
     await t.command(100);

@@ -24,7 +24,7 @@ class DoorbellHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     const settings = this.accessory.context.settings ?? {};
     const trigger: Trigger = (TRIGGERS as readonly string[]).includes(String(settings.trigger))
-      ? settings.trigger as Trigger
+      ? (settings.trigger as Trigger)
       : 'PRESS_SHORT';
     const debounce = Number(settings.debounceSeconds ?? 2);
     const debounceMs = Number.isFinite(debounce) && debounce >= 0 ? debounce * 1000 : 2000;
@@ -68,8 +68,14 @@ export const doorbellService: ServiceDefinition = {
   channelTypes: ['MULTI_MODE_INPUT_TRANSMITTER'],
   priority: 20,
   options: [
-    { key: 'trigger', label: 'Trigger', type: 'enum', values: [...TRIGGERS], default: 'PRESS_SHORT',
-      hint: 'PRESS_SHORT fires on the event whatever its value; STATE fires when it turns on.' },
+    {
+      key: 'trigger',
+      label: 'Trigger',
+      type: 'enum',
+      values: [...TRIGGERS],
+      default: 'PRESS_SHORT',
+      hint: 'PRESS_SHORT fires on the event whatever its value; STATE fires when it turns on.',
+    },
     { key: 'debounceSeconds', label: 'Debounce (s)', type: 'number', default: 2, min: 0, max: 30 },
   ],
   build: (ctx: ServiceContext) => new DoorbellHandler(ctx),

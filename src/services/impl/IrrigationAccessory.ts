@@ -29,10 +29,13 @@ const MAX_DURATION_S = 3600; // HAP SetDuration maximum
 
 /** devices.json `valveType` → HAP ValveType. */
 const VALVE_TYPES: Record<string, number> = {
-  genericvalve: 0, generic: 0,
+  genericvalve: 0,
+  generic: 0,
   irrigation: 1,
-  showerhead: 2, shower: 2,
-  waterfaucet: 3, faucet: 3,
+  showerhead: 2,
+  shower: 2,
+  waterfaucet: 3,
+  faucet: 3,
 };
 
 interface IrrigationContext {
@@ -67,18 +70,23 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
 
     const system = this.getOrAddService(this.Service.IrrigationSystem, this.accessory.displayName);
     this.system = system;
-    system.getCharacteristic(this.Characteristic.Active)
+    system
+      .getCharacteristic(this.Characteristic.Active)
       .onGet(this.wrapGet<number>(() => this.systemActive()))
-      .onSet(this.wrapSet<number>(async (v) => {
-        if (Number(v) === 0) {
-          for (const valve of this.valves.filter((x) => x.on)) {
-            await this.ccu.setValue(valve.address, 'STATE', false);
+      .onSet(
+        this.wrapSet<number>(async (v) => {
+          if (Number(v) === 0) {
+            for (const valve of this.valves.filter((x) => x.on)) {
+              await this.ccu.setValue(valve.address, 'STATE', false);
+            }
           }
-        }
-      }));
-    system.getCharacteristic(this.Characteristic.ProgramMode)
+        }),
+      );
+    system
+      .getCharacteristic(this.Characteristic.ProgramMode)
       .onGet(() => this.Characteristic.ProgramMode.NO_PROGRAM_SCHEDULED);
-    system.getCharacteristic(this.Characteristic.InUse)
+    system
+      .getCharacteristic(this.Characteristic.InUse)
       .onGet(this.wrapGet<number>(() => this.systemActive()));
     this.watchFault(system, `${serial}:1`);
 
@@ -91,25 +99,41 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       const fixed = fixedDuration(cfg.duration);
       const valve: Valve = { index, address, service, on: undefined, fixed };
       this.valves.push(valve);
-      (system as unknown as { addLinkedService?: (s: Service) => void }).addLinkedService?.(service);
+      (system as unknown as { addLinkedService?: (s: Service) => void }).addLinkedService?.(
+        service,
+      );
 
       service.setCharacteristic(this.Characteristic.ServiceLabelIndex, index);
-      service.setCharacteristic(this.Characteristic.IsConfigured, this.Characteristic.IsConfigured.CONFIGURED);
+      service.setCharacteristic(
+        this.Characteristic.IsConfigured,
+        this.Characteristic.IsConfigured.CONFIGURED,
+      );
       service.setCharacteristic(this.Characteristic.ValveType, valveType(cfg.valveType));
 
-      service.getCharacteristic(this.Characteristic.Active)
-        .onGet(this.wrapGet<number>(() => (valve.on === undefined ? this.unknown() : valve.on ? 1 : 0)))
+      service
+        .getCharacteristic(this.Characteristic.Active)
+        .onGet(
+          this.wrapGet<number>(() => (valve.on === undefined ? this.unknown() : valve.on ? 1 : 0)),
+        )
         .onSet(this.wrapSet<number>(async (v) => this.switchValve(valve, Number(v) === 1)));
-      service.getCharacteristic(this.Characteristic.InUse)
-        .onGet(this.wrapGet<number>(() => (valve.on === undefined ? this.unknown() : valve.on ? 1 : 0)));
-      const setDuration = service.getCharacteristic(this.Characteristic.SetDuration)
+      service
+        .getCharacteristic(this.Characteristic.InUse)
+        .onGet(
+          this.wrapGet<number>(() => (valve.on === undefined ? this.unknown() : valve.on ? 1 : 0)),
+        );
+      const setDuration = service
+        .getCharacteristic(this.Characteristic.SetDuration)
         .setProps({ minValue: 0, maxValue: MAX_DURATION_S })
         .onGet(() => fixed ?? store.durations![key] ?? defaultDuration)
         .onSet((v) => {
           if (fixed !== undefined) {
             // Fixed in devices.json: ignore Home and show the fixed value again.
-            this.log.info('%s: run time is fixed to %d s in the plugin settings; ignoring %s s from Home',
-              name, fixed, String(v));
+            this.log.info(
+              '%s: run time is fixed to %d s in the plugin settings; ignoring %s s from Home',
+              name,
+              fixed,
+              String(v),
+            );
             setTimeout(() => setDuration.updateValue(fixed), 0);
             return;
           }
@@ -119,7 +143,8 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       if (fixed !== undefined) {
         setDuration.updateValue(fixed);
       }
-      service.getCharacteristic(this.Characteristic.RemainingDuration)
+      service
+        .getCharacteristic(this.Characteristic.RemainingDuration)
         .setProps({ minValue: 0, maxValue: MAX_DURATION_S })
         .onGet(() => this.remaining(key));
 
@@ -149,13 +174,17 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       return;
     }
     const settings = (this.accessory.context.settings ?? {}) as { defaultDuration?: unknown };
-    const duration = valve.fixed
-      ?? store.durations![key]
-      ?? clampDuration(Number(settings.defaultDuration ?? DEFAULT_DURATION_S));
+    const duration =
+      valve.fixed ??
+      store.durations![key] ??
+      clampDuration(Number(settings.defaultDuration ?? DEFAULT_DURATION_S));
     if (duration > 0) {
       // The actuator switches off by itself after ON_TIME (D3). ON_TIME and
       // STATE are one job in the send queue, nothing gets in between.
-      this.ccu.setValues(valve.address, [['ON_TIME', duration], ['STATE', true]]);
+      this.ccu.setValues(valve.address, [
+        ['ON_TIME', duration],
+        ['STATE', true],
+      ]);
       store.ends![key] = Date.now() + duration * 1000;
     } else {
       delete store.ends![key];
@@ -201,7 +230,9 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
 }
 
 function clampDuration(n: number): number {
-  return Number.isFinite(n) ? Math.min(MAX_DURATION_S, Math.max(0, Math.round(n))) : DEFAULT_DURATION_S;
+  return Number.isFinite(n)
+    ? Math.min(MAX_DURATION_S, Math.max(0, Math.round(n)))
+    : DEFAULT_DURATION_S;
 }
 
 /** Channel option `duration`: seconds 1–3600, else not set. */
@@ -214,21 +245,32 @@ function fixedDuration(raw: unknown): number | undefined {
 }
 
 function valveType(raw: unknown): number {
-  return VALVE_TYPES[String(raw ?? 'irrigation').toLowerCase().replace(/[^a-z]/g, '')] ?? 1;
+  return (
+    VALVE_TYPES[
+      String(raw ?? 'irrigation')
+        .toLowerCase()
+        .replace(/[^a-z]/g, '')
+    ] ?? 1
+  );
 }
 
 /**
  * Valve channels: the device's SWITCH channels if discovered, else the
  * channels named in devices.json, else 1–4.
  */
-function valveChannels(device: CcuDevice | undefined, perChannel: Record<string, unknown>): number[] {
+function valveChannels(
+  device: CcuDevice | undefined,
+  perChannel: Record<string, unknown>,
+): number[] {
   const fromDevice = (device?.channels ?? [])
     .filter((c) => c.index > 0 && c.type === 'SWITCH')
     .map((c) => c.index);
   if (fromDevice.length > 0) {
     return fromDevice.sort((a, b) => a - b);
   }
-  const fromMapping = Object.keys(perChannel).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const fromMapping = Object.keys(perChannel)
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
   return fromMapping.length > 0 ? fromMapping.sort((a, b) => a - b) : [1, 2, 3, 4];
 }
 
@@ -240,18 +282,43 @@ export const irrigationService: ServiceDefinition = {
   priority: 50,
   scope: 'device',
   options: [
-    { key: 'defaultDuration', label: 'Default run time (s)', type: 'number', default: DEFAULT_DURATION_S,
-      min: 0, max: MAX_DURATION_S,
-      hint: 'How long a valve runs when switched on (sent as ON_TIME; the actuator switches off by itself), '
-        + 'unless the valve has its own run time below or a duration set in Home. 0 = stays on until switched off. Max. 3600 s.' },
+    {
+      key: 'defaultDuration',
+      label: 'Default run time (s)',
+      type: 'number',
+      default: DEFAULT_DURATION_S,
+      min: 0,
+      max: MAX_DURATION_S,
+      hint:
+        'How long a valve runs when switched on (sent as ON_TIME; the actuator switches off by itself), ' +
+        'unless the valve has its own run time below or a duration set in Home. 0 = stays on until switched off. Max. 3600 s.',
+    },
   ],
   channelOptions: [
-    { key: 'name', label: 'Valve name', type: 'text', hint: 'Name of the valve in Home; empty = "Valve <channel>".' },
-    { key: 'valveType', label: 'Valve type', type: 'enum', default: 'Irrigation',
-      values: ['Irrigation', 'GenericValve', 'ShowerHead', 'WaterFaucet'], hint: 'Icon and wording in Home.' },
-    { key: 'duration', label: 'Run time (s)', type: 'number', min: 1, max: MAX_DURATION_S,
-      hint: 'Fixed run time of this valve in seconds (1–3600). Set: a duration chosen in Home is ignored '
-        + '(Home only offers 5 min and more). Empty: the duration from Home, else the default run time.' },
+    {
+      key: 'name',
+      label: 'Valve name',
+      type: 'text',
+      hint: 'Name of the valve in Home; empty = "Valve <channel>".',
+    },
+    {
+      key: 'valveType',
+      label: 'Valve type',
+      type: 'enum',
+      default: 'Irrigation',
+      values: ['Irrigation', 'GenericValve', 'ShowerHead', 'WaterFaucet'],
+      hint: 'Icon and wording in Home.',
+    },
+    {
+      key: 'duration',
+      label: 'Run time (s)',
+      type: 'number',
+      min: 1,
+      max: MAX_DURATION_S,
+      hint:
+        'Fixed run time of this valve in seconds (1–3600). Set: a duration chosen in Home is ignored ' +
+        '(Home only offers 5 min and more). Empty: the duration from Home, else the default run time.',
+    },
   ],
   build: (ctx: ServiceContext) => new IrrigationHandler(ctx),
 };

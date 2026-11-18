@@ -4,12 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CcuClient } from '../../src/ccu/CcuClient.js';
 import { resolveConfig } from '../../src/util/config.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
-import {
-  asPlatformAccessory,
-  makeAccessory,
-  makeHapStub,
-  makeLog,
-} from '../helpers/hapStub.js';
+import { asPlatformAccessory, makeAccessory, makeHapStub, makeLog } from '../helpers/hapStub.js';
 import type { AccessoryContext, CcuChannel } from '../../src/types.js';
 import type { ServiceContext } from '../../src/services/types.js';
 
@@ -23,14 +18,32 @@ interface TestEnv {
 }
 
 function makeEnv(): TestEnv {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+  const config = resolveConfig({
+    platform: 'HapHomematic',
+    ccuIp: '127.0.0.1',
+    eventServer: { callbackHost: '127.0.0.1' },
+  });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'sv') });
   return {
     ccu,
     setValueMock: vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined),
     fireEvent(address, datapoint, value) {
-      (ccu as unknown as { handleEvent(ev: { callbackId: string; channelAddress: string; datapoint: string; value: unknown; receivedAt: number }): void }).handleEvent({
-        callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: address, datapoint, value, receivedAt: 0,
+      (
+        ccu as unknown as {
+          handleEvent(ev: {
+            callbackId: string;
+            channelAddress: string;
+            datapoint: string;
+            value: unknown;
+            receivedAt: number;
+          }): void;
+        }
+      ).handleEvent({
+        callbackId: 'homebridge-hap-homematic:HmIP-RF',
+        channelAddress: address,
+        datapoint,
+        value,
+        receivedAt: 0,
       });
     },
   };
@@ -40,7 +53,10 @@ function buildCtx(env: TestEnv, context: AccessoryContext) {
   const hap = makeHapStub();
   // Augment hap stub with characteristics needed by the new services.
   const charClass = (name: string, extra: Record<string, unknown> = {}) => {
-    class C { static UUID = `char:${name}`; UUID = `char:${name}`; }
+    class C {
+      static UUID = `char:${name}`;
+      UUID = `char:${name}`;
+    }
     Object.assign(C, extra);
     Object.defineProperty(C, 'name', { value: name });
     return C;
@@ -85,11 +101,20 @@ function buildCtx(env: TestEnv, context: AccessoryContext) {
 }
 
 describe('ProgrammableSwitchAccessory', () => {
-  const channel: CcuChannel = { address: 'HmIP.K:1', name: 'Kitchen Button', index: 1, type: 'KEY' };
+  const channel: CcuChannel = {
+    address: 'HmIP.K:1',
+    name: 'Kitchen Button',
+    index: 1,
+    type: 'KEY',
+  };
 
   it('emits SINGLE_PRESS on a single short press', () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ProgrammableSwitchAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ProgrammableSwitchAccessory',
+    });
     programmableSwitchService.build(ctx).attach(channel);
     const eventChar = accessory.services[0]!.characteristics.get('char:ProgrammableSwitchEvent')!;
     env.fireEvent('HmIP.K:1', 'PRESS_SHORT', true);
@@ -98,7 +123,11 @@ describe('ProgrammableSwitchAccessory', () => {
 
   it('emits DOUBLE_PRESS for two quick short presses', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ProgrammableSwitchAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ProgrammableSwitchAccessory',
+    });
     programmableSwitchService.build(ctx).attach(channel);
     const eventChar = accessory.services[0]!.characteristics.get('char:ProgrammableSwitchEvent')!;
     env.fireEvent('HmIP.K:1', 'PRESS_SHORT', true);
@@ -108,7 +137,11 @@ describe('ProgrammableSwitchAccessory', () => {
 
   it('emits LONG_PRESS on PRESS_LONG=true', () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ProgrammableSwitchAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ProgrammableSwitchAccessory',
+    });
     programmableSwitchService.build(ctx).attach(channel);
     const eventChar = accessory.services[0]!.characteristics.get('char:ProgrammableSwitchEvent')!;
     env.fireEvent('HmIP.K:1', 'PRESS_LONG', true);
@@ -117,7 +150,11 @@ describe('ProgrammableSwitchAccessory', () => {
 
   it('ignores PRESS_SHORT=false / PRESS_LONG=false (release events)', () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ProgrammableSwitchAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ProgrammableSwitchAccessory',
+    });
     programmableSwitchService.build(ctx).attach(channel);
     const eventChar = accessory.services[0]!.characteristics.get('char:ProgrammableSwitchEvent')!;
     env.fireEvent('HmIP.K:1', 'PRESS_SHORT', false);
@@ -129,12 +166,20 @@ describe('ProgrammableSwitchAccessory', () => {
 describe('DoorOpenerAccessory', () => {
   const channel: CcuChannel = { address: 'HmIP.D:1', name: 'Front Door', index: 1, type: 'SWITCH' };
 
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.useRealTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it('pulses STATE=true on Unsecured then auto-resets to Secured', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'DoorOpenerAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'DoorOpenerAccessory',
+    });
     doorOpenerService.build(ctx).attach(channel);
     const service = accessory.services[0]!;
     const target = service.characteristics.get('char:LockTargetState')!;
@@ -149,7 +194,11 @@ describe('DoorOpenerAccessory', () => {
 
   it('ignores Secured target writes', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'DoorOpenerAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'DoorOpenerAccessory',
+    });
     doorOpenerService.build(ctx).attach(channel);
     const service = accessory.services[0]!;
     const target = service.characteristics.get('char:LockTargetState')!;
@@ -160,7 +209,11 @@ describe('DoorOpenerAccessory', () => {
   it('handles setValue errors gracefully', async () => {
     const env = makeEnv();
     env.setValueMock.mockRejectedValueOnce(new Error('rpc-fail'));
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'DoorOpenerAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'DoorOpenerAccessory',
+    });
     const handler = doorOpenerService.build(ctx);
     handler.attach(channel);
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;

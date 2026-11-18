@@ -17,7 +17,8 @@ class MotionHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     const service = this.getOrAddService(this.Service.MotionSensor, channel.name);
 
-    service.getCharacteristic(this.Characteristic.MotionDetected)
+    service
+      .getCharacteristic(this.Characteristic.MotionDetected)
       .onGet(this.wrapGet<boolean>(() => this.detected));
 
     this.registerListener(channel.address, 'MOTION', (raw) => {

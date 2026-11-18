@@ -98,8 +98,12 @@ describe('RpcClient', () => {
     const log = makeLog();
     const t = makeTransport();
     const c = new RpcClient({
-      interfaceId: 'BidCos-RF', host: '127.0.0.1', callbackUrl: 'http://example/cb', callbackId: 'cbid',
-      log: new PrefixedLogger(log, 'rpc-test'), transport: t,
+      interfaceId: 'BidCos-RF',
+      host: '127.0.0.1',
+      callbackUrl: 'http://example/cb',
+      callbackId: 'cbid',
+      log: new PrefixedLogger(log, 'rpc-test'),
+      transport: t,
     });
     await c.subscribe();
     await c.unsubscribe();
@@ -107,7 +111,11 @@ describe('RpcClient', () => {
     await c.subscribe();
     (t.call as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
     await c.unsubscribe();
-    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('Unsubscribe failed'), 'cbid', 'boom');
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Unsubscribe failed'),
+      'cbid',
+      'boom',
+    );
   });
 
   it('getValue and setValue forward to transport', async () => {
@@ -177,20 +185,33 @@ describe('RpcClient TCP reachability probe', () => {
 });
 
 describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
-  type Factory = (opts: Record<string, unknown>) => { methodCall: (m: string, p: unknown[], cb: (e: Error | null, v?: unknown) => void) => void };
+  type Factory = (opts: Record<string, unknown>) => {
+    methodCall: (m: string, p: unknown[], cb: (e: Error | null, v?: unknown) => void) => void;
+  };
   async function capture(tls: boolean, auth?: { username: string; password: string }) {
     const seen: { factory?: string; opts?: Record<string, unknown> } = {};
-    const fake = (name: string): Factory => (opts) => {
-      seen.factory = name;
-      seen.opts = opts;
-      return { methodCall: (_m, _p, cb) => cb(null, ['x']) };
+    const fake =
+      (name: string): Factory =>
+      (opts) => {
+        seen.factory = name;
+        seen.opts = opts;
+        return { methodCall: (_m, _p, cb) => cb(null, ['x']) };
+      };
+    const api = {
+      createClient: fake('createClient'),
+      createSecureClient: fake('createSecureClient'),
     };
-    const api = { createClient: fake('createClient'), createSecureClient: fake('createSecureClient') };
     // ensureTransport() imports homematic-xmlrpc lazily, so doMock applies.
     vi.doMock('homematic-xmlrpc', () => ({ ...api, default: api }));
     const c = new RpcClient({
-      interfaceId: 'HmIP-RF', host: '10.0.0.2', callbackUrl: 'http://cb', callbackId: 'id',
-      log: new PrefixedLogger(makeLog(), 'rpc-test'), skipProbe: true, tls, ...(auth ? { auth } : {}),
+      interfaceId: 'HmIP-RF',
+      host: '10.0.0.2',
+      callbackUrl: 'http://cb',
+      callbackId: 'id',
+      log: new PrefixedLogger(makeLog(), 'rpc-test'),
+      skipProbe: true,
+      tls,
+      ...(auth ? { auth } : {}),
     });
     expect(await c.listMethods()).toEqual(['x']);
     vi.doUnmock('homematic-xmlrpc');
@@ -207,7 +228,10 @@ describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
     const seen = await capture(true, { username: 'u', password: 'p' });
     expect(seen.factory).toBe('createSecureClient');
     expect(seen.opts).toEqual({
-      host: '10.0.0.2', port: 42010, rejectUnauthorized: false, basic_auth: { user: 'u', pass: 'p' },
+      host: '10.0.0.2',
+      port: 42010,
+      rejectUnauthorized: false,
+      basic_auth: { user: 'u', pass: 'p' },
     });
   });
 });
@@ -217,8 +241,13 @@ describe('RpcClient.getParamsetDescription', () => {
     const t = makeTransport();
     const c = makeClient(t);
     vi.mocked(t.call).mockResolvedValueOnce({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
-    expect(await c.getParamsetDescription('OEQ0000001:1')).toEqual({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
-    expect(vi.mocked(t.call).mock.calls.at(-1)).toEqual(['getParamsetDescription', ['OEQ0000001:1', 'VALUES']]);
+    expect(await c.getParamsetDescription('OEQ0000001:1')).toEqual({
+      STATE: { TYPE: 'BOOL', OPERATIONS: 7 },
+    });
+    expect(vi.mocked(t.call).mock.calls.at(-1)).toEqual([
+      'getParamsetDescription',
+      ['OEQ0000001:1', 'VALUES'],
+    ]);
     vi.mocked(t.call).mockResolvedValueOnce([]);
     expect(await c.getParamsetDescription('OEQ0000001:1')).toEqual({});
   });

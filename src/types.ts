@@ -129,8 +129,8 @@ export interface RawConfig extends PlatformConfig {
 
 /** Discovery result from the CCU (XML-RPC `listDevices`). */
 export interface CcuDevice {
-  address: string;     // e.g. 000123 (no interface prefix)
-  type: string;        // e.g. HmIP-PSM
+  address: string; // e.g. 000123 (no interface prefix)
+  type: string; // e.g. HmIP-PSM
   /** Placeholder name (`TYPE ADDRESS`); XML-RPC carries no names. */
   name: string;
   interface: CcuInterfaceId;
@@ -142,7 +142,7 @@ export interface CcuChannel {
   /** Address commands go to, e.g. 000123:3. */
   address: string;
   index: number;
-  type: string;        // e.g. SWITCH_VIRTUAL_RECEIVER
+  type: string; // e.g. SWITCH_VIRTUAL_RECEIVER
   name: string;
   /**
    * HmIP transmitter whose state (STATE / LEVEL / ACTIVITY_STATE) to read,

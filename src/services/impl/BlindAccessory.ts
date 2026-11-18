@@ -68,18 +68,27 @@ class BlindHandler extends AccessoryBase implements ChannelService {
     this.service = service;
     const dir = (d: Direction): Direction => (this.invert ? (-d as Direction) : d);
 
-    service.getCharacteristic(this.Characteristic.CurrentPosition)
+    service
+      .getCharacteristic(this.Characteristic.CurrentPosition)
       .onGet(this.wrapGet<number>(() => (this.known ? this.current : this.unknown())));
 
-    service.getCharacteristic(this.Characteristic.TargetPosition)
+    service
+      .getCharacteristic(this.Characteristic.TargetPosition)
       .onGet(this.wrapGet<number>(() => (this.known ? this.target : this.unknown())))
-      .onSet(this.wrapSet<number>(async (value) => {
-        const pct = normalizeLevelToPercent(value) ?? 0;
-        this.onCommand(pct);
-        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(this.invert ? 100 - pct : pct));
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          const pct = normalizeLevelToPercent(value) ?? 0;
+          this.onCommand(pct);
+          await this.ccu.setValue(
+            this.channelAddress,
+            'LEVEL',
+            percentToLevelFraction(this.invert ? 100 - pct : pct),
+          );
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.PositionState)
+    service
+      .getCharacteristic(this.Characteristic.PositionState)
       .onGet(this.wrapGet<number>(() => this.positionState()));
 
     // Start value and events; the start value just sets the position.
@@ -243,8 +252,13 @@ export const blindService: ServiceDefinition = {
   channelTypes: BLIND_CHANNEL_TYPES,
   priority: 10,
   options: [
-    { key: 'invert', label: 'Invert (awning)', type: 'boolean', default: false,
-      hint: 'HomeKit 100 % = CCU level 0. For awnings that are open when the CCU says closed.' },
+    {
+      key: 'invert',
+      label: 'Invert (awning)',
+      type: 'boolean',
+      default: false,
+      hint: 'HomeKit 100 % = CCU level 0. For awnings that are open when the CCU says closed.',
+    },
   ],
   build: (ctx: ServiceContext) => new BlindHandler(ctx),
 };

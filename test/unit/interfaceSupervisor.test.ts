@@ -28,10 +28,14 @@ function fakeCcu(initial: Phase = 'up') {
   };
   const fail = (): Error | undefined => {
     switch (ccu.phase) {
-      case 'timeout': return new Error('ping failed: timeout after 15000 ms');
-      case 'refused': return new Error('ping failed: connect ECONNREFUSED 10.0.0.2:2010');
-      case 'booting': return new Error('ping failed: Invalid XML-RPC message');
-      default: return undefined;
+      case 'timeout':
+        return new Error('ping failed: timeout after 15000 ms');
+      case 'refused':
+        return new Error('ping failed: connect ECONNREFUSED 10.0.0.2:2010');
+      case 'booting':
+        return new Error('ping failed: Invalid XML-RPC message');
+      default:
+        return undefined;
     }
   };
   const client = {
@@ -53,7 +57,9 @@ function fakeCcu(initial: Phase = 'up') {
       ccu.registered = true;
       ccu.phase = 'up';
     }),
-    unsubscribe: vi.fn(async () => { ccu.registered = false; }),
+    unsubscribe: vi.fn(async () => {
+      ccu.registered = false;
+    }),
     close: vi.fn(async () => undefined),
   };
   return { ccu, client: client as unknown as RpcClient & typeof client };
@@ -67,7 +73,12 @@ function makeSup(client: RpcClient, ccu: { sup?: InterfaceSupervisor }) {
     error: vi.spyOn(log, 'error'),
     debug: vi.spyOn(log, 'debug'),
   };
-  const sup = new InterfaceSupervisor({ client, log, pingId: 'me', callbackUrl: 'http://10.0.0.13:9875' });
+  const sup = new InterfaceSupervisor({
+    client,
+    log,
+    pingId: 'me',
+    callbackUrl: 'http://10.0.0.13:9875',
+  });
   ccu.sup = sup;
   const states: InterfaceState[] = [];
   const subs: string[] = [];
@@ -112,8 +123,12 @@ describe('InterfaceSupervisor', () => {
     await seconds(30);
     expect(sup.state).toBe('DISCONNECTED');
     // still one warning for the whole outage (log on state change only)
-    expect(spies.warn.mock.calls.filter((c) => String(c[0]).includes('unreachable'))).toHaveLength(1);
-    expect(spies.debug.mock.calls.some((c) => String(c[2]).includes('Invalid XML-RPC message'))).toBe(true);
+    expect(spies.warn.mock.calls.filter((c) => String(c[0]).includes('unreachable'))).toHaveLength(
+      1,
+    );
+    expect(
+      spies.debug.mock.calls.some((c) => String(c[2]).includes('Invalid XML-RPC message')),
+    ).toBe(true);
 
     ccu.phase = 'upNoRegistration'; // ping answers again, registration lost
     await seconds(15); // retry every 15 s after a first connect
@@ -132,7 +147,9 @@ describe('InterfaceSupervisor', () => {
     await seconds(95);
     expect(states).toEqual(['CONNECTING', 'CONNECTED', 'STALE', 'CONNECTED']);
     expect(subs).toEqual(['initial', 'stale']);
-    expect(spies.warn.mock.calls.some((c) => String(c[0]).includes('no PONG and no events'))).toBe(true);
+    expect(spies.warn.mock.calls.some((c) => String(c[0]).includes('no PONG and no events'))).toBe(
+      true,
+    );
   });
 
   it('other callbacks (events, foreign PONGs) count as signs of life', async () => {
@@ -218,14 +235,21 @@ describe('InterfaceSupervisor', () => {
     const { sup, spies } = makeSup(client, ccu);
     await sup.start();
     let release: () => void = () => undefined;
-    client.ping.mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
+    client.ping.mockImplementationOnce(
+      () =>
+        new Promise<void>((r) => {
+          release = r;
+        }),
+    );
     await seconds(65); // ping hangs
     await seconds(10); // ticks while busy are skipped
     expect(client.ping).toHaveBeenCalledTimes(1);
     release();
     await seconds(1);
     // A throwing tick is caught and logged at debug level.
-    vi.spyOn(sup as unknown as { tick(): Promise<void> }, 'tick').mockRejectedValueOnce(new Error('tick boom'));
+    vi.spyOn(sup as unknown as { tick(): Promise<void> }, 'tick').mockRejectedValueOnce(
+      new Error('tick boom'),
+    );
     await seconds(5);
     expect(spies.debug.mock.calls.some((c) => String(c[1]).includes('tick boom'))).toBe(true);
   });

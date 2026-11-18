@@ -104,12 +104,9 @@ export function makeServiceStub(uuid: string, displayName = '', subtype?: string
   // instance (or a constructor). The stub records it under its UUID and
   // also wraps it as a CharacteristicStub for downstream introspection.
   s.addCharacteristic.mockImplementation((char: { UUID?: string } | (new () => unknown)) => {
-    const instance = typeof char === 'function'
-      ? new (char as new () => { UUID?: string })()
-      : char;
-    const cuuid = (instance as { UUID?: string }).UUID
-      ?? (char as { UUID?: string }).UUID
-      ?? '';
+    const instance =
+      typeof char === 'function' ? new (char as new () => { UUID?: string })() : char;
+    const cuuid = (instance as { UUID?: string }).UUID ?? (char as { UUID?: string }).UUID ?? '';
     let stub = s.characteristics.get(cuuid);
     if (!stub) {
       stub = makeCharacteristicStub(cuuid);
@@ -122,7 +119,7 @@ export function makeServiceStub(uuid: string, displayName = '', subtype?: string
     return stub;
   });
   s.testCharacteristic.mockImplementation((char: { UUID?: string } | string) => {
-    const cuuid = typeof char === 'string' ? char : char.UUID ?? '';
+    const cuuid = typeof char === 'string' ? char : (char.UUID ?? '');
     return s.characteristics.has(cuuid);
   });
   return s;
@@ -148,7 +145,10 @@ function makeServiceClass(name: string): WithUUID<typeof Service> {
   return S as unknown as WithUUID<typeof Service>;
 }
 
-function makeCharacteristicClass(name: string, extra: Record<string, unknown> = {}): WithUUID<typeof Characteristic> {
+function makeCharacteristicClass(
+  name: string,
+  extra: Record<string, unknown> = {},
+): WithUUID<typeof Characteristic> {
   class C {
     static UUID = `char:${name}`;
     UUID = `char:${name}`;
@@ -174,10 +174,20 @@ class CharacteristicRoot {
     this.UUID = uuid ?? '';
     this.props = props ?? {};
   }
-  onGet(): this { return this; }
-  onSet(): this { return this; }
-  setProps(p: Record<string, unknown>): this { Object.assign(this.props, p); return this; }
-  updateValue(v: unknown): this { this.value = v; return this; }
+  onGet(): this {
+    return this;
+  }
+  onSet(): this {
+    return this;
+  }
+  setProps(p: Record<string, unknown>): this {
+    Object.assign(this.props, p);
+    return this;
+  }
+  updateValue(v: unknown): this {
+    this.value = v;
+    return this;
+  }
 }
 
 export function makeHapStub() {
@@ -223,30 +233,70 @@ export function makeHapStub() {
       TargetHeatingCoolingState: makeCharacteristicClass('TargetHeatingCoolingState'),
       TemperatureDisplayUnits: makeCharacteristicClass('TemperatureDisplayUnits', { CELSIUS: 0 }),
       MotionDetected: makeCharacteristicClass('MotionDetected'),
-      ContactSensorState: makeCharacteristicClass('ContactSensorState', { CONTACT_DETECTED: 0, CONTACT_NOT_DETECTED: 1 }),
-      SmokeDetected: makeCharacteristicClass('SmokeDetected', { SMOKE_NOT_DETECTED: 0, SMOKE_DETECTED: 1 }),
-      LeakDetected: makeCharacteristicClass('LeakDetected', { LEAK_NOT_DETECTED: 0, LEAK_DETECTED: 1 }),
+      ContactSensorState: makeCharacteristicClass('ContactSensorState', {
+        CONTACT_DETECTED: 0,
+        CONTACT_NOT_DETECTED: 1,
+      }),
+      SmokeDetected: makeCharacteristicClass('SmokeDetected', {
+        SMOKE_NOT_DETECTED: 0,
+        SMOKE_DETECTED: 1,
+      }),
+      LeakDetected: makeCharacteristicClass('LeakDetected', {
+        LEAK_NOT_DETECTED: 0,
+        LEAK_DETECTED: 1,
+      }),
       CurrentRelativeHumidity: makeCharacteristicClass('CurrentRelativeHumidity'),
       CurrentAmbientLightLevel: makeCharacteristicClass('CurrentAmbientLightLevel'),
-      LockCurrentState: makeCharacteristicClass('LockCurrentState', { SECURED: 1, UNSECURED: 0, JAMMED: 2, UNKNOWN: 3 }),
+      LockCurrentState: makeCharacteristicClass('LockCurrentState', {
+        SECURED: 1,
+        UNSECURED: 0,
+        JAMMED: 2,
+        UNKNOWN: 3,
+      }),
       LockTargetState: makeCharacteristicClass('LockTargetState', { SECURED: 1, UNSECURED: 0 }),
-      CurrentDoorState: makeCharacteristicClass('CurrentDoorState', { OPEN: 0, CLOSED: 1, OPENING: 2, CLOSING: 3, STOPPED: 4 }),
+      CurrentDoorState: makeCharacteristicClass('CurrentDoorState', {
+        OPEN: 0,
+        CLOSED: 1,
+        OPENING: 2,
+        CLOSING: 3,
+        STOPPED: 4,
+      }),
       TargetDoorState: makeCharacteristicClass('TargetDoorState', { OPEN: 0, CLOSED: 1 }),
       ObstructionDetected: makeCharacteristicClass('ObstructionDetected'),
-      ProgrammableSwitchEvent: makeCharacteristicClass('ProgrammableSwitchEvent', { SINGLE_PRESS: 0, DOUBLE_PRESS: 1, LONG_PRESS: 2 }),
-      StatusLowBattery: makeCharacteristicClass('StatusLowBattery', { BATTERY_LEVEL_NORMAL: 0, BATTERY_LEVEL_LOW: 1 }),
+      ProgrammableSwitchEvent: makeCharacteristicClass('ProgrammableSwitchEvent', {
+        SINGLE_PRESS: 0,
+        DOUBLE_PRESS: 1,
+        LONG_PRESS: 2,
+      }),
+      StatusLowBattery: makeCharacteristicClass('StatusLowBattery', {
+        BATTERY_LEVEL_NORMAL: 0,
+        BATTERY_LEVEL_LOW: 1,
+      }),
       BatteryLevel: makeCharacteristicClass('BatteryLevel'),
-      ChargingState: makeCharacteristicClass('ChargingState', { NOT_CHARGING: 0, CHARGING: 1, NOT_CHARGEABLE: 2 }),
+      ChargingState: makeCharacteristicClass('ChargingState', {
+        NOT_CHARGING: 0,
+        CHARGING: 1,
+        NOT_CHARGEABLE: 2,
+      }),
       StatusFault: makeCharacteristicClass('StatusFault', { NO_FAULT: 0, GENERAL_FAULT: 1 }),
       StatusTampered: makeCharacteristicClass('StatusTampered', { NOT_TAMPERED: 0, TAMPERED: 1 }),
       Active: makeCharacteristicClass('Active', { INACTIVE: 0, ACTIVE: 1 }),
       InUse: makeCharacteristicClass('InUse', { NOT_IN_USE: 0, IN_USE: 1 }),
-      ValveType: makeCharacteristicClass('ValveType', { GENERIC_VALVE: 0, IRRIGATION: 1, SHOWER_HEAD: 2, WATER_FAUCET: 3 }),
+      ValveType: makeCharacteristicClass('ValveType', {
+        GENERIC_VALVE: 0,
+        IRRIGATION: 1,
+        SHOWER_HEAD: 2,
+        WATER_FAUCET: 3,
+      }),
       SetDuration: makeCharacteristicClass('SetDuration'),
       RemainingDuration: makeCharacteristicClass('RemainingDuration'),
       IsConfigured: makeCharacteristicClass('IsConfigured', { NOT_CONFIGURED: 0, CONFIGURED: 1 }),
       ServiceLabelIndex: makeCharacteristicClass('ServiceLabelIndex'),
-      ProgramMode: makeCharacteristicClass('ProgramMode', { NO_PROGRAM_SCHEDULED: 0, PROGRAM_SCHEDULED: 1, PROGRAM_SCHEDULED_MANUAL_MODE_: 2 }),
+      ProgramMode: makeCharacteristicClass('ProgramMode', {
+        NO_PROGRAM_SCHEDULED: 0,
+        PROGRAM_SCHEDULED: 1,
+        PROGRAM_SCHEDULED_MANUAL_MODE_: 2,
+      }),
       Hue: makeCharacteristicClass('Hue'),
       Saturation: makeCharacteristicClass('Saturation'),
       ColorTemperature: makeCharacteristicClass('ColorTemperature'),
@@ -287,7 +337,11 @@ export interface AccessoryStub<TContext = unknown> {
   removeService: Mock;
 }
 
-export function makeAccessory<TContext>(uuid: string, displayName: string, context: TContext): AccessoryStub<TContext> {
+export function makeAccessory<TContext>(
+  uuid: string,
+  displayName: string,
+  context: TContext,
+): AccessoryStub<TContext> {
   const a: AccessoryStub<TContext> = {
     UUID: uuid,
     displayName,

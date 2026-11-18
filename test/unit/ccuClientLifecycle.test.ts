@@ -34,9 +34,27 @@ function makeCcu(overrides: Partial<RawConfig> = {}): CcuClient {
 }
 
 const BIDCOS_LIST: RpcDeviceDescription[] = [
-  { ADDRESS: 'OEQ0000001', TYPE: 'HM-LC-Sw4-DR-2', PARENT: '', FIRMWARE: '2.4', CHILDREN: ['OEQ0000001:0', 'OEQ0000001:1'] },
-  { ADDRESS: 'OEQ0000001:1', TYPE: 'SWITCH', PARENT: 'OEQ0000001', PARENT_TYPE: 'HM-LC-Sw4-DR-2', INDEX: 1 },
-  { ADDRESS: 'OEQ0000001:0', TYPE: 'MAINTENANCE', PARENT: 'OEQ0000001', PARENT_TYPE: 'HM-LC-Sw4-DR-2', INDEX: 0 },
+  {
+    ADDRESS: 'OEQ0000001',
+    TYPE: 'HM-LC-Sw4-DR-2',
+    PARENT: '',
+    FIRMWARE: '2.4',
+    CHILDREN: ['OEQ0000001:0', 'OEQ0000001:1'],
+  },
+  {
+    ADDRESS: 'OEQ0000001:1',
+    TYPE: 'SWITCH',
+    PARENT: 'OEQ0000001',
+    PARENT_TYPE: 'HM-LC-Sw4-DR-2',
+    INDEX: 1,
+  },
+  {
+    ADDRESS: 'OEQ0000001:0',
+    TYPE: 'MAINTENANCE',
+    PARENT: 'OEQ0000001',
+    PARENT_TYPE: 'HM-LC-Sw4-DR-2',
+    INDEX: 0,
+  },
 ];
 const HMIP_LIST: RpcDeviceDescription[] = [
   { ADDRESS: '0008DBE9971A0F', TYPE: 'HmIP-FROLL', PARENT: '' },
@@ -47,12 +65,18 @@ describe('toDevices', () => {
   it('groups channels under their device, sorted by index, with placeholder names', () => {
     const [d] = toDevices(BIDCOS_LIST, 'BidCos-RF');
     expect(d).toMatchObject({
-      address: 'OEQ0000001', type: 'HM-LC-Sw4-DR-2', name: 'HM-LC-Sw4-DR-2 OEQ0000001',
-      interface: 'BidCos-RF', firmware: '2.4',
+      address: 'OEQ0000001',
+      type: 'HM-LC-Sw4-DR-2',
+      name: 'HM-LC-Sw4-DR-2 OEQ0000001',
+      interface: 'BidCos-RF',
+      firmware: '2.4',
     });
     expect(d!.channels.map((c) => c.index)).toEqual([0, 1]);
     expect(d!.channels[1]).toEqual({
-      address: 'OEQ0000001:1', index: 1, type: 'SWITCH', name: 'HM-LC-Sw4-DR-2 OEQ0000001:1',
+      address: 'OEQ0000001:1',
+      index: 1,
+      type: 'SWITCH',
+      name: 'HM-LC-Sw4-DR-2 OEQ0000001:1',
     });
   });
 
@@ -63,13 +87,16 @@ describe('toDevices', () => {
   });
 
   it('skips junk entries and orphan channels', () => {
-    const out = toDevices([
-      null as unknown as RpcDeviceDescription,
-      { ADDRESS: '', TYPE: 'X' },
-      { ADDRESS: 'ORPHAN:1', TYPE: 'SWITCH', PARENT: 'ORPHAN' },
-      { ADDRESS: 'NOTYPE' } as RpcDeviceDescription,
-      { ADDRESS: 'NOTYPE:x', PARENT: 'NOTYPE' } as RpcDeviceDescription,
-    ], 'BidCos-RF');
+    const out = toDevices(
+      [
+        null as unknown as RpcDeviceDescription,
+        { ADDRESS: '', TYPE: 'X' },
+        { ADDRESS: 'ORPHAN:1', TYPE: 'SWITCH', PARENT: 'ORPHAN' },
+        { ADDRESS: 'NOTYPE' } as RpcDeviceDescription,
+        { ADDRESS: 'NOTYPE:x', PARENT: 'NOTYPE' } as RpcDeviceDescription,
+      ],
+      'BidCos-RF',
+    );
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ address: 'NOTYPE', type: '', name: 'Device NOTYPE' });
     expect(out[0]!.channels[0]).toMatchObject({ index: 0, type: '', name: ' NOTYPE:x' });
@@ -84,14 +111,19 @@ describe('CcuClient.listDevices (XML-RPC)', () => {
     });
     const devices = await ccu.listDevices();
     expect(devices.map((d) => `${d.interface}:${d.address}`)).toEqual([
-      'BidCos-RF:OEQ0000001', 'HmIP-RF:0008DBE9971A0F',
+      'BidCos-RF:OEQ0000001',
+      'HmIP-RF:0008DBE9971A0F',
     ]);
   });
 
   it('skips a failing interface but rejects when all fail', async () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
-    const spy = vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (this: RpcClient) {
-      return this.interfaceId === 'HmIP-RF' ? Promise.reject(new Error('down')) : Promise.resolve(BIDCOS_LIST);
+    const spy = vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (
+      this: RpcClient,
+    ) {
+      return this.interfaceId === 'HmIP-RF'
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve(BIDCOS_LIST);
     });
     expect(await ccu.listDevices()).toHaveLength(1);
     spy.mockRejectedValue(new Error('down'));
@@ -105,9 +137,14 @@ describe('CcuClient.listDevices (XML-RPC)', () => {
 
 describe('CcuClient.probeInterfaces', () => {
   it('reports system.listMethods per interface', async () => {
-    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true }, interfacePorts: { 'HmIP-RF': 42010 } });
+    const ccu = makeCcu({
+      interfaces: { bidcosRf: true, hmIpRf: true },
+      interfacePorts: { 'HmIP-RF': 42010 },
+    });
     vi.spyOn(RpcClient.prototype, 'listMethods').mockImplementation(function (this: RpcClient) {
-      return this.interfaceId === 'BidCos-RF' ? Promise.resolve(['a', 'b']) : Promise.reject(new Error('ECONNREFUSED'));
+      return this.interfaceId === 'BidCos-RF'
+        ? Promise.resolve(['a', 'b'])
+        : Promise.reject(new Error('ECONNREFUSED'));
     });
     expect(await ccu.probeInterfaces()).toEqual([
       { interfaceId: 'BidCos-RF', port: 2001, ok: true, methods: 2 },
@@ -130,17 +167,22 @@ describe('CcuClient start/stop', () => {
   });
 
   it('subscribes every enabled interface, with port overrides, and unsubscribes on stop', async () => {
-    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true }, interfacePorts: { 'BidCos-RF': 42001 } });
+    const ccu = makeCcu({
+      interfaces: { bidcosRf: true, hmIpRf: true },
+      interfacePorts: { 'BidCos-RF': 42001 },
+    });
     vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
     vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
     vi.spyOn(RpcClient.prototype, 'listDevices').mockResolvedValue([]);
     const sub = vi.spyOn(RpcClient.prototype, 'subscribe').mockResolvedValue(undefined);
     const unsub = vi.spyOn(RpcClient.prototype, 'unsubscribe').mockResolvedValue(undefined);
     const infos: string[] = [];
-    vi.spyOn(ccu['log'] as unknown as { info: (...args: unknown[]) => void }, 'info')
-      .mockImplementation((fmt: string, ...args: unknown[]) => {
-        infos.push([fmt, ...args].map(String).join(' '));
-      });
+    vi.spyOn(
+      ccu['log'] as unknown as { info: (...args: unknown[]) => void },
+      'info',
+    ).mockImplementation((fmt: string, ...args: unknown[]) => {
+      infos.push([fmt, ...args].map(String).join(' '));
+    });
     await ccu.start();
     expect(sub).toHaveBeenCalledTimes(2);
     expect(infos.join('\n')).toMatch(/Using XML-RPC port %d for %s%s 42001 BidCos-RF $/m);
@@ -153,10 +195,16 @@ describe('CcuClient start/stop', () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false }, useTls: true });
     vi.spyOn(ccu.eventServer, 'start').mockResolvedValue(undefined);
     vi.spyOn(ccu.eventServer, 'stop').mockResolvedValue(undefined);
-    vi.spyOn(RpcClient.prototype, 'subscribe').mockRejectedValue(new Error('init failed: connect ECONNREFUSED'));
+    vi.spyOn(RpcClient.prototype, 'subscribe').mockRejectedValue(
+      new Error('init failed: connect ECONNREFUSED'),
+    );
     const infos: string[] = [];
-    vi.spyOn(ccu['log'] as unknown as { info: (...args: unknown[]) => void }, 'info')
-      .mockImplementation((...args: unknown[]) => { infos.push(args.map(String).join(' ')); });
+    vi.spyOn(
+      ccu['log'] as unknown as { info: (...args: unknown[]) => void },
+      'info',
+    ).mockImplementation((...args: unknown[]) => {
+      infos.push(args.map(String).join(' '));
+    });
     const states: string[] = [];
     ccu.on('interfaceState', (id: string, state: string) => states.push(`${id}:${state}`));
     await expect(ccu.start()).resolves.toBeUndefined();
@@ -178,7 +226,9 @@ describe('CcuClient resolveCallbackHost', () => {
   });
 
   it('falls back when host is 0.0.0.0', () => {
-    const ccu = makeCcu({ eventServer: { host: '0.0.0.0', callbackHost: '127.0.0.1', port: 9876 } });
+    const ccu = makeCcu({
+      eventServer: { host: '0.0.0.0', callbackHost: '127.0.0.1', port: 9876 },
+    });
     const host = (ccu as unknown as { resolveCallbackHost(): string }).resolveCallbackHost();
     expect(typeof host).toBe('string');
     expect(host.length).toBeGreaterThan(0);
@@ -190,9 +240,14 @@ describe('CcuClient address → interface routing', () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
     vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (this: RpcClient) {
       // Deliberately swapped: the map, not the address shape, decides.
-      return Promise.resolve(this.interfaceId === 'BidCos-RF'
-        ? [{ ADDRESS: '0008DBE9971A0F', TYPE: 'X', PARENT: '' }, { ADDRESS: '0008DBE9971A0F:4', TYPE: 'Y', PARENT: '0008DBE9971A0F' }]
-        : []);
+      return Promise.resolve(
+        this.interfaceId === 'BidCos-RF'
+          ? [
+              { ADDRESS: '0008DBE9971A0F', TYPE: 'X', PARENT: '' },
+              { ADDRESS: '0008DBE9971A0F:4', TYPE: 'Y', PARENT: '0008DBE9971A0F' },
+            ]
+          : [],
+      );
     });
     await ccu.listDevices();
     const calls: string[] = [];
@@ -222,7 +277,9 @@ describe('CcuClient address → interface routing', () => {
 
   it('rejects addresses on a disabled interface', async () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false } });
-    await expect(ccu.setValue('000A0000000B02:1', 'STATE', true)).rejects.toThrow(/HmIP-RF is not enabled/);
+    await expect(ccu.setValue('000A0000000B02:1', 'STATE', true)).rejects.toThrow(
+      /HmIP-RF is not enabled/,
+    );
   });
 });
 
@@ -250,11 +307,25 @@ describe('CcuClient supervision wiring', () => {
     // Keep both alive for 3 minutes: BidCos by own PONG + CCU callbacks,
     // HmIP by a foreign client's PONG and a regular event.
     for (let t = 0; t < 180; t += 30) {
-      fire(ccu, { callbackId: 'homebridge-hap-homematic:BidCos-RF', channelAddress: 'CENTRAL', datapoint: 'PONG',
-        value: 'homebridge-hap-homematic:BidCos-RF' });
+      fire(ccu, {
+        callbackId: 'homebridge-hap-homematic:BidCos-RF',
+        channelAddress: 'CENTRAL',
+        datapoint: 'PONG',
+        value: 'homebridge-hap-homematic:BidCos-RF',
+      });
       activity(ccu, 'newDevices', 'homebridge-hap-homematic:BidCos-RF');
-      fire(ccu, { callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'CENTRAL:0', datapoint: 'PONG', value: 'mb' });
-      fire(ccu, { callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'ABC0000002:1', datapoint: 'STATE', value: true });
+      fire(ccu, {
+        callbackId: 'homebridge-hap-homematic:HmIP-RF',
+        channelAddress: 'CENTRAL:0',
+        datapoint: 'PONG',
+        value: 'mb',
+      });
+      fire(ccu, {
+        callbackId: 'homebridge-hap-homematic:HmIP-RF',
+        channelAddress: 'ABC0000002:1',
+        datapoint: 'STATE',
+        value: true,
+      });
       await vi.advanceTimersByTimeAsync(30_000);
     }
     expect(listener).toHaveBeenCalledTimes(6);
@@ -263,11 +334,21 @@ describe('CcuClient supervision wiring', () => {
     // Unknown callback ids and event activity are ignored by the activity hook.
     activity(ccu, 'event', 'homebridge-hap-homematic:HmIP-RF');
     activity(ccu, 'listDevices', 'someone-else');
-    fire(ccu, { callbackId: 'someone-else', channelAddress: 'CENTRAL', datapoint: 'PONG', value: 'x' });
+    fire(ccu, {
+      callbackId: 'someone-else',
+      channelAddress: 'CENTRAL',
+      datapoint: 'PONG',
+      value: 'x',
+    });
 
     // Silence → both STALE → init again.
     await vi.advanceTimersByTimeAsync(100_000);
-    expect(subscribed).toEqual(['BidCos-RF:initial', 'HmIP-RF:initial', 'BidCos-RF:stale', 'HmIP-RF:stale']);
+    expect(subscribed).toEqual([
+      'BidCos-RF:initial',
+      'HmIP-RF:initial',
+      'BidCos-RF:stale',
+      'HmIP-RF:stale',
+    ]);
     await ccu.stop();
   });
 });
@@ -287,19 +368,29 @@ describe('CcuClient Phase 3 additions', () => {
     });
     expect(ccu.enabledInterfaces()).toEqual(['BidCos-RF', 'HmIP-RF']);
     const bid = inner(ccu, 'BidCos-RF');
-    expect(bid).toMatchObject({ callbackUrl: 'http://192.168.0.13:9875', port: 42001, tls: true, auth: { username: 'u', password: 'p' } });
+    expect(bid).toMatchObject({
+      callbackUrl: 'http://192.168.0.13:9875',
+      port: 42001,
+      tls: true,
+      auth: { username: 'u', password: 'p' },
+    });
     expect(inner(ccu, 'HmIP-RF').port).toBe(43010);
   });
 
   it('sends no auth while rpcAuth is disabled', () => {
-    const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: false }, rpcAuth: { enabled: false, username: 'u', password: 'p' } });
+    const ccu = makeCcu({
+      interfaces: { bidcosRf: true, hmIpRf: false },
+      rpcAuth: { enabled: false, username: 'u', password: 'p' },
+    });
     expect(inner(ccu, 'BidCos-RF').auth).toBeUndefined();
   });
 
   it('listRawDevices reports results and errors per interface', async () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
     vi.spyOn(RpcClient.prototype, 'listDevices').mockImplementation(function (this: RpcClient) {
-      return this.interfaceId === 'BidCos-RF' ? Promise.resolve(BIDCOS_LIST) : Promise.reject(new Error('down'));
+      return this.interfaceId === 'BidCos-RF'
+        ? Promise.resolve(BIDCOS_LIST)
+        : Promise.reject(new Error('down'));
     });
     const { results, errors } = await ccu.listRawDevices();
     expect([...results.keys()]).toEqual(['BidCos-RF']);
@@ -310,7 +401,9 @@ describe('CcuClient Phase 3 additions', () => {
     const ccu = makeCcu({ interfaces: { bidcosRf: true, hmIpRf: true } });
     ccu.setInterfaceFor('ABC0000009', 'HmIP-RF'); // BidCos-shaped serial pinned to HmIP
     const seen: string[] = [];
-    vi.spyOn(RpcClient.prototype, 'getParamsetDescription').mockImplementation(function (this: RpcClient) {
+    vi.spyOn(RpcClient.prototype, 'getParamsetDescription').mockImplementation(function (
+      this: RpcClient,
+    ) {
       seen.push(this.interfaceId);
       return Promise.resolve({});
     });

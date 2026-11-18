@@ -4,10 +4,7 @@ import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
 
-const LEAK_CHANNEL_TYPES = [
-  'WATERDETECTIONSENSOR',
-  'TILT_SENSOR',
-];
+const LEAK_CHANNEL_TYPES = ['WATERDETECTIONSENSOR', 'TILT_SENSOR'];
 
 class LeakHandler extends AccessoryBase implements ChannelService {
   private detected = false;
@@ -15,7 +12,8 @@ class LeakHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     const service = this.getOrAddService(this.Service.LeakSensor, channel.name);
 
-    service.getCharacteristic(this.Characteristic.LeakDetected)
+    service
+      .getCharacteristic(this.Characteristic.LeakDetected)
       .onGet(this.wrapGet<number>(() => this.toHapValue()));
 
     this.registerListener(channel.address, 'STATE', (raw) => {

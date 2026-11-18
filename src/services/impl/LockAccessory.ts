@@ -4,10 +4,7 @@ import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
 
-const LOCK_CHANNEL_TYPES = [
-  'KEYMATIC',
-  'LOCK_VIRTUAL_RECEIVER',
-];
+const LOCK_CHANNEL_TYPES = ['KEYMATIC', 'LOCK_VIRTUAL_RECEIVER'];
 
 class LockHandler extends AccessoryBase implements ChannelService {
   private channelAddress = '';
@@ -26,17 +23,21 @@ class LockHandler extends AccessoryBase implements ChannelService {
     this.channelAddress = channel.address;
     const service = this.getOrAddService(this.Service.LockMechanism, channel.name);
 
-    service.getCharacteristic(this.Characteristic.LockCurrentState)
+    service
+      .getCharacteristic(this.Characteristic.LockCurrentState)
       .onGet(this.wrapGet<number>(() => this.current));
 
-    service.getCharacteristic(this.Characteristic.LockTargetState)
+    service
+      .getCharacteristic(this.Characteristic.LockTargetState)
       .onGet(this.wrapGet<number>(() => this.target))
-      .onSet(this.wrapSet<number>(async (value) => {
-        // CCU `STATE`: true = unlocked, false = locked. Inverted vs HomeKit.
-        this.target = value;
-        const stateLocked = value === this.Characteristic.LockTargetState.SECURED;
-        await this.ccu.setValue(this.channelAddress, 'STATE', !stateLocked);
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          // CCU `STATE`: true = unlocked, false = locked. Inverted vs HomeKit.
+          this.target = value;
+          const stateLocked = value === this.Characteristic.LockTargetState.SECURED;
+          await this.ccu.setValue(this.channelAddress, 'STATE', !stateLocked);
+        }),
+      );
 
     this.registerListener(this.channelAddress, 'STATE', (raw) => {
       const unlocked = Boolean(raw);

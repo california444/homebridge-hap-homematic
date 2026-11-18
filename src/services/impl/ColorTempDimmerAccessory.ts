@@ -16,10 +16,7 @@ import { normalizeLevelToPercent, percentToLevelFraction } from '../../util/sani
  * The user can override the sibling address in `settings.coltempAddress`
  * if our auto-derivation doesn't fit the device topology.
  */
-const COLOR_TEMP_CHANNEL_TYPES = [
-  'DIMMER_VIRTUAL_RECEIVER',
-  'DUAL_WHITE_BRIGHTNESS',
-];
+const COLOR_TEMP_CHANNEL_TYPES = ['DIMMER_VIRTUAL_RECEIVER', 'DUAL_WHITE_BRIGHTNESS'];
 
 const HK_MIRED_MIN = 140;
 const HK_MIRED_MAX = 500;
@@ -46,42 +43,50 @@ class ColorTempDimmerHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     this.brightnessAddress = channel.address;
     const settings = (this.accessory.context.settings ?? {}) as Record<string, unknown>;
-    const explicit = typeof settings.coltempAddress === 'string' ? settings.coltempAddress : undefined;
+    const explicit =
+      typeof settings.coltempAddress === 'string' ? settings.coltempAddress : undefined;
     this.coltempAddress = explicit ?? deriveColortempAddress(channel.address) ?? '';
 
     const service = this.getOrAddService(this.Service.Lightbulb, channel.name);
 
-    service.getCharacteristic(this.Characteristic.On)
+    service
+      .getCharacteristic(this.Characteristic.On)
       .onGet(this.wrapGet<boolean>(() => this.cachedLevel > 0))
-      .onSet(this.wrapSet<boolean>(async (value) => {
-        const pct = value ? Math.max(this.cachedLevel, 1) : 0;
-        await this.ccu.setValue(this.brightnessAddress, 'LEVEL', percentToLevelFraction(pct));
-      }));
+      .onSet(
+        this.wrapSet<boolean>(async (value) => {
+          const pct = value ? Math.max(this.cachedLevel, 1) : 0;
+          await this.ccu.setValue(this.brightnessAddress, 'LEVEL', percentToLevelFraction(pct));
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.Brightness)
+    service
+      .getCharacteristic(this.Characteristic.Brightness)
       .onGet(this.wrapGet<number>(() => this.cachedLevel))
-      .onSet(this.wrapSet<number>(async (value) => {
-        const pct = normalizeLevelToPercent(value) ?? 0;
-        this.cachedLevel = pct;
-        await this.ccu.setValue(this.brightnessAddress, 'LEVEL', percentToLevelFraction(pct));
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          const pct = normalizeLevelToPercent(value) ?? 0;
+          this.cachedLevel = pct;
+          await this.ccu.setValue(this.brightnessAddress, 'LEVEL', percentToLevelFraction(pct));
+        }),
+      );
 
     if (this.coltempAddress) {
-      service.getCharacteristic(this.Characteristic.ColorTemperature)
+      service
+        .getCharacteristic(this.Characteristic.ColorTemperature)
         .setProps({ minValue: HK_MIRED_MIN, maxValue: HK_MIRED_MAX, minStep: 1 })
         .onGet(this.wrapGet<number>(() => this.cachedMired))
-        .onSet(this.wrapSet<number>(async (value) => {
-          this.cachedMired = value;
-          // HomeKit cool→warm = 140→500. CCU LEVEL: 0.0 = cool, 1.0 = warm
-          // (HM convention — verified in legacy hap-homematic).
-          const fraction = (value - HK_MIRED_MIN) / HK_MIRED_RANGE;
-          await this.ccu.setValue(this.coltempAddress, 'LEVEL', fraction);
-        }));
+        .onSet(
+          this.wrapSet<number>(async (value) => {
+            this.cachedMired = value;
+            // HomeKit cool→warm = 140→500. CCU LEVEL: 0.0 = cool, 1.0 = warm
+            // (HM convention — verified in legacy hap-homematic).
+            const fraction = (value - HK_MIRED_MIN) / HK_MIRED_RANGE;
+            await this.ccu.setValue(this.coltempAddress, 'LEVEL', fraction);
+          }),
+        );
 
       this.registerListener(this.coltempAddress, 'LEVEL', (raw) => {
-        const fraction = typeof raw === 'number'
-          ? raw
-          : Number.parseFloat(String(raw));
+        const fraction = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
         if (!Number.isFinite(fraction)) {
           return;
         }
@@ -91,9 +96,7 @@ class ColorTempDimmerHandler extends AccessoryBase implements ChannelService {
       });
 
       this.readOnRefresh(this.coltempAddress, 'LEVEL', (raw) => {
-        const fraction = typeof raw === 'number'
-          ? raw
-          : Number.parseFloat(String(raw));
+        const fraction = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
         if (!Number.isFinite(fraction)) return;
         const clamped = Math.max(0, Math.min(1, fraction));
         this.cachedMired = HK_MIRED_MIN + clamped * HK_MIRED_RANGE;

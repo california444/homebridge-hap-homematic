@@ -25,7 +25,13 @@ import type { RpcClient } from './RpcClient.js';
 import type { CcuInterfaceId } from '../types.js';
 import type { PrefixedLogger } from '../util/logger.js';
 
-export type InterfaceState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'STALE' | 'DISCONNECTED' | 'STOPPED';
+export type InterfaceState =
+  | 'IDLE'
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'STALE'
+  | 'DISCONNECTED'
+  | 'STOPPED';
 export type SubscribeReason = 'initial' | 'reconnect' | 'stale';
 
 export interface SupervisorTimings {
@@ -120,7 +126,9 @@ export class InterfaceSupervisor extends EventEmitter {
       return;
     }
     this.timer = setInterval(() => {
-      this.tick().catch((err) => this.log.debug('supervisor tick failed: %s', (err as Error).message));
+      this.tick().catch((err) =>
+        this.log.debug('supervisor tick failed: %s', (err as Error).message),
+      );
     }, this.t.tickMs);
     this.timer.unref?.();
     this.setState('CONNECTING');
@@ -150,7 +158,11 @@ export class InterfaceSupervisor extends EventEmitter {
     this.lastActivityAt = now;
     if (kind === 'listDevices') {
       this.handshakeSeen = true;
-      this.log.debug('%s: handshake (listDevices) %d ms after init', this.interfaceId, now - this.initStartedAt);
+      this.log.debug(
+        '%s: handshake (listDevices) %d ms after init',
+        this.interfaceId,
+        now - this.initStartedAt,
+      );
     } else if (kind === 'pong') {
       this.lastPongAt = now;
       this.log.debug('%s: PONG %d ms after ping', this.interfaceId, now - this.lastPingAt);
@@ -190,9 +202,13 @@ export class InterfaceSupervisor extends EventEmitter {
         if (now - this.lastActivityAt >= this.t.staleAfterMs) {
           await this.run(async () => {
             this.setState('STALE');
-            this.log.warn('%s: no PONG and no events for %d s (last PONG %s, subscribed %s); subscribing again',
-              this.interfaceId, Math.round((now - this.lastActivityAt) / 1000),
-              this.ago(this.lastPongAt, now), this.ago(this.subscribedAt, now));
+            this.log.warn(
+              '%s: no PONG and no events for %d s (last PONG %s, subscribed %s); subscribing again',
+              this.interfaceId,
+              Math.round((now - this.lastActivityAt) / 1000),
+              this.ago(this.lastPongAt, now),
+              this.ago(this.subscribedAt, now),
+            );
             await this.subscribe('stale');
           });
           return;
@@ -210,7 +226,11 @@ export class InterfaceSupervisor extends EventEmitter {
     this.lastPingAt = this.now();
     try {
       await this.client.ping(this.pingId);
-      this.log.debug('%s: ping call returned (last callback %s)', this.interfaceId, this.ago(this.lastActivityAt, this.now()));
+      this.log.debug(
+        '%s: ping call returned (last callback %s)',
+        this.interfaceId,
+        this.ago(this.lastActivityAt, this.now()),
+      );
     } catch (err) {
       this.disconnected(err as Error);
     }
@@ -253,8 +273,11 @@ export class InterfaceSupervisor extends EventEmitter {
     const first = this.current !== 'DISCONNECTED';
     this.setState('DISCONNECTED', err.message);
     if (first && /ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH/.test(err.message) && !this.everConnected) {
-      this.log.warn('Hint: check the CCU firewall (Settings → Control Panel → Security → Firewall: '
-        + '"XML-RPC API") or set interfacePorts.%s', this.interfaceId);
+      this.log.warn(
+        'Hint: check the CCU firewall (Settings → Control Panel → Security → Firewall: ' +
+          '"XML-RPC API") or set interfacePorts.%s',
+        this.interfaceId,
+      );
     }
     this.scheduleRetry();
   }
@@ -274,9 +297,12 @@ export class InterfaceSupervisor extends EventEmitter {
     }
     this.handshakeSeen = true; // report once per subscribe
     this.log.error(
-      '%s: init succeeded, but the CCU did not call back within %d s. The CCU cannot reach %s — '
-        + 'check eventServer.callbackHost / port, firewall and Docker port mapping.',
-      this.interfaceId, Math.round(this.t.handshakeTimeoutMs / 1000), this.callbackUrl);
+      '%s: init succeeded, but the CCU did not call back within %d s. The CCU cannot reach %s — ' +
+        'check eventServer.callbackHost / port, firewall and Docker port mapping.',
+      this.interfaceId,
+      Math.round(this.t.handshakeTimeoutMs / 1000),
+      this.callbackUrl,
+    );
   }
 
   private setState(next: InterfaceState, detail?: string): void {
@@ -286,7 +312,11 @@ export class InterfaceSupervisor extends EventEmitter {
     }
     this.current = next;
     if (next === 'CONNECTED') {
-      this.log.info('%s connected%s', this.interfaceId, prev === 'CONNECTING' ? '' : ` (was ${prev})`);
+      this.log.info(
+        '%s connected%s',
+        this.interfaceId,
+        prev === 'CONNECTING' ? '' : ` (was ${prev})`,
+      );
     } else if (next === 'DISCONNECTED') {
       this.log.warn('%s unreachable: %s', this.interfaceId, detail ?? this.lastError);
     } else {

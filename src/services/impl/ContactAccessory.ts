@@ -31,8 +31,12 @@ class ContactHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     const subtype = String(this.accessory.context.subtype ?? 'contact').toLowerCase();
     if (subtype === 'door' || subtype === 'window') {
-      this.log.warn('%s: variant "%s" is no longer supported; using a contact sensor. '
-        + 'Set the variant to "Contact sensor" in the plugin settings.', this.accessory.displayName, subtype);
+      this.log.warn(
+        '%s: variant "%s" is no longer supported; using a contact sensor. ' +
+          'Set the variant to "Contact sensor" in the plugin settings.',
+        this.accessory.displayName,
+        subtype,
+      );
     }
     for (const legacy of [this.Service.Door, this.Service.Window]) {
       const old = this.accessory.getService(legacy);
@@ -52,7 +56,9 @@ class ContactHandler extends AccessoryBase implements ChannelService {
         : this.Characteristic.ContactSensorState.CONTACT_DETECTED;
     };
 
-    service.getCharacteristic(this.Characteristic.ContactSensorState).onGet(this.wrapGet<number>(contactValue));
+    service
+      .getCharacteristic(this.Characteristic.ContactSensorState)
+      .onGet(this.wrapGet<number>(contactValue));
 
     this.need(channel.address, 'STATE', (raw) => {
       this.open = isTrue(raw) !== invert;
@@ -61,9 +67,12 @@ class ContactHandler extends AccessoryBase implements ChannelService {
 
     this.need(channel.address, 'ERROR', (raw) => {
       const tampered = Number(raw) === ERROR_SABOTAGE;
-      service.updateCharacteristic(this.Characteristic.StatusTampered, tampered
-        ? this.Characteristic.StatusTampered.TAMPERED
-        : this.Characteristic.StatusTampered.NOT_TAMPERED);
+      service.updateCharacteristic(
+        this.Characteristic.StatusTampered,
+        tampered
+          ? this.Characteristic.StatusTampered.TAMPERED
+          : this.Characteristic.StatusTampered.NOT_TAMPERED,
+      );
     });
     this.watchFault(service, channel.address);
 
@@ -76,8 +85,6 @@ export const contactService: ServiceDefinition = {
   description: 'Door / window contact sensor',
   channelTypes: CONTACT_CHANNEL_TYPES,
   priority: 10,
-  options: [
-    { key: 'invert', label: 'Invert open / closed', type: 'boolean', default: false },
-  ],
+  options: [{ key: 'invert', label: 'Invert open / closed', type: 'boolean', default: false }],
   build: (ctx: ServiceContext) => new ContactHandler(ctx),
 };

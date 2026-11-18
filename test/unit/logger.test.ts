@@ -4,21 +4,38 @@ import { makeLog } from '../helpers/hapStub.js';
 
 describe('scrubArgs', () => {
   it('keeps every argument, not only the first five', () => {
-    expect(scrubArgs(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    expect(scrubArgs(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+      'f',
+      'g',
+    ]);
   });
 
   it('redacts password-like keys', () => {
-    expect(scrubArgs([{ user: 'u', password: 'p' }])).toEqual([{ user: 'u', password: '[redacted]' }]);
+    expect(scrubArgs([{ user: 'u', password: 'p' }])).toEqual([
+      { user: 'u', password: '[redacted]' },
+    ]);
   });
   it('redacts in nested objects', () => {
     expect(scrubArgs([{ a: { token: 't' } }])).toEqual([{ a: { token: '[redacted]' } }]);
   });
   it('redacts keys like apiKey, api_key, secret', () => {
-    expect(scrubArgs([{ apiKey: 'x', api_key: 'y', secret: 'z' }]))
-      .toEqual([{ apiKey: '[redacted]', api_key: '[redacted]', secret: '[redacted]' }]);
+    expect(scrubArgs([{ apiKey: 'x', api_key: 'y', secret: 'z' }])).toEqual([
+      { apiKey: '[redacted]', api_key: '[redacted]', secret: '[redacted]' },
+    ]);
   });
   it('passes primitives through', () => {
-    expect(scrubArgs(['hello', 42, true, null, undefined])).toEqual(['hello', 42, true, null, undefined]);
+    expect(scrubArgs(['hello', 42, true, null, undefined])).toEqual([
+      'hello',
+      42,
+      true,
+      null,
+      undefined,
+    ]);
   });
   it('handles arrays', () => {
     expect(scrubArgs([[{ password: 'p' }]])).toEqual([[{ password: '[redacted]' }]]);

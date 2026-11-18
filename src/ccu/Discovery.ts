@@ -23,7 +23,9 @@ export const PARAMSET_CACHE_FILE = 'paramsets.json';
 
 export interface DiscoveryCache {
   version: 1;
-  interfaces: Partial<Record<CcuInterfaceId, { fetchedAt: string; devices: RpcDeviceDescription[] }>>;
+  interfaces: Partial<
+    Record<CcuInterfaceId, { fetchedAt: string; devices: RpcDeviceDescription[] }>
+  >;
 }
 
 export interface ParamsetCache {
@@ -64,8 +66,10 @@ export class Discovery {
    * the CcuClient's address → interface map.
    */
   async run(): Promise<CcuDevice[]> {
-    const cache = await this.readCache<DiscoveryCache>(DISCOVERY_CACHE_FILE, isDiscoveryCache)
-      ?? { version: 1, interfaces: {} };
+    const cache = (await this.readCache<DiscoveryCache>(
+      DISCOVERY_CACHE_FILE,
+      isDiscoveryCache,
+    )) ?? { version: 1, interfaces: {} };
     const { results, errors } = await this.ccu.listRawDevices();
     let dirty = false;
     const devices: CcuDevice[] = [];
@@ -83,7 +87,12 @@ export class Discovery {
       const msg = errors.get(id)?.message ?? 'no answer';
       const cached = cache.interfaces[id];
       if (cached) {
-        this.log.warn('listDevices on %s failed (%s); using the cached device list from %s', id, msg, cached.fetchedAt);
+        this.log.warn(
+          'listDevices on %s failed (%s); using the cached device list from %s',
+          id,
+          msg,
+          cached.fetchedAt,
+        );
         this.sources.set(id, 'cache');
         devices.push(...toDevices(cached.devices, id));
       } else {
@@ -96,8 +105,11 @@ export class Discovery {
     }
     this.devices = devices;
     this.ccu.indexDevices(devices);
-    this.log.info('Discovered %d devices (%s)', devices.length,
-      [...this.sources].map(([id, src]) => `${id}: ${src}`).join(', ') || 'none');
+    this.log.info(
+      'Discovered %d devices (%s)',
+      devices.length,
+      [...this.sources].map(([id, src]) => `${id}: ${src}`).join(', ') || 'none',
+    );
     return devices;
   }
 
@@ -166,8 +178,10 @@ export class Discovery {
     if (this.paramsetsLoaded) {
       return;
     }
-    this.paramsets = await this.readCache<ParamsetCache>(PARAMSET_CACHE_FILE, isParamsetCache)
-      ?? { version: 1, entries: {} };
+    this.paramsets = (await this.readCache<ParamsetCache>(
+      PARAMSET_CACHE_FILE,
+      isParamsetCache,
+    )) ?? { version: 1, entries: {} };
     this.paramsetsLoaded = true;
   }
 
@@ -205,8 +219,12 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 function isDiscoveryCache(v: unknown): v is DiscoveryCache {
-  return isObject(v) && v.version === 1 && isObject(v.interfaces)
-    && Object.values(v.interfaces).every((e) => isObject(e) && Array.isArray(e.devices));
+  return (
+    isObject(v) &&
+    v.version === 1 &&
+    isObject(v.interfaces) &&
+    Object.values(v.interfaces).every((e) => isObject(e) && Array.isArray(e.devices))
+  );
 }
 
 function isParamsetCache(v: unknown): v is ParamsetCache {

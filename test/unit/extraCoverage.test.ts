@@ -15,15 +15,17 @@ import { PluginStorage, StorageError } from '../../src/util/storage.js';
 
 describe('xmlRpc edge cases', () => {
   it('parses array of structs', () => {
-    const body = '<methodCall><methodName>m</methodName><params><param><value>'
-      + '<array><data>'
-      + '<value><struct><member><name>a</name><value><int>1</int></value></member></struct></value>'
-      + '</data></array></value></param></params></methodCall>';
+    const body =
+      '<methodCall><methodName>m</methodName><params><param><value>' +
+      '<array><data>' +
+      '<value><struct><member><name>a</name><value><int>1</int></value></member></struct></value>' +
+      '</data></array></value></param></params></methodCall>';
     expect(parseXml(body).params).toEqual([[{ a: 1 }]]);
   });
 
   it('parses self-closing nil', () => {
-    const body = '<methodCall><methodName>m</methodName><params><param><value><nil/></value></param></params></methodCall>';
+    const body =
+      '<methodCall><methodName>m</methodName><params><param><value><nil/></value></param></params></methodCall>';
     expect(parseXml(body).params).toEqual([null]);
   });
 
@@ -42,7 +44,8 @@ describe('xmlRpc edge cases', () => {
   });
 
   it('parses non-self-closing nil', () => {
-    const body = '<methodCall><methodName>m</methodName><params><param><value><nil></nil></value></param></params></methodCall>';
+    const body =
+      '<methodCall><methodName>m</methodName><params><param><value><nil></nil></value></param></params></methodCall>';
     expect(parseXml(body).params).toEqual([null]);
   });
 
@@ -73,7 +76,12 @@ describe('address edge cases', () => {
   });
 
   it('handles channel-less serial with valid chars', () => {
-    expect(parseAddress('X.serialOnly42')).toEqual({ interface: 'X', serial: 'serialOnly42', channel: undefined, datapoint: undefined });
+    expect(parseAddress('X.serialOnly42')).toEqual({
+      interface: 'X',
+      serial: 'serialOnly42',
+      channel: undefined,
+      datapoint: undefined,
+    });
   });
 
   it('deviceAddress throws on bad input', () => {
@@ -90,16 +98,28 @@ describe('storage edge cases', () => {
 
 describe('CcuClient internals', () => {
   it('routes addresses without dots (bare interface name) to BidCos-RF default', () => {
-    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+    const config = resolveConfig({
+      platform: 'HapHomematic',
+      ccuIp: '127.0.0.1',
+      eventServer: { callbackHost: '127.0.0.1' },
+    });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
-    const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
+    const intfFor = (
+      ccu as unknown as { interfaceForAddress(a: string): string }
+    ).interfaceForAddress.bind(ccu);
     expect(intfFor('NoDot')).toBe('BidCos-RF');
   });
 
   it('routes 14-hex-digit HmIP serials to HmIP-RF (case-insensitive)', () => {
-    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+    const config = resolveConfig({
+      platform: 'HapHomematic',
+      ccuIp: '127.0.0.1',
+      eventServer: { callbackHost: '127.0.0.1' },
+    });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'i') });
-    const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
+    const intfFor = (
+      ccu as unknown as { interfaceForAddress(a: string): string }
+    ).interfaceForAddress.bind(ccu);
     expect(intfFor('000a5d8996bbab:1')).toBe('HmIP-RF');
   });
 });

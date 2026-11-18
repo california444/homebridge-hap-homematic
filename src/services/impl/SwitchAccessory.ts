@@ -1,11 +1,7 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 import { AccessoryBase, isTrue } from '../AccessoryBase.js';
-import type {
-  ChannelService,
-  ServiceContext,
-  ServiceDefinition,
-} from '../types.js';
+import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
 
 const SWITCH_CHANNEL_TYPES = [
@@ -26,21 +22,25 @@ class SwitchHandler extends AccessoryBase implements ChannelService {
 
   attach(channel: CcuChannel): void {
     const subtype = (this.accessory.context.subtype ?? 'switch').toLowerCase();
-    const svcType = subtype === 'outlet'
-      ? this.Service.Outlet
-      : subtype === 'lightbulb'
-        ? this.Service.Lightbulb
-        : this.Service.Switch;
+    const svcType =
+      subtype === 'outlet'
+        ? this.Service.Outlet
+        : subtype === 'lightbulb'
+          ? this.Service.Lightbulb
+          : this.Service.Switch;
     const service = this.getOrAddService(svcType, channel.name);
 
-    service.getCharacteristic(this.Characteristic.On)
+    service
+      .getCharacteristic(this.Characteristic.On)
       .onGet(this.wrapGet<boolean>(() => this.on ?? this.unknown()))
-      .onSet(this.wrapSet<boolean>(async (value) => {
-        await this.ccu.setValue(channel.address, 'STATE', Boolean(value));
-        if (!channel.stateAddress) {
-          this.on = Boolean(value); // BidCos: the event confirms it
-        }
-      }));
+      .onSet(
+        this.wrapSet<boolean>(async (value) => {
+          await this.ccu.setValue(channel.address, 'STATE', Boolean(value));
+          if (!channel.stateAddress) {
+            this.on = Boolean(value); // BidCos: the event confirms it
+          }
+        }),
+      );
 
     this.need(channel.stateAddress ?? channel.address, 'STATE', (raw) => {
       this.on = isTrue(raw);

@@ -26,7 +26,10 @@ export interface ParsedCall {
 }
 
 class Cursor {
-  constructor(public src: string, public i = 0) {}
+  constructor(
+    public src: string,
+    public i = 0,
+  ) {}
   rest(): string {
     return this.src.slice(this.i);
   }
@@ -86,7 +89,10 @@ class Cursor {
     if (close === -1) {
       throw new Error('Unterminated tag');
     }
-    let tag = this.src.slice(this.i + 1, close).trim().split(/\s+/)[0]!;
+    let tag = this.src
+      .slice(this.i + 1, close)
+      .trim()
+      .split(/\s+/)[0]!;
     if (tag.endsWith('/')) {
       tag = tag.slice(0, -1);
     }
