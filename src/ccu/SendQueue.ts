@@ -92,7 +92,10 @@ export class SendQueue {
   stop(): void {
     this.stopped = true;
     if (this.waiting.length > 0) {
-      this.opts.log.debug('send queue stopped, dropping %d waiting command(s)', this.waiting.length);
+      this.opts.log.debug(
+        'send queue stopped, dropping %d waiting command(s)',
+        this.waiting.length,
+      );
     }
     this.waiting.length = 0;
   }
@@ -119,7 +122,10 @@ export class SendQueue {
     const started = Date.now();
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new SendTimeoutError(this.opts.timeoutMs)), this.opts.timeoutMs);
+      timer = setTimeout(
+        () => reject(new SendTimeoutError(this.opts.timeoutMs)),
+        this.opts.timeoutMs,
+      );
     });
     try {
       await Promise.race([job.run(), timeout]);
@@ -127,7 +133,12 @@ export class SendQueue {
       return true;
     } catch (err) {
       const ms = Date.now() - started;
-      this.opts.log.debug('%s failed after %s: %s', job.label, formatSeconds(ms), (err as Error).message);
+      this.opts.log.debug(
+        '%s failed after %s: %s',
+        job.label,
+        formatSeconds(ms),
+        (err as Error).message,
+      );
       try {
         job.onError(err, ms);
       } catch {

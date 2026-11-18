@@ -1,0 +1,42 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "eqeqeq": ["error", "smart"],
+    "no-console": "error",
+    "typescript/no-explicit-any": "warn",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["homebridge-ui/**/*.js"],
+      "env": {
+        "browser": true
+      },
+      "globals": {
+        "homebridge": "readonly",
+        "bootstrap": "readonly"
+      },
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["test/**/*.ts"],
+      "rules": {
+        "no-unused-vars": "off",
+        "typescript/no-explicit-any": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["dist/", "coverage/", "references/", "ccu-dump/", "homebridge-ui/server.js"]
+}

@@ -35,12 +35,7 @@ import {
   type RpcDeviceDescription,
 } from './RpcClient.js';
 import { SendQueue, SendTimeoutError, formatSeconds } from './SendQueue.js';
-import type {
-  CcuChannel,
-  CcuDevice,
-  CcuInterfaceId,
-  ResolvedConfig,
-} from '../types.js';
+import type { CcuChannel, CcuDevice, CcuInterfaceId, ResolvedConfig } from '../types.js';
 import type { PrefixedLogger } from '../util/logger.js';
 import { PLUGIN_NAME } from '../settings.js';
 
@@ -117,7 +112,7 @@ const ENABLED_INTERFACES: ReadonlyArray<{
   flag: keyof ResolvedConfig['interfaces'];
 }> = [
   { id: 'BidCos-RF', flag: 'bidcosRf' },
-  { id: 'HmIP-RF',   flag: 'hmIpRf' },
+  { id: 'HmIP-RF', flag: 'hmIpRf' },
 ];
 
 export interface InterfaceProbe {
@@ -180,9 +175,10 @@ export class CcuClient extends EventEmitter {
     const callbackHost = this.config.eventServer.callbackHost || this.resolveCallbackHost();
     const callbackUrl = `http://${callbackHost}:${this.config.eventServer.port}`;
     const { rpcAuth } = this.config;
-    const auth = rpcAuth.enabled && rpcAuth.username && rpcAuth.password
-      ? { username: rpcAuth.username, password: rpcAuth.password }
-      : undefined;
+    const auth =
+      rpcAuth.enabled && rpcAuth.username && rpcAuth.password
+        ? { username: rpcAuth.username, password: rpcAuth.password }
+        : undefined;
     for (const { id, flag } of ENABLED_INTERFACES) {
       if (!this.config.interfaces[flag]) {
         continue;
@@ -221,7 +217,12 @@ export class CcuClient extends EventEmitter {
     this.started = true;
     this.sendQueue.start();
     for (const id of this.supervisors.keys()) {
-      this.log.info('Using XML-RPC port %d for %s%s', this.portFor(id), id, this.config.useTls ? ' (TLS)' : '');
+      this.log.info(
+        'Using XML-RPC port %d for %s%s',
+        this.portFor(id),
+        id,
+        this.config.useTls ? ' (TLS)' : '',
+      );
     }
     // First attempt on every interface in parallel; failures retry in the
     // background (backoff), so start() never throws because of the CCU.
@@ -319,7 +320,12 @@ export class CcuClient extends EventEmitter {
         const methods = await client.listMethods();
         results.push({ interfaceId: client.interfaceId, port, ok: true, methods: methods.length });
       } catch (err) {
-        results.push({ interfaceId: client.interfaceId, port, ok: false, error: (err as Error).message });
+        results.push({
+          interfaceId: client.interfaceId,
+          port,
+          ok: false,
+          error: (err as Error).message,
+        });
       }
     }
     return results;
@@ -393,7 +399,10 @@ export class CcuClient extends EventEmitter {
    * first failure ends the job. Throws at once for an address on a
    * disabled interface.
    */
-  setValues(address: string, writes: ReadonlyArray<readonly [datapoint: string, value: unknown]>): void {
+  setValues(
+    address: string,
+    writes: ReadonlyArray<readonly [datapoint: string, value: unknown]>,
+  ): void {
     if (writes.length === 0) {
       return;
     }
@@ -412,15 +421,26 @@ export class CcuClient extends EventEmitter {
       },
       onError: (err, ms) => {
         const [dp, v] = writes[Math.min(current, writes.length - 1)]!;
-        const failure = new SetValueError(address, dp, v,
+        const failure = new SetValueError(
+          address,
+          dp,
+          v,
           err instanceof SetValueError ? err.reason : describeFailure((err as Error).message),
-          err instanceof SetValueError ? err.cause : err, ms);
+          err instanceof SetValueError ? err.cause : err,
+          ms,
+        );
         const reporter = this.owners.get(address);
         if (reporter) {
           reporter(failure);
         } else {
-          this.log.warn('%s=%s on %s not delivered after %s, (%s)', dp, String(v), address,
-            formatSeconds(ms), failure.reason);
+          this.log.warn(
+            '%s=%s on %s not delivered after %s, (%s)',
+            dp,
+            String(v),
+            address,
+            formatSeconds(ms),
+            failure.reason,
+          );
         }
       },
     });
@@ -437,7 +457,13 @@ export class CcuClient extends EventEmitter {
     try {
       await this.clientFor(address).setValue(address, datapoint, typed);
     } catch (err) {
-      throw new SetValueError(address, datapoint, value, describeFailure((err as Error).message), err);
+      throw new SetValueError(
+        address,
+        datapoint,
+        value,
+        describeFailure((err as Error).message),
+        err,
+      );
     }
   }
 
@@ -496,7 +522,7 @@ export class CcuClient extends EventEmitter {
   /** ACTION datapoints must never be applied as start values. */
   isAction(address: string, datapoint: string): boolean {
     const type = this.describe(address, datapoint)?.TYPE;
-    return type === 'ACTION' || (type === undefined && /^PRESS_/.test(datapoint));
+    return type === 'ACTION' || (type === undefined && datapoint.startsWith('PRESS_'));
   }
 
   /** Interface a channel / device address is routed to. */
@@ -516,7 +542,10 @@ export class CcuClient extends EventEmitter {
   }
 
   private portFor(id: CcuInterfaceId): number {
-    return this.config.interfacePorts[id] ?? (this.config.useTls ? INTERFACE_TLS_PORTS : INTERFACE_PORTS)[id];
+    return (
+      this.config.interfacePorts[id] ??
+      (this.config.useTls ? INTERFACE_TLS_PORTS : INTERFACE_PORTS)[id]
+    );
   }
 
   /** Every inbound callback is a sign of life for its interface. */
@@ -532,10 +561,18 @@ export class CcuClient extends EventEmitter {
     const sup = this.byCallbackId.get(ev.callbackId);
     if (!sup) {
       // Not one of our subscriptions: ignore it instead of dispatching.
-      this.log.debug('Ignored event for unknown callback id %s: %s.%s', ev.callbackId, ev.channelAddress, ev.datapoint);
+      this.log.debug(
+        'Ignored event for unknown callback id %s: %s.%s',
+        ev.callbackId,
+        ev.channelAddress,
+        ev.datapoint,
+      );
       return;
     }
-    if (ev.datapoint === 'PONG' && (ev.channelAddress === 'CENTRAL' || ev.channelAddress === 'CENTRAL:0')) {
+    if (
+      ev.datapoint === 'PONG' &&
+      (ev.channelAddress === 'CENTRAL' || ev.channelAddress === 'CENTRAL:0')
+    ) {
       // Own PONG (value = our caller id) or a foreign client's; both prove
       // that our subscription on this interface is alive.
       sup.noteActivity(ev.value === ev.callbackId ? 'pong' : 'event');

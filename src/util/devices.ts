@@ -26,19 +26,27 @@ const EXTRA_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
 const MAX_NAME = 64;
 const MAX_DEVICES = 500;
 
-const DEVICE_KEYS = new Set(['enabled', 'mode', 'service', 'variant', 'name', 'options', 'channels']);
+const DEVICE_KEYS = new Set([
+  'enabled',
+  'mode',
+  'service',
+  'variant',
+  'name',
+  'options',
+  'channels',
+]);
 const CHANNEL_KEYS = new Set(['enabled', 'service', 'variant', 'name', 'options']);
 
-export type ValidationResult =
-  | { ok: true; file: DevicesFile }
-  | { ok: false; errors: string[] };
+export type ValidationResult = { ok: true; file: DevicesFile } | { ok: false; errors: string[] };
 
 export function emptyDevicesFile(): DevicesFile {
   return { version: 1, devices: {} };
 }
 
 /** `<Interface>:<Serial>` → parts, or undefined if the key is malformed. */
-export function parseDeviceKey(key: string): { interface: CcuInterfaceId; device: string } | undefined {
+export function parseDeviceKey(
+  key: string,
+): { interface: CcuInterfaceId; device: string } | undefined {
   const m = DEVICE_KEY_RE.exec(key);
   return m ? { interface: m[1] as CcuInterfaceId, device: m[2]! } : undefined;
 }
@@ -48,7 +56,9 @@ export function parseDeviceKey(key: string): { interface: CcuInterfaceId; device
  * Device mappings use `device` in place of the channel number. Changing
  * the service therefore creates a new HomeKit accessory.
  */
-export function mappingUuidSeed(m: Pick<AccessoryMapping, 'interface' | 'device' | 'channel' | 'service'>): string {
+export function mappingUuidSeed(
+  m: Pick<AccessoryMapping, 'interface' | 'device' | 'channel' | 'service'>,
+): string {
   return `${m.interface}:${m.device}:${m.channel ?? 'device'}:${m.service}`;
 }
 
@@ -92,7 +102,10 @@ export function validateDevicesFile(
   }
 
   const checkName = (path: string, v: unknown): void => {
-    if (v !== undefined && (typeof v !== 'string' || v.trim().length === 0 || v.length > MAX_NAME)) {
+    if (
+      v !== undefined &&
+      (typeof v !== 'string' || v.trim().length === 0 || v.length > MAX_NAME)
+    ) {
       err(path, `must be a non-empty string of at most ${MAX_NAME} characters`);
     }
   };
@@ -107,7 +120,10 @@ export function validateDevicesFile(
     if (e.enabled !== undefined && typeof e.enabled !== 'boolean') {
       err(`${path}.enabled`, 'must be true or false');
     }
-    if (e.variant !== undefined && (typeof e.variant !== 'string' || e.variant.length === 0 || e.variant.length > MAX_NAME)) {
+    if (
+      e.variant !== undefined &&
+      (typeof e.variant !== 'string' || e.variant.length === 0 || e.variant.length > MAX_NAME)
+    ) {
       err(`${path}.variant`, 'must be a non-empty string');
     }
     checkName(`${path}.name`, e.name);
@@ -136,9 +152,12 @@ export function validateDevicesFile(
       err(`${path}.mode`, 'must be "device" or "perChannel"');
     }
     // An invalid mode is already reported; fall back to the derived one.
-    const mode = dev.mode === 'device' || dev.mode === 'perChannel'
-      ? dev.mode
-      : (dev.service !== undefined ? 'device' : 'perChannel');
+    const mode =
+      dev.mode === 'device' || dev.mode === 'perChannel'
+        ? dev.mode
+        : dev.service !== undefined
+          ? 'device'
+          : 'perChannel';
     if (mode === 'device') {
       checkService(`${path}.service`, dev.service);
     } else if (dev.service !== undefined) {
@@ -176,7 +195,10 @@ export function validateDevicesFile(
       if (mode === 'perChannel' && ch.enabled !== false) {
         checkService(`${cpath}.service`, ch.service);
         if (deviceServices && typeof ch.service === 'string' && deviceServices.has(ch.service)) {
-          err(`${cpath}.service`, `"${ch.service}" maps a whole device; use "service" on the device entry`);
+          err(
+            `${cpath}.service`,
+            `"${ch.service}" maps a whole device; use "service" on the device entry`,
+          );
         }
       } else if (mode === 'device' && ch.service !== undefined) {
         err(`${cpath}.service`, 'not allowed in a device mapping');
@@ -184,7 +206,9 @@ export function validateDevicesFile(
     }
   }
 
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, file: raw as unknown as DevicesFile };
+  return errors.length > 0
+    ? { ok: false, errors }
+    : { ok: true, file: raw as unknown as DevicesFile };
 }
 
 function channelExtras(ch: DevicesFileChannel): Record<string, unknown> {
@@ -213,7 +237,7 @@ export function toMappings(file: DevicesFile): AccessoryMapping[] {
         service: dev.service!,
         ...(dev.variant ? { variant: dev.variant } : {}),
         ...(dev.name ? { name: dev.name } : {}),
-        options: { ...(dev.options ?? {}) },
+        options: { ...dev.options },
         channels,
       });
       continue;
@@ -228,7 +252,7 @@ export function toMappings(file: DevicesFile): AccessoryMapping[] {
         service: ch.service!,
         ...(ch.variant ? { variant: ch.variant } : {}),
         ...(ch.name ? { name: ch.name } : {}),
-        options: { ...(dev.options ?? {}), ...channelExtras(ch), ...(ch.options ?? {}) },
+        options: { ...dev.options, ...channelExtras(ch), ...ch.options },
         channels: {},
       });
     }
@@ -264,8 +288,12 @@ export async function loadDevicesFile(
   }
   const result = validateDevicesFile(raw, knownServices, deviceServices);
   if (!result.ok) {
-    log.error('%s is invalid (%d problems) — no accessories will be created; the file is left as it is:\n  %s',
-      DEVICES_FILE, result.errors.length, result.errors.join('\n  '));
+    log.error(
+      '%s is invalid (%d problems) — no accessories will be created; the file is left as it is:\n  %s',
+      DEVICES_FILE,
+      result.errors.length,
+      result.errors.join('\n  '),
+    );
     return { file: undefined, mappings: [], errors: result.errors };
   }
   return { file: result.file, mappings: toMappings(result.file), errors: [] };

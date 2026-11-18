@@ -55,6 +55,6 @@ Before any release we verify:
 - [ ] All file writes use `path.resolve` and assert containment in
       `api.user.storagePath()`.
 - [ ] Test coverage ≥ 95 % lines / statements / functions.
-- [ ] `pluginRules` (eslint) report no warnings.
+- [ ] `npm run lint` (oxlint, oxfmt) reports no warnings.
 - [ ] No native dependency added without an explicit decision recorded
       in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

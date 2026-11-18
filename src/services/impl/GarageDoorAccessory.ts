@@ -52,55 +52,65 @@ class GarageDoorHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     this.channelAddress = channel.address;
     const settings = (this.accessory.context.settings ?? {}) as { travelSeconds?: number };
-    const travelSeconds = typeof settings.travelSeconds === 'number'
-      && Number.isFinite(settings.travelSeconds)
-      && settings.travelSeconds > 0
-      ? settings.travelSeconds : 25;
+    const travelSeconds =
+      typeof settings.travelSeconds === 'number' &&
+      Number.isFinite(settings.travelSeconds) &&
+      settings.travelSeconds > 0
+        ? settings.travelSeconds
+        : 25;
 
     const service = this.getOrAddService(this.Service.GarageDoorOpener, channel.name);
 
-    service.getCharacteristic(this.Characteristic.CurrentDoorState)
+    service
+      .getCharacteristic(this.Characteristic.CurrentDoorState)
       .onGet(this.wrapGet<number>(() => this.current));
 
-    service.getCharacteristic(this.Characteristic.TargetDoorState)
+    service
+      .getCharacteristic(this.Characteristic.TargetDoorState)
       .onGet(this.wrapGet<number>(() => this.target))
-      .onSet(this.wrapSet<number>(async (value) => {
-        const targetOpen = value === this.Characteristic.TargetDoorState.OPEN;
-        this.target = value;
-        // Dwell in OPENING / CLOSING for travelSeconds; the CCU's
-        // settled DOOR_STATE event will overwrite it on arrival.
-        this.current = targetOpen
-          ? this.Characteristic.CurrentDoorState.OPENING
-          : this.Characteristic.CurrentDoorState.CLOSING;
-        service.updateCharacteristic(this.Characteristic.CurrentDoorState, this.current);
-        if (this.travelTimer) clearTimeout(this.travelTimer);
-        this.travelTimer = setTimeout(() => {
-          // If the door pushed nothing in travelSeconds, mark Stopped
-          // so the user sees something is wrong rather than a stale
-          // OPENING. The next push event will clear this.
-          this.current = this.Characteristic.CurrentDoorState.STOPPED;
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          const targetOpen = value === this.Characteristic.TargetDoorState.OPEN;
+          this.target = value;
+          // Dwell in OPENING / CLOSING for travelSeconds; the CCU's
+          // settled DOOR_STATE event will overwrite it on arrival.
+          this.current = targetOpen
+            ? this.Characteristic.CurrentDoorState.OPENING
+            : this.Characteristic.CurrentDoorState.CLOSING;
           service.updateCharacteristic(this.Characteristic.CurrentDoorState, this.current);
-          this.travelTimer = undefined;
-        }, travelSeconds * 1000);
-        if (this.travelTimer.unref) this.travelTimer.unref();
-        try {
-          await this.ccu.setValue(this.channelAddress, 'DOOR_COMMAND', targetOpen ? CMD_OPEN : CMD_CLOSE);
-        } catch (err) {
-          this.log.warn('garage-door command failed: %s', (err as Error).message);
-        }
-      }));
+          if (this.travelTimer) clearTimeout(this.travelTimer);
+          this.travelTimer = setTimeout(() => {
+            // If the door pushed nothing in travelSeconds, mark Stopped
+            // so the user sees something is wrong rather than a stale
+            // OPENING. The next push event will clear this.
+            this.current = this.Characteristic.CurrentDoorState.STOPPED;
+            service.updateCharacteristic(this.Characteristic.CurrentDoorState, this.current);
+            this.travelTimer = undefined;
+          }, travelSeconds * 1000);
+          if (this.travelTimer.unref) this.travelTimer.unref();
+          try {
+            await this.ccu.setValue(
+              this.channelAddress,
+              'DOOR_COMMAND',
+              targetOpen ? CMD_OPEN : CMD_CLOSE,
+            );
+          } catch (err) {
+            this.log.warn('garage-door command failed: %s', (err as Error).message);
+          }
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.ObstructionDetected)
-      .onGet(() => false);
+    service.getCharacteristic(this.Characteristic.ObstructionDetected).onGet(() => false);
 
     this.registerListener(this.channelAddress, 'DOOR_STATE', (raw) => {
       const v = typeof raw === 'number' ? raw : parseInt(String(raw ?? '-1'), 10);
       const next = this.mapCcuToHap(v);
       if (next === undefined) return;
       this.current = next;
-      this.target = next === this.Characteristic.CurrentDoorState.CLOSED
-        ? this.Characteristic.TargetDoorState.CLOSED
-        : this.Characteristic.TargetDoorState.OPEN;
+      this.target =
+        next === this.Characteristic.CurrentDoorState.CLOSED
+          ? this.Characteristic.TargetDoorState.CLOSED
+          : this.Characteristic.TargetDoorState.OPEN;
       if (this.travelTimer) {
         clearTimeout(this.travelTimer);
         this.travelTimer = undefined;
@@ -119,9 +129,10 @@ class GarageDoorHandler extends AccessoryBase implements ChannelService {
       const next = this.mapCcuToHap(v);
       if (next !== undefined) {
         this.current = next;
-        this.target = next === this.Characteristic.CurrentDoorState.CLOSED
-          ? this.Characteristic.TargetDoorState.CLOSED
-          : this.Characteristic.TargetDoorState.OPEN;
+        this.target =
+          next === this.Characteristic.CurrentDoorState.CLOSED
+            ? this.Characteristic.TargetDoorState.CLOSED
+            : this.Characteristic.TargetDoorState.OPEN;
         service.updateCharacteristic(this.Characteristic.CurrentDoorState, this.current);
         service.updateCharacteristic(this.Characteristic.TargetDoorState, this.target);
       }
@@ -132,10 +143,14 @@ class GarageDoorHandler extends AccessoryBase implements ChannelService {
   /** Translate CCU DOOR_STATE → HAP CurrentDoorState; undefined means "skip". */
   private mapCcuToHap(ccu: number): number | undefined {
     switch (ccu) {
-      case CCU_CLOSED:       return this.Characteristic.CurrentDoorState.CLOSED;
-      case CCU_OPEN:         return this.Characteristic.CurrentDoorState.OPEN;
-      case CCU_VENTILATION:  return this.Characteristic.CurrentDoorState.OPEN;
-      default:               return undefined;
+      case CCU_CLOSED:
+        return this.Characteristic.CurrentDoorState.CLOSED;
+      case CCU_OPEN:
+        return this.Characteristic.CurrentDoorState.OPEN;
+      case CCU_VENTILATION:
+        return this.Characteristic.CurrentDoorState.OPEN;
+      default:
+        return undefined;
     }
   }
 

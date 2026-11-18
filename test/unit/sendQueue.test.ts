@@ -17,7 +17,11 @@ afterEach(() => {
 });
 
 function queue(opts: { timeoutMs?: number; gapMs?: number } = {}) {
-  return new SendQueue({ log: new PrefixedLogger(makeLog(), 'send'), timeoutMs: opts.timeoutMs ?? 5000, gapMs: opts.gapMs ?? 100 });
+  return new SendQueue({
+    log: new PrefixedLogger(makeLog(), 'send'),
+    timeoutMs: opts.timeoutMs ?? 5000,
+    gapMs: opts.gapMs ?? 100,
+  });
 }
 
 /** A job whose run() stays open until resolve()/reject() is called. */
@@ -31,8 +35,14 @@ function pending(key: string, events: string[]) {
     run: () => {
       events.push(`start ${key}`);
       return new Promise<void>((res, rej) => {
-        resolve = () => { events.push(`end ${key}`); res(); };
-        reject = (e) => { events.push(`fail ${key}`); rej(e); };
+        resolve = () => {
+          events.push(`end ${key}`);
+          res();
+        };
+        reject = (e) => {
+          events.push(`fail ${key}`);
+          rej(e);
+        };
       });
     },
     onError: (err, ms) => errors.push({ err, ms }),
@@ -101,7 +111,12 @@ describe('SendQueue', () => {
     q.enqueue(run.job);
     const sent: string[] = [];
     const job = (key: string, v: string): SendJob => ({
-      key, label: v, run: async () => { sent.push(v); }, onError: () => undefined,
+      key,
+      label: v,
+      run: async () => {
+        sent.push(v);
+      },
+      onError: () => undefined,
     });
     q.enqueue(job('LEVEL', 'L 0.1'));
     q.enqueue(job('STATE', 'S on'));
@@ -117,7 +132,14 @@ describe('SendQueue', () => {
     const q = queue({ gapMs: 0 });
     const sent: number[] = [];
     for (let i = 0; i < 3; i++) {
-      q.enqueue({ key: String(i), label: String(i), run: async () => { sent.push(i); }, onError: () => undefined });
+      q.enqueue({
+        key: String(i),
+        label: String(i),
+        run: async () => {
+          sent.push(i);
+        },
+        onError: () => undefined,
+      });
     }
     await q.idle();
     expect(sent).toEqual([0, 1, 2]);
@@ -148,7 +170,9 @@ describe('SendQueue', () => {
 describe('CcuClient send queue', () => {
   function makeCcu(sendQueue?: object): CcuClient {
     const config = resolveConfig({
-      platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' },
+      platform: 'HapHomematic',
+      ccuIp: '127.0.0.1',
+      eventServer: { callbackHost: '127.0.0.1' },
       ...(sendQueue ? { sendQueue } : {}),
     });
     return new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'ccu') });
@@ -168,7 +192,13 @@ describe('CcuClient send queue', () => {
         open--;
       },
     });
-    const addresses = ['OEQ0000001:1', '000A0000000B02:1', 'OEQ0000002:1', '000A0000000B03:4', 'OEQ0000003:1'];
+    const addresses = [
+      'OEQ0000001:1',
+      '000A0000000B02:1',
+      'OEQ0000002:1',
+      '000A0000000B03:4',
+      'OEQ0000003:1',
+    ];
     for (const a of addresses) {
       await ccu.setValue(a, 'STATE', true); // returns at once
     }
@@ -188,13 +218,22 @@ describe('CcuClient send queue', () => {
     ccu.setOwner('OEQ0000001:1', (e) => reported.push(e));
     await ccu.setValue('OEQ0000001:1', 'LEVEL', 0.5);
     await vi.advanceTimersByTimeAsync(2000);
-    expect(reported[0]).toMatchObject({ datapoint: 'LEVEL', value: 0.5, timedOut: true, durationMs: 2000 });
+    expect(reported[0]).toMatchObject({
+      datapoint: 'LEVEL',
+      value: 0.5,
+      timedOut: true,
+      durationMs: 2000,
+    });
   });
 });
 
 describe('CcuClient.setOwner', () => {
   it('the first owner keeps an address; release frees it', () => {
-    const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+    const config = resolveConfig({
+      platform: 'HapHomematic',
+      ccuIp: '127.0.0.1',
+      eventServer: { callbackHost: '127.0.0.1' },
+    });
     const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'ccu') });
     const owners = (ccu as unknown as { owners: Map<string, unknown> }).owners;
     const a = (): void => undefined;
@@ -210,7 +249,12 @@ describe('CcuClient.setOwner', () => {
 });
 
 describe('failed commands from the queue in the log', () => {
-  const ch: CcuChannel = { address: 'ABC0000001:14', index: 14, type: 'SWITCH_VIRTUAL_RECEIVER', name: 'K' };
+  const ch: CcuChannel = {
+    address: 'ABC0000001:14',
+    index: 14,
+    type: 'SWITCH_VIRTUAL_RECEIVER',
+    name: 'K',
+  };
 
   it('HomeKit gets its answer at once; the failure is logged with name and duration', async () => {
     const env = makeSvcEnv();
@@ -219,18 +263,23 @@ describe('failed commands from the queue in the log', () => {
     const raw = makeLog();
     env.log = new PrefixedLogger(raw, 'svc:SwitchAccessory:ABC0000001:14');
     vi.spyOn(env.ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
-      setValue: () => new Promise((_, rej) => setTimeout(() => rej(new Error('setValue failed: Failure (-1)')), 1200)),
+      setValue: () =>
+        new Promise((_, rej) =>
+          setTimeout(() => rej(new Error('setValue failed: Failure (-1)')), 1200),
+        ),
     });
     env.values['ABC0000001:0'] = { RSSI_DEVICE: -72 };
     const a = build(env, switchService, ch, { name: 'Garten Licht' });
     await a.char(a.svc('Switch'), 'On').onSetHandler!(true); // resolves, no HAP error
     await vi.advanceTimersByTimeAsync(1200);
     await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
-    const [fmt, ...args] = (raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [string, ...unknown[]];
+    const [fmt, ...args] = (raw.warn as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0] as [string, ...unknown[]];
     let i = 0;
     expect(fmt.replace(/%s/g, () => String(args[i++]))).toBe(
-      '[svc:SwitchAccessory:ABC0000001:14] Garten Licht: STATE=true not delivered after 1.2 s, (Failure (-1)) '
-      + 'last known signal:-72 dBm(CCU)');
+      '[svc:SwitchAccessory:ABC0000001:14] Garten Licht: STATE=true not delivered after 1.2 s, (Failure (-1)) ' +
+        'last known signal:-72 dBm(CCU)',
+    );
   });
 
   it('names the accessory for its command channel it does not listen on (paired HmIP channels)', async () => {
@@ -242,12 +291,19 @@ describe('failed commands from the queue in the log', () => {
     vi.spyOn(env.ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
       setValue: () => Promise.reject(new Error('setValue failed: Generic error (UNREACH) (-1)')),
     });
-    const paired: CcuChannel = { address: '00021A49A609DA:3', stateAddress: '00021A49A609DA:2', index: 3,
-      type: 'SWITCH_VIRTUAL_RECEIVER', name: 'K' };
+    const paired: CcuChannel = {
+      address: '00021A49A609DA:3',
+      stateAddress: '00021A49A609DA:2',
+      index: 3,
+      type: 'SWITCH_VIRTUAL_RECEIVER',
+      name: 'K',
+    };
     const a = build(env, switchService, paired, { name: 'Steckdose' });
     await a.char(a.svc('Switch'), 'On').onSetHandler!(true);
     await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
-    expect(String((raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[1])).toBe('Steckdose');
+    expect(
+      String((raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[1]),
+    ).toBe('Steckdose');
   });
 
   it('dispose() releases the addresses', () => {
@@ -272,9 +328,11 @@ describe('failed commands from the queue in the log', () => {
     await a.char(a.svc('Switch'), 'On').onSetHandler!(false);
     await vi.advanceTimersByTimeAsync(5000);
     await vi.waitFor(() => expect(raw.warn).toHaveBeenCalled());
-    const [fmt, ...args] = (raw.warn as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [string, ...unknown[]];
+    const [fmt, ...args] = (raw.warn as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0] as [string, ...unknown[]];
     let i = 0;
     expect(fmt.replace(/%s/g, () => String(args[i++]))).toBe(
-      '[svc:SwitchAccessory:ABC0000001:14] Licht: STATE=false no answer from the CCU within 5.0 s (it may still be sent)');
+      '[svc:SwitchAccessory:ABC0000001:14] Licht: STATE=false no answer from the CCU within 5.0 s (it may still be sent)',
+    );
   });
 });

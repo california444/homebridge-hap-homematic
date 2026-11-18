@@ -66,9 +66,9 @@ export const SERVICE_DEFINITIONS: ServiceDefinition[] = [
 
 /** Find candidate services for a channel type, sorted by priority asc. */
 export function servicesForChannelType(channelType: string): ServiceDefinition[] {
-  return SERVICE_DEFINITIONS
-    .filter((svc) => svc.channelTypes.includes(channelType))
-    .sort((a, b) => a.priority - b.priority);
+  return SERVICE_DEFINITIONS.filter((svc) => svc.channelTypes.includes(channelType)).sort(
+    (a, b) => a.priority - b.priority,
+  );
 }
 
 export function findServiceByKey(key: string): ServiceDefinition | undefined {

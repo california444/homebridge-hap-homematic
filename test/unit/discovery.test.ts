@@ -18,7 +18,12 @@ const BID: RpcDeviceDescription[] = [
 ];
 const IP: RpcDeviceDescription[] = [
   { ADDRESS: '000A0000000B02', TYPE: 'HMIP-PS', PARENT: '', FIRMWARE: '2.24.8' },
-  { ADDRESS: '000A0000000B02:3', TYPE: 'SWITCH_VIRTUAL_RECEIVER', PARENT: '000A0000000B02', INDEX: 3 },
+  {
+    ADDRESS: '000A0000000B02:3',
+    TYPE: 'SWITCH_VIRTUAL_RECEIVER',
+    PARENT: '000A0000000B02',
+    INDEX: 3,
+  },
 ];
 
 let tmp = '';
@@ -30,7 +35,11 @@ beforeEach(async () => {
 });
 
 function setup(answers: Partial<Record<CcuInterfaceId, RpcDeviceDescription[] | Error>>) {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+  const config = resolveConfig({
+    platform: 'HapHomematic',
+    ccuIp: '127.0.0.1',
+    eventServer: { callbackHost: '127.0.0.1' },
+  });
   const log = new PrefixedLogger(makeLog(), 'disc');
   const ccu = new CcuClient({ config, log });
   vi.spyOn(ccu, 'listRawDevices').mockImplementation(async () => {
@@ -45,11 +54,17 @@ function setup(answers: Partial<Record<CcuInterfaceId, RpcDeviceDescription[] | 
   });
   const storage = new PluginStorage({ user: { storagePath: () => tmp } });
   const warn = vi.spyOn(log, 'warn');
-  const discovery = new Discovery({ ccu, storage, log, now: () => new Date('2026-11-11T12:00:00.000Z') });
+  const discovery = new Discovery({
+    ccu,
+    storage,
+    log,
+    now: () => new Date('2026-11-11T12:00:00.000Z'),
+  });
   return { ccu, discovery, warn, storage };
 }
 
-const readJson = async (name: string) => JSON.parse(await fs.readFile(path.join(root, name), 'utf8'));
+const readJson = async (name: string) =>
+  JSON.parse(await fs.readFile(path.join(root, name), 'utf8'));
 
 describe('Discovery.run', () => {
   it('uses live answers, writes the cache and indexes addresses', async () => {
@@ -79,7 +94,9 @@ describe('Discovery.run', () => {
     const devices = await discovery.run();
     expect(devices.map((d) => d.interface)).toEqual(['BidCos-RF', 'HmIP-RF']);
     expect(discovery.sourceOf('HmIP-RF')).toBe('cache');
-    expect(warn.mock.calls.some((c) => String(c[0]).includes('using the cached device list'))).toBe(true);
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('using the cached device list'))).toBe(
+      true,
+    );
     expect((await readJson('discovery.json')).interfaces['HmIP-RF'].devices).toEqual(IP);
   });
 
@@ -87,7 +104,9 @@ describe('Discovery.run', () => {
     const { discovery, warn } = setup({});
     expect(await discovery.run()).toEqual([]);
     expect(discovery.sourceOf('BidCos-RF')).toBeUndefined();
-    expect(warn.mock.calls.filter((c) => String(c[0]).includes('no cached device list'))).toHaveLength(2);
+    expect(
+      warn.mock.calls.filter((c) => String(c[0]).includes('no cached device list')),
+    ).toHaveLength(2);
     await expect(fs.stat(path.join(root, 'discovery.json'))).rejects.toThrow();
   });
 
@@ -98,7 +117,10 @@ describe('Discovery.run', () => {
     await a.discovery.run();
     expect(a.warn.mock.calls.some((c) => String(c[0]).includes('Cannot read'))).toBe(true);
 
-    await fs.writeFile(path.join(root, 'discovery.json'), JSON.stringify({ version: 1, interfaces: { 'HmIP-RF': { devices: 'x' } } }));
+    await fs.writeFile(
+      path.join(root, 'discovery.json'),
+      JSON.stringify({ version: 1, interfaces: { 'HmIP-RF': { devices: 'x' } } }),
+    );
     const b = setup({ 'BidCos-RF': new Error('x'), 'HmIP-RF': IP });
     await b.discovery.run();
     expect(b.warn.mock.calls.some((c) => String(c[0]).includes('unexpected format'))).toBe(true);
@@ -117,13 +139,19 @@ describe('Discovery paramsets', () => {
   it('fetches each type/firmware/channel-type combination once and caches it on disk', async () => {
     const { ccu, discovery } = setup({ 'BidCos-RF': BID, 'HmIP-RF': IP });
     await discovery.run();
-    const get = vi.spyOn(ccu, 'getParamsetDescription').mockResolvedValue({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
+    const get = vi
+      .spyOn(ccu, 'getParamsetDescription')
+      .mockResolvedValue({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
     await discovery.loadParamsets(['ABC0000002:1', 'ABC0000002:2', 'ABC0000002:1', 'unknown:1']);
     expect(get.mock.calls.map((c) => c[0])).toEqual(['ABC0000002:1']);
-    expect(discovery.getParamsetDescription('ABC0000002:2')).toEqual({ STATE: { TYPE: 'BOOL', OPERATIONS: 7 } });
+    expect(discovery.getParamsetDescription('ABC0000002:2')).toEqual({
+      STATE: { TYPE: 'BOOL', OPERATIONS: 7 },
+    });
     expect(discovery.getParamsetDescription('000A0000000B02:3')).toBeUndefined();
     expect(discovery.getParamsetDescription('unknown:1')).toBeUndefined();
-    expect(Object.keys((await readJson('paramsets.json')).entries)).toEqual(['HM-LC-Sw4-DR-2|2.4|SWITCH']);
+    expect(Object.keys((await readJson('paramsets.json')).entries)).toEqual([
+      'HM-LC-Sw4-DR-2|2.4|SWITCH',
+    ]);
 
     // A new Discovery instance reads the cache instead of asking the CCU.
     const second = setup({ 'BidCos-RF': BID, 'HmIP-RF': IP });
@@ -144,7 +172,11 @@ describe('Discovery paramsets', () => {
   });
 
   it('builds the key without firmware when the device reports none', () => {
-    expect(paramsetKey({ address: 'X', type: 'T', name: 'n', interface: 'HmIP-RF', channels: [] },
-      { address: 'X:1', index: 1, type: 'C', name: 'n' })).toBe('T||C');
+    expect(
+      paramsetKey(
+        { address: 'X', type: 'T', name: 'n', interface: 'HmIP-RF', channels: [] },
+        { address: 'X:1', index: 1, type: 'C', name: 'n' },
+      ),
+    ).toBe('T||C');
   });
 });

@@ -42,44 +42,44 @@ is; the UI shows the errors and refuses to edit until the file is fixed.
 The key is always interface + serial (`BidCos-RF` or `HmIP-RF`), never a
 name.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `enabled` | boolean | `false` skips the device (default `true`). |
-| `mode` | `"device"` \| `"perChannel"` | Default: `device` if `service` is set, else `perChannel`. |
-| `service` | string | `device` mode only: one accessory for the whole device. |
-| `variant` | string | Service variant (`device` mode). |
-| `name` | string (≤ 64) | HomeKit name (`device` mode). |
-| `options` | object | Service options; in `perChannel` mode the defaults for every channel. |
-| `channels` | object | Per channel number (`"0"`–`"999"`), see below. |
+| Field      | Type                         | Meaning                                                               |
+| ---------- | ---------------------------- | --------------------------------------------------------------------- |
+| `enabled`  | boolean                      | `false` skips the device (default `true`).                            |
+| `mode`     | `"device"` \| `"perChannel"` | Default: `device` if `service` is set, else `perChannel`.             |
+| `service`  | string                       | `device` mode only: one accessory for the whole device.               |
+| `variant`  | string                       | Service variant (`device` mode).                                      |
+| `name`     | string (≤ 64)                | HomeKit name (`device` mode).                                         |
+| `options`  | object                       | Service options; in `perChannel` mode the defaults for every channel. |
+| `channels` | object                       | Per channel number (`"0"`–`"999"`), see below.                        |
 
 ### Channel entry — key `"<channel number>"`
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `enabled` | boolean | `false` skips the channel. |
-| `service` | string | Required in `perChannel` mode, not allowed in `device` mode. |
-| `variant` | string | Service variant, e.g. `outlet`, `lightbulb`. |
-| `name` | string (≤ 64) | HomeKit name. Default: placeholder `TYPE SERIAL:N`. |
-| `options` | object | Service options for this channel (override the device's). |
-| *other* | string / number / boolean | Service-specific extras, e.g. `valveType`. |
+| Field     | Type                      | Meaning                                                      |
+| --------- | ------------------------- | ------------------------------------------------------------ |
+| `enabled` | boolean                   | `false` skips the channel.                                   |
+| `service` | string                    | Required in `perChannel` mode, not allowed in `device` mode. |
+| `variant` | string                    | Service variant, e.g. `outlet`, `lightbulb`.                 |
+| `name`    | string (≤ 64)             | HomeKit name. Default: placeholder `TYPE SERIAL:N`.          |
+| `options` | object                    | Service options for this channel (override the device's).    |
+| _other_   | string / number / boolean | Service-specific extras, e.g. `valveType`.                   |
 
 ## Service options
 
 Set in `options` (device or channel) or, for per-channel extras, directly
 in the channel entry.
 
-| Service | Option | Default | Meaning |
-| --- | --- | --- | --- |
-| `SwitchAccessory` | `variant` | `switch` | `switch`, `outlet` or `lightbulb` (case-insensitive) |
-| `BlindAccessory` | `invert` | `false` | HomeKit 100 % = LEVEL 0 (awnings) |
-| `ContactAccessory` | `invert` | `false` | swap open / closed. Always a HomeKit contact sensor; the former variants `door` / `window` (motorised-door services with a useless position slider) are mapped to it |
-| `SmokeAccessory` | `secondaryAlarm` | `true` | `false`: an alarm of another detector of the group does not show smoke on this one |
-| `DoorbellAccessory` | `trigger` | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge) |
-| `DoorbellAccessory` | `debounceSeconds` | `2` | repeats within this time are ignored |
-| `IrrigationAccessory` | `defaultDuration` | `600` | run time in seconds (max. 3600), sent as `ON_TIME`; the actuator switches off by itself. A duration set for a valve in Home replaces it for that valve. `0` = stays on until switched off |
-| `IrrigationAccessory` | channel `valveType` | `Irrigation` | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet` |
-| `IrrigationAccessory` | channel `name` | `Valve N` | name of the valve |
-| `IrrigationAccessory` | channel `duration` | – | fixed run time of this valve in seconds (1–3600); a duration chosen in Home is ignored (Home only offers 5 min and more). Empty: Home's duration, else `defaultDuration` |
+| Service               | Option              | Default       | Meaning                                                                                                                                                                                   |
+| --------------------- | ------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SwitchAccessory`     | `variant`           | `switch`      | `switch`, `outlet` or `lightbulb` (case-insensitive)                                                                                                                                      |
+| `BlindAccessory`      | `invert`            | `false`       | HomeKit 100 % = LEVEL 0 (awnings)                                                                                                                                                         |
+| `ContactAccessory`    | `invert`            | `false`       | swap open / closed. Always a HomeKit contact sensor; the former variants `door` / `window` (motorised-door services with a useless position slider) are mapped to it                      |
+| `SmokeAccessory`      | `secondaryAlarm`    | `true`        | `false`: an alarm of another detector of the group does not show smoke on this one                                                                                                        |
+| `DoorbellAccessory`   | `trigger`           | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge)                                                                                                                                      |
+| `DoorbellAccessory`   | `debounceSeconds`   | `2`           | repeats within this time are ignored                                                                                                                                                      |
+| `IrrigationAccessory` | `defaultDuration`   | `600`         | run time in seconds (max. 3600), sent as `ON_TIME`; the actuator switches off by itself. A duration set for a valve in Home replaces it for that valve. `0` = stays on until switched off |
+| `IrrigationAccessory` | channel `valveType` | `Irrigation`  | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet`                                                                                                                                 |
+| `IrrigationAccessory` | channel `name`      | `Valve N`     | name of the valve                                                                                                                                                                         |
+| `IrrigationAccessory` | channel `duration`  | –             | fixed run time of this valve in seconds (1–3600); a duration chosen in Home is ignored (Home only offers 5 min and more). Empty: Home's duration, else `defaultDuration`                  |
 
 `IrrigationAccessory` is a whole-device mapping: one valve per `SWITCH`
 channel of the device (e.g. HM-LC-Sw4-DR-2, channels 1–4).

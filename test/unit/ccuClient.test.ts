@@ -8,7 +8,11 @@ import { resolveConfig } from '../../src/util/config.js';
 import type { ChannelEvent } from '../../src/ccu/EventServer.js';
 
 function makeCcu(): CcuClient {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+  const config = resolveConfig({
+    platform: 'HapHomematic',
+    ccuIp: '127.0.0.1',
+    eventServer: { callbackHost: '127.0.0.1' },
+  });
   return new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'ccu-test') });
 }
 
@@ -51,20 +55,32 @@ describe('CcuClient registerListener / event dispatch', () => {
     const off = ccu.registerListener('HmIP.0:1.STATE', a);
     off();
     (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: 1, receivedAt: 0,
+      callbackId: 'homebridge-hap-homematic:HmIP-RF',
+      channelAddress: 'HmIP.0:1',
+      datapoint: 'STATE',
+      value: 1,
+      receivedAt: 0,
     });
     expect(a).not.toHaveBeenCalled();
   });
 
   it('catches listener exceptions without breaking', () => {
     const ccu = makeCcu();
-    const a = vi.fn(() => { throw new Error('nope'); });
+    const a = vi.fn(() => {
+      throw new Error('nope');
+    });
     const b = vi.fn();
     ccu.registerListener('HmIP.0:1.STATE', a);
     ccu.registerListener('HmIP.0:1.STATE', b);
-    expect(() => (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: 1, receivedAt: 0,
-    })).not.toThrow();
+    expect(() =>
+      (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
+        callbackId: 'homebridge-hap-homematic:HmIP-RF',
+        channelAddress: 'HmIP.0:1',
+        datapoint: 'STATE',
+        value: 1,
+        receivedAt: 0,
+      }),
+    ).not.toThrow();
     expect(b).toHaveBeenCalled();
   });
 
@@ -73,21 +89,33 @@ describe('CcuClient registerListener / event dispatch', () => {
     const a = vi.fn();
     ccu.registerListener('HmIP.0:1.STATE', a);
     (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'someone-else', channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: true, receivedAt: 0,
+      callbackId: 'someone-else',
+      channelAddress: 'HmIP.0:1',
+      datapoint: 'STATE',
+      value: true,
+      receivedAt: 0,
     });
     expect(a).not.toHaveBeenCalled();
   });
 
   it('drops unrouted events silently', () => {
     const ccu = makeCcu();
-    expect(() => (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
-      callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: 'HmIP.X:9', datapoint: 'STATE', value: 1, receivedAt: 0,
-    })).not.toThrow();
+    expect(() =>
+      (ccu as unknown as { handleEvent(ev: ChannelEvent): void }).handleEvent({
+        callbackId: 'homebridge-hap-homematic:HmIP-RF',
+        channelAddress: 'HmIP.X:9',
+        datapoint: 'STATE',
+        value: 1,
+        receivedAt: 0,
+      }),
+    ).not.toThrow();
   });
 
   it('guesses the interface from the serial shape before discovery', () => {
     const ccu = makeCcu();
-    const intfFor = (ccu as unknown as { interfaceForAddress(a: string): string }).interfaceForAddress.bind(ccu);
+    const intfFor = (
+      ccu as unknown as { interfaceForAddress(a: string): string }
+    ).interfaceForAddress.bind(ccu);
     expect(intfFor('00000000000A01:6')).toBe('HmIP-RF');
     expect(intfFor('ABC0000002:1')).toBe('BidCos-RF');
     expect(intfFor('weird')).toBe('BidCos-RF');

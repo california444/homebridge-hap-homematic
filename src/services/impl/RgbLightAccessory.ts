@@ -21,20 +21,17 @@ import { normalizeLevelToPercent, percentToLevelFraction } from '../../util/sani
  * Brightness comes from `LEVEL` on the same channel.
  */
 
-const RGB_CHANNEL_TYPES = [
-  'RGBW_COLOR',
-  'DIMMER_VIRTUAL_RECEIVER',
-];
+const RGB_CHANNEL_TYPES = ['RGBW_COLOR', 'DIMMER_VIRTUAL_RECEIVER'];
 
 const HMIP_BSL_COLOR_TO_HUE: Record<number, number> = {
-  0: 0,    // BLACK — represented as hue 0 / saturation 0 in HomeKit
-  1: 246,  // BLUE
-  2: 111,  // GREEN
-  3: 176,  // TURQUOISE
-  4: 0,    // RED
-  5: 319,  // PURPLE
-  6: 49,   // YELLOW
-  7: 0,    // WHITE — represented as hue 0 / saturation 0
+  0: 0, // BLACK — represented as hue 0 / saturation 0 in HomeKit
+  1: 246, // BLUE
+  2: 111, // GREEN
+  3: 176, // TURQUOISE
+  4: 0, // RED
+  5: 319, // PURPLE
+  6: 49, // YELLOW
+  7: 0, // WHITE — represented as hue 0 / saturation 0
 };
 
 function snapHueToBslIndex(hue: number, sat: number): number {
@@ -67,34 +64,46 @@ class RgbLightHandler extends AccessoryBase implements ChannelService {
     this.discrete = (this.accessory.context.subtype ?? 'continuous') === 'discrete';
     const service = this.getOrAddService(this.Service.Lightbulb, channel.name);
 
-    service.getCharacteristic(this.Characteristic.On)
+    service
+      .getCharacteristic(this.Characteristic.On)
       .onGet(this.wrapGet<boolean>(() => this.cachedLevel > 0))
-      .onSet(this.wrapSet<boolean>(async (value) => {
-        const pct = value ? Math.max(this.cachedLevel, 1) : 0;
-        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
-      }));
+      .onSet(
+        this.wrapSet<boolean>(async (value) => {
+          const pct = value ? Math.max(this.cachedLevel, 1) : 0;
+          await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.Brightness)
+    service
+      .getCharacteristic(this.Characteristic.Brightness)
       .onGet(this.wrapGet<number>(() => this.cachedLevel))
-      .onSet(this.wrapSet<number>(async (value) => {
-        const pct = normalizeLevelToPercent(value) ?? 0;
-        this.cachedLevel = pct;
-        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          const pct = normalizeLevelToPercent(value) ?? 0;
+          this.cachedLevel = pct;
+          await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.Hue)
+    service
+      .getCharacteristic(this.Characteristic.Hue)
       .onGet(this.wrapGet<number>(() => this.cachedHue))
-      .onSet(this.wrapSet<number>(async (value) => {
-        this.cachedHue = value;
-        await this.writeColor();
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          this.cachedHue = value;
+          await this.writeColor();
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.Saturation)
+    service
+      .getCharacteristic(this.Characteristic.Saturation)
       .onGet(this.wrapGet<number>(() => this.cachedSat))
-      .onSet(this.wrapSet<number>(async (value) => {
-        this.cachedSat = value;
-        await this.writeColor();
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          this.cachedSat = value;
+          await this.writeColor();
+        }),
+      );
 
     // LEVEL events
     this.registerListener(this.channelAddress, 'LEVEL', (raw) => {
@@ -138,7 +147,7 @@ class RgbLightHandler extends AccessoryBase implements ChannelService {
     if (this.discrete) {
       const hue = HMIP_BSL_COLOR_TO_HUE[Math.round(num)] ?? 0;
       this.cachedHue = hue;
-      this.cachedSat = (Math.round(num) === 0 || Math.round(num) === 7) ? 0 : 100;
+      this.cachedSat = Math.round(num) === 0 || Math.round(num) === 7 ? 0 : 100;
     } else {
       // Continuous: 0..199 = hue ring, 200 = white. Map back.
       if (num >= 200) {
@@ -156,9 +165,7 @@ class RgbLightHandler extends AccessoryBase implements ChannelService {
       const idx = snapHueToBslIndex(this.cachedHue, this.cachedSat);
       await this.ccu.setValue(this.channelAddress, 'COLOR', idx);
     } else {
-      const colorVal = this.cachedSat < 10
-        ? 200
-        : Math.round((this.cachedHue / 360) * 199);
+      const colorVal = this.cachedSat < 10 ? 200 : Math.round((this.cachedHue / 360) * 199);
       await this.ccu.setValue(this.channelAddress, 'COLOR', colorVal);
     }
   }
@@ -172,7 +179,7 @@ export const rgbLightService: ServiceDefinition = {
   priority: 60,
   variants: [
     { id: 'continuous', label: 'Continuous (HM-LC-RGBW-WM)' },
-    { id: 'discrete',   label: 'Discrete 7-colour (HmIP-BSL)' },
+    { id: 'discrete', label: 'Discrete 7-colour (HmIP-BSL)' },
   ],
   build: (ctx: ServiceContext) => new RgbLightHandler(ctx),
 };

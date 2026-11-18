@@ -9,10 +9,7 @@ import type { CcuChannel } from '../../types.js';
  * Secured so the Home app doesn't show a dangling "Unlocked" state.
  */
 
-const DOOR_OPENER_CHANNEL_TYPES = [
-  'SWITCH',
-  'SWITCH_VIRTUAL_RECEIVER',
-];
+const DOOR_OPENER_CHANNEL_TYPES = ['SWITCH', 'SWITCH_VIRTUAL_RECEIVER'];
 
 const SECURED = 1;
 const UNSECURED = 0;
@@ -26,33 +23,37 @@ class DoorOpenerHandler extends AccessoryBase implements ChannelService {
     this.channelAddress = channel.address;
     const service = this.getOrAddService(this.Service.LockMechanism, channel.name);
 
-    service.getCharacteristic(this.Characteristic.LockCurrentState)
+    service
+      .getCharacteristic(this.Characteristic.LockCurrentState)
       .onGet(this.wrapGet<number>(() => SECURED));
 
-    service.getCharacteristic(this.Characteristic.LockTargetState)
+    service
+      .getCharacteristic(this.Characteristic.LockTargetState)
       .onGet(this.wrapGet<number>(() => SECURED))
-      .onSet(this.wrapSet<number>(async (value) => {
-        if (value !== UNSECURED) {
-          return;
-        }
-        try {
-          await this.ccu.setValue(this.channelAddress, 'STATE', true);
-        } catch (err) {
-          this.log.warn('door-opener pulse failed: %s', (err as Error).message);
-        }
-        service.updateCharacteristic(this.Characteristic.LockCurrentState, UNSECURED);
-        if (this.resetTimer) {
-          clearTimeout(this.resetTimer);
-        }
-        this.resetTimer = setTimeout(() => {
-          service.updateCharacteristic(this.Characteristic.LockTargetState, SECURED);
-          service.updateCharacteristic(this.Characteristic.LockCurrentState, SECURED);
-          this.resetTimer = undefined;
-        }, PULSE_MS);
-        if (this.resetTimer.unref) {
-          this.resetTimer.unref();
-        }
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          if (value !== UNSECURED) {
+            return;
+          }
+          try {
+            await this.ccu.setValue(this.channelAddress, 'STATE', true);
+          } catch (err) {
+            this.log.warn('door-opener pulse failed: %s', (err as Error).message);
+          }
+          service.updateCharacteristic(this.Characteristic.LockCurrentState, UNSECURED);
+          if (this.resetTimer) {
+            clearTimeout(this.resetTimer);
+          }
+          this.resetTimer = setTimeout(() => {
+            service.updateCharacteristic(this.Characteristic.LockTargetState, SECURED);
+            service.updateCharacteristic(this.Characteristic.LockCurrentState, SECURED);
+            this.resetTimer = undefined;
+          }, PULSE_MS);
+          if (this.resetTimer.unref) {
+            this.resetTimer.unref();
+          }
+        }),
+      );
   }
 
   override dispose(): void {

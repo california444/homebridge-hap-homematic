@@ -39,8 +39,10 @@ const DEFAULT_EVENT_SERVER = {
   port: 9875,
 };
 
-const HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/;
-const IPV4_RE = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+const HOSTNAME_RE =
+  /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*$/;
+const IPV4_RE =
+  /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
 const IPV6_RE = /^[0-9a-fA-F:]+$/;
 
 export function isValidHost(value: unknown): value is string {
@@ -94,7 +96,8 @@ export function resolveConfig(raw: RawConfig, opts: ResolveOptions = {}): Resolv
   }
   if ((opts.requireCallbackHost ?? true) && !callbackHost) {
     throw new ConfigError(
-      'eventServer.callbackHost is required: the address under which the CCU reaches this host (e.g. 192.168.0.13)');
+      'eventServer.callbackHost is required: the address under which the CCU reaches this host (e.g. 192.168.0.13)',
+    );
   }
   const evPort = Number(raw.eventServer?.port ?? DEFAULT_EVENT_SERVER.port);
   if (!Number.isInteger(evPort) || evPort < 1024 || evPort > 65535) {

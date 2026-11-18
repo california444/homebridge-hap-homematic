@@ -5,10 +5,7 @@ import type { ChannelService, ServiceContext, ServiceDefinition } from '../types
 import type { CcuChannel } from '../../types.js';
 import { normalizeLevelToPercent, percentToLevelFraction } from '../../util/sanitize.js';
 
-const DIMMER_CHANNEL_TYPES = [
-  'DIMMER',
-  'DIMMER_VIRTUAL_RECEIVER',
-];
+const DIMMER_CHANNEL_TYPES = ['DIMMER', 'DIMMER_VIRTUAL_RECEIVER'];
 
 class DimmerHandler extends AccessoryBase implements ChannelService {
   private channelAddress = '';
@@ -18,20 +15,26 @@ class DimmerHandler extends AccessoryBase implements ChannelService {
     this.channelAddress = channel.address;
     const service = this.getOrAddService(this.Service.Lightbulb, channel.name);
 
-    service.getCharacteristic(this.Characteristic.On)
+    service
+      .getCharacteristic(this.Characteristic.On)
       .onGet(this.wrapGet<boolean>(() => this.cachedLevel > 0))
-      .onSet(this.wrapSet<boolean>(async (value) => {
-        const pct = value ? Math.max(this.cachedLevel, 1) : 0;
-        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
-      }));
+      .onSet(
+        this.wrapSet<boolean>(async (value) => {
+          const pct = value ? Math.max(this.cachedLevel, 1) : 0;
+          await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
+        }),
+      );
 
-    service.getCharacteristic(this.Characteristic.Brightness)
+    service
+      .getCharacteristic(this.Characteristic.Brightness)
       .onGet(this.wrapGet<number>(() => this.cachedLevel))
-      .onSet(this.wrapSet<number>(async (value) => {
-        const pct = normalizeLevelToPercent(value) ?? 0;
-        this.cachedLevel = pct;
-        await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
-      }));
+      .onSet(
+        this.wrapSet<number>(async (value) => {
+          const pct = normalizeLevelToPercent(value) ?? 0;
+          this.cachedLevel = pct;
+          await this.ccu.setValue(this.channelAddress, 'LEVEL', percentToLevelFraction(pct));
+        }),
+      );
 
     const stateAddress = channel.stateAddress ?? channel.address; // HmIP: DIMMER_TRANSMITTER
     this.registerListener(stateAddress, 'LEVEL', (raw) => {

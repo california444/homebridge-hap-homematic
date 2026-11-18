@@ -30,20 +30,62 @@
   /* Do NOT set min-height in viewport units. The host iframe auto-fits
      its height to our content, so vh creates a positive feedback loop
      (content grows → iframe grows → vh grows → … hits 100k+ px). */
-  #hgui-app { display: flex; flex-direction: column; color: var(--bs-body-color); }
-  .hgui-version { color: var(--bs-secondary-color); font-size: 0.8rem; }
-  details.hgui-card > summary { cursor: pointer; font-weight: 500; }
-  details.hgui-card[open] > summary { margin-bottom: 0.5rem; }
-  .hgui-main { flex: 1; min-width: 0; }
+  #hgui-app {
+    display: flex;
+    flex-direction: column;
+    color: var(--bs-body-color);
+  }
+  .hgui-version {
+    color: var(--bs-secondary-color);
+    font-size: 0.8rem;
+  }
+  details.hgui-card > summary {
+    cursor: pointer;
+    font-weight: 500;
+  }
+  details.hgui-card[open] > summary {
+    margin-bottom: 0.5rem;
+  }
+  .hgui-main {
+    flex: 1;
+    min-width: 0;
+  }
 
-  .hgui-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; padding: 0.75rem 0; border-top: 1px solid var(--bs-border-color-translucent); border-bottom: 1px solid var(--bs-border-color-translucent); position: sticky; top: 0; background: var(--bs-body-bg); z-index: 10; }
-  .hgui-toolbar .form-control, .hgui-toolbar .form-select { max-width: 280px; }
-  .hgui-toolbar input.form-control { min-width: 200px; }
+  .hgui-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--bs-border-color-translucent);
+    border-bottom: 1px solid var(--bs-border-color-translucent);
+    position: sticky;
+    top: 0;
+    background: var(--bs-body-bg);
+    z-index: 10;
+  }
+  .hgui-toolbar .form-control,
+  .hgui-toolbar .form-select {
+    max-width: 280px;
+  }
+  .hgui-toolbar input.form-control {
+    min-width: 200px;
+  }
 
   /* Sub-view footer: sticky button bar with NO background fill — the
      border alone is enough; a fill clashes with both the page bg in
      dark mode and the tiles above. */
-  .hgui-floating-bar { position: sticky; bottom: 0; background: transparent; padding: 0.75rem 0; border-top: 1px solid var(--bs-border-color-translucent); display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .hgui-floating-bar {
+    position: sticky;
+    bottom: 0;
+    background: transparent;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--bs-border-color-translucent);
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
 
   /* Tiles ---------------------------------------------------------- */
   /* Tile min-width drives how many fit per row. The iframe is hosted
@@ -53,11 +95,26 @@
      align-items: stretch). Each tile's inner grid pins content to
      the top via align-content: start, so a short tile doesn't float
      its pills row vertically. */
-  .hgui-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.5rem; padding: 0.5rem 0; }
+  .hgui-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
   /* --bs-tertiary-bg adapts: a near-white in light mode (#f8f9fa)
      and a slightly-lighter dark in dark mode (#2b3035). Gives tiles
      subtle separation from the page background in either theme. */
-  .hgui-tile { background: var(--bs-tertiary-bg); color: var(--bs-body-color); border: 1px solid var(--bs-border-color-translucent); border-radius: 8px; padding: 0.5rem 0.75rem; display: grid; grid-auto-rows: auto; gap: 0.15rem; align-content: start; }
+  .hgui-tile {
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    display: grid;
+    grid-auto-rows: auto;
+    gap: 0.15rem;
+    align-content: start;
+  }
   /* Mute the textual content of un-configured tiles, but keep the
      action button (the "+ Add") at full opacity so it's obvious it
      can be clicked. CSS opacity is multiplicative through the tree,
@@ -65,57 +122,179 @@
   .hgui-tile.muted .hgui-tile-name,
   .hgui-tile.muted .hgui-tile-sub,
   .hgui-tile.muted .hgui-tile-meta,
-  .hgui-tile.muted .hgui-tile-pills { opacity: 0.6; }
-  .hgui-tile-head { display: flex; align-items: center; gap: 0.5rem; }
-  .hgui-tile-actions .btn { padding: 0.1rem 0.5rem; font-size: 0.8rem; }
-  .hgui-tile-name { font-weight: 600; font-size: 0.95rem; line-height: 1.3; flex: 1; min-width: 0; word-break: break-word; color: var(--bs-body-color); }
-  .hgui-tile-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
-  .hgui-tile-sub  { color: var(--bs-secondary-color); font-size: 0.875rem; }
+  .hgui-tile.muted .hgui-tile-pills {
+    opacity: 0.6;
+  }
+  .hgui-tile-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .hgui-tile-actions .btn {
+    padding: 0.1rem 0.5rem;
+    font-size: 0.8rem;
+  }
+  .hgui-tile-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1.3;
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+    color: var(--bs-body-color);
+  }
+  .hgui-tile-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+  .hgui-tile-sub {
+    color: var(--bs-secondary-color);
+    font-size: 0.875rem;
+  }
   /* tile-meta is the address line. The `<code>` wrapped on the
      address picks up Bootstrap's --bs-code-color (a pinkish red) in
      both themes; the type after the dot stays in secondary color. */
-  .hgui-tile-meta { font-size: 0.78rem; color: var(--bs-secondary-color); word-break: break-all; }
-  .hgui-tile-meta code { font-size: 0.82rem; }
-  .hgui-tile-pills { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  .hgui-tile-meta {
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color);
+    word-break: break-all;
+  }
+  .hgui-tile-meta code {
+    font-size: 0.82rem;
+  }
+  .hgui-tile-pills {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
 
   /* Pills are outline-only so they read calmly in either theme without
      the loud opaque fill. The colored variants take their accent from
      Bootstrap's --bs-primary/--bs-success/--bs-warning tokens. */
-  .hgui-pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem; background: transparent; color: var(--bs-secondary-color); white-space: nowrap; border: 1px solid var(--bs-border-color); }
-  .hgui-pill.primary  { color: var(--bs-primary);  border-color: var(--bs-primary); }
-  .hgui-pill.success  { color: var(--bs-success);  border-color: var(--bs-success); }
-  .hgui-pill.warning  { color: var(--bs-warning);  border-color: var(--bs-warning); }
-  .hgui-pill.muted    { border-style: dashed; color: var(--bs-secondary-color); }
+  .hgui-pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    white-space: nowrap;
+    border: 1px solid var(--bs-border-color);
+  }
+  .hgui-pill.primary {
+    color: var(--bs-primary);
+    border-color: var(--bs-primary);
+  }
+  .hgui-pill.success {
+    color: var(--bs-success);
+    border-color: var(--bs-success);
+  }
+  .hgui-pill.warning {
+    color: var(--bs-warning);
+    border-color: var(--bs-warning);
+  }
+  .hgui-pill.muted {
+    border-style: dashed;
+    color: var(--bs-secondary-color);
+  }
 
   /* Empty / pager -------------------------------------------------- */
-  .hgui-empty { color: var(--bs-secondary-color); font-style: italic; padding: 2rem; text-align: center; border: 1px dashed var(--bs-border-color-translucent); border-radius: 8px; margin-top: 1rem; }
-  .hgui-pager { display: flex; gap: 0.25rem; align-items: center; justify-content: center; padding: 0.75rem 0; flex-wrap: wrap; }
+  .hgui-empty {
+    color: var(--bs-secondary-color);
+    font-style: italic;
+    padding: 2rem;
+    text-align: center;
+    border: 1px dashed var(--bs-border-color-translucent);
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
+  .hgui-pager {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 0;
+    flex-wrap: wrap;
+  }
 
   /* Cards (used in settings / sub-views) --------------------------- */
-  .hgui-card { background: var(--bs-tertiary-bg); color: var(--bs-body-color); border: 1px solid var(--bs-border-color-translucent); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
-  .hgui-card h6 { margin-bottom: 0.5rem; }
-  .hgui-meta { color: var(--bs-secondary-color); font-size: 0.85rem; }
+  .hgui-card {
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color-translucent);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .hgui-card h6 {
+    margin-bottom: 0.5rem;
+  }
+  .hgui-meta {
+    color: var(--bs-secondary-color);
+    font-size: 0.85rem;
+  }
 
   /* Form rows ------------------------------------------------------ */
-  .hgui-form-row { display: grid; grid-template-columns: 130px 1fr; gap: 0.75rem; margin-bottom: 0.85rem; align-items: start; }
-  @media (max-width: 700px) { .hgui-form-row { grid-template-columns: 1fr; } }
-  .hgui-form-row label { padding-top: 0.5rem; font-weight: 500; color: var(--bs-body-color); }
-  .hgui-form-row .hgui-hint { color: var(--bs-secondary-color); font-size: 0.825rem; margin-top: 0.25rem; }
-  .hgui-hint { color: var(--bs-secondary-color); font-size: 0.825rem; margin-top: 0.25rem; }
-  .hgui-hint details summary { cursor: pointer; color: var(--bs-link-color); }
+  .hgui-form-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+    align-items: start;
+  }
+  @media (max-width: 700px) {
+    .hgui-form-row {
+      grid-template-columns: 1fr;
+    }
+  }
+  .hgui-form-row label {
+    padding-top: 0.5rem;
+    font-weight: 500;
+    color: var(--bs-body-color);
+  }
+  .hgui-form-row .hgui-hint {
+    color: var(--bs-secondary-color);
+    font-size: 0.825rem;
+    margin-top: 0.25rem;
+  }
+  .hgui-hint {
+    color: var(--bs-secondary-color);
+    font-size: 0.825rem;
+    margin-top: 0.25rem;
+  }
+  .hgui-hint details summary {
+    cursor: pointer;
+    color: var(--bs-link-color);
+  }
 
   /* Tabs: keep the host's tab look, make the active tab readable in both themes. */
-  #hgui-tabs .nav-link { color: var(--bs-secondary-color); }
-  #hgui-tabs .nav-link.active { color: var(--bs-body-color); background: var(--bs-body-bg); }
+  #hgui-tabs .nav-link {
+    color: var(--bs-secondary-color);
+  }
+  #hgui-tabs .nav-link.active {
+    color: var(--bs-body-color);
+    background: var(--bs-body-bg);
+  }
 
   /* Status tiles at the top of Settings. */
-  .hgui-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
-  .hgui-stats .hgui-card { margin-bottom: 0; }
-  .hgui-stat-value { font-size: 1.75rem; font-weight: 600; line-height: 1.2; }
+  .hgui-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .hgui-stats .hgui-card {
+    margin-bottom: 0;
+  }
+  .hgui-stat-value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
 </style>
 
 <div id="hgui-app">
-
   <!-- View tabs (plain Bootstrap tab styling; switching is done in app.js,
        no Bootstrap JS). The actions live in the views: Test CCU in
        Settings, Discover in Channels. -->
@@ -150,11 +329,14 @@
     function read() {
       try {
         const parent = window.parent.document.documentElement;
-        const theme = parent.getAttribute('data-bs-theme')
-          || (window.parent.document.body?.classList?.contains('dark-mode') ? 'dark' : null)
-          || (parent.classList?.contains('dark-mode') ? 'dark' : null);
+        const theme =
+          parent.getAttribute('data-bs-theme') ||
+          (window.parent.document.body?.classList?.contains('dark-mode') ? 'dark' : null) ||
+          (parent.classList?.contains('dark-mode') ? 'dark' : null);
         if (theme) return theme;
-      } catch (_) { /* cross-origin or sandboxed */ }
+      } catch (_) {
+        /* cross-origin or sandboxed */
+      }
       return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
     function apply() {
@@ -164,14 +346,18 @@
     apply();
     try {
       new MutationObserver(apply).observe(window.parent.document.documentElement, {
-        attributes: true, attributeFilter: ['data-bs-theme', 'class'],
+        attributes: true,
+        attributeFilter: ['data-bs-theme', 'class'],
       });
       if (window.parent.document.body) {
         new MutationObserver(apply).observe(window.parent.document.body, {
-          attributes: true, attributeFilter: ['class'],
+          attributes: true,
+          attributeFilter: ['class'],
         });
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {
+      /* ignore */
+    }
     matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', apply);
   })();
 </script>

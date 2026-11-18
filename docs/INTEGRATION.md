@@ -4,12 +4,12 @@
 
 ## Prerequisites
 
-| Item | Minimum |
-| ---- | ------- |
-| Homebridge | 2.4.0 |
-| Node.js | 24 |
-| CCU firmware | OpenCCU / RaspberryMatic or CCU3 firmware with XML-RPC on 2001 / 2010 |
-| Network | CCU reachable from the Homebridge host, and vice versa (event callback) |
+| Item         | Minimum                                                                 |
+| ------------ | ----------------------------------------------------------------------- |
+| Homebridge   | 2.4.0                                                                   |
+| Node.js      | 24                                                                      |
+| CCU firmware | OpenCCU / RaspberryMatic or CCU3 firmware with XML-RPC on 2001 / 2010   |
+| Network      | CCU reachable from the Homebridge host, and vice versa (event callback) |
 
 The plugin only talks to the CCU over the **LAN**. It does not need
 internet access. It does not contact any of the author's servers, send
@@ -20,17 +20,17 @@ analytics, or auto-update.
 No CCU user and no login: the plugin uses the XML-RPC ports of `rfd`
 and `HMIPServer` directly. They must be reachable from the Homebridge
 host (CCU WebUI → Settings → Control Panel → Security → Firewall:
-"XML-RPC API" *Open*, or *Restricted access* with the Homebridge host
+"XML-RPC API" _Open_, or _Restricted access_ with the Homebridge host
 whitelisted). If authentication is enabled on the CCU, set `rpcAuth`
 (HTTP Basic auth on the XML-RPC ports).
 
 ## Network requirements
 
-| Direction | Port | Protocol | Why |
-| --------- | ---- | -------- | --- |
-| Plugin → CCU | 2001 (TLS: 42001) | XML-RPC | BidCos-RF: discovery, subscription, `getValue` / `setValue` |
-| Plugin → CCU | 2010 (TLS: 42010) | XML-RPC | HmIP-RF: discovery, subscription, `getValue` / `setValue` |
-| CCU → Plugin | 9875 (default, configurable) | XML-RPC | inbound push events |
+| Direction    | Port                         | Protocol | Why                                                         |
+| ------------ | ---------------------------- | -------- | ----------------------------------------------------------- |
+| Plugin → CCU | 2001 (TLS: 42001)            | XML-RPC  | BidCos-RF: discovery, subscription, `getValue` / `setValue` |
+| Plugin → CCU | 2010 (TLS: 42010)            | XML-RPC  | HmIP-RF: discovery, subscription, `getValue` / `setValue`   |
+| CCU → Plugin | 9875 (default, configurable) | XML-RPC  | inbound push events                                         |
 
 `eventServer.callbackHost` is **required**: the address under which the
 CCU reaches this Homebridge host. The CCU sends its events to
@@ -42,7 +42,7 @@ default) must be reachable from the CCU, and `callbackHost` must be the
 
 ```yaml
 ports:
-  - "9875:9875"
+  - '9875:9875'
 ```
 
 ## Configuration
@@ -74,33 +74,33 @@ looks like this:
 Device mappings are **not** part of `config.json`; they live in
 `devices.json`, see [DEVICES.md](DEVICES.md).
 
-| Field | Description |
-| ----- | ----------- |
-| `ccuIp` | IP or hostname of the CCU. |
-| `useTls` | XML-RPC over HTTPS (default ports 42001 / 42010). The CCU's self-signed certificate is accepted. |
-| `rpcAuth.*` | `enabled`, `username`, `password`: HTTP Basic auth on the XML-RPC ports. Only if enabled on the CCU. |
-| `interfaces.*` | Toggle BidCos-RF / HmIP-RF. Disable an interface you don't use. |
-| `interfacePorts.*` | XML-RPC port per interface. Defaults: `BidCos-RF` 2001, `HmIP-RF` 2010; with TLS 42001 / 42010. |
-| `eventServer.host` | Local bind address of the event server. Default `0.0.0.0` (all interfaces). |
-| `eventServer.callbackHost` | **Required.** Address the CCU calls back. |
-| `eventServer.port` | Default 9875. Pick anything in 1024–65535. |
-| `sendQueue.timeoutMs` | Optional. Commands go to the CCU one at a time, across both interfaces. Longest wait for the CCU's answer before the next command is sent. Default 5000 ms. |
-| `sendQueue.gapMs` | Optional. Pause after a delivered command. Default 100 ms, 0 = no pause. |
+| Field                      | Description                                                                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ccuIp`                    | IP or hostname of the CCU.                                                                                                                                  |
+| `useTls`                   | XML-RPC over HTTPS (default ports 42001 / 42010). The CCU's self-signed certificate is accepted.                                                            |
+| `rpcAuth.*`                | `enabled`, `username`, `password`: HTTP Basic auth on the XML-RPC ports. Only if enabled on the CCU.                                                        |
+| `interfaces.*`             | Toggle BidCos-RF / HmIP-RF. Disable an interface you don't use.                                                                                             |
+| `interfacePorts.*`         | XML-RPC port per interface. Defaults: `BidCos-RF` 2001, `HmIP-RF` 2010; with TLS 42001 / 42010.                                                             |
+| `eventServer.host`         | Local bind address of the event server. Default `0.0.0.0` (all interfaces).                                                                                 |
+| `eventServer.callbackHost` | **Required.** Address the CCU calls back.                                                                                                                   |
+| `eventServer.port`         | Default 9875. Pick anything in 1024–65535.                                                                                                                  |
+| `sendQueue.timeoutMs`      | Optional. Commands go to the CCU one at a time, across both interfaces. Longest wait for the CCU's answer before the next command is sent. Default 5000 ms. |
+| `sendQueue.gapMs`          | Optional. Pause after a delivered command. Default 100 ms, 0 = no pause.                                                                                    |
 
 ### Service registry
 
-| `service` key | HAP service(s) | Suitable for | Variants (`subtype`) |
-| ------------- | --------------- | ------------ | --------------------- |
-| `SwitchAccessory` | Switch / Outlet / Lightbulb | Binary relays, IP outlets | `switch`, `outlet`, `lightbulb` |
-| `DimmerAccessory` | Lightbulb (with Brightness) | Dimmable lights | – |
-| `BlindAccessory` | WindowCovering | Roller shutters, blinds | – |
-| `ThermostatAccessory` | Thermostat | Radiator and IP wall thermostats | – |
-| `ContactAccessory` | ContactSensor / Door / Window | Door & window contacts | `contact`, `door`, `window` |
-| `MotionAccessory` | MotionSensor | Motion + IR detectors | – |
-| `SmokeAccessory` | SmokeSensor | Homematic smoke detectors | – |
-| `LeakAccessory` | LeakSensor | Water-detection sensors | – |
-| `TemperatureAccessory` | TemperatureSensor | Climate / weather channels | – |
-| `HumidityAccessory` | HumiditySensor | Climate / weather channels | – |
+| `service` key          | HAP service(s)                | Suitable for                     | Variants (`subtype`)            |
+| ---------------------- | ----------------------------- | -------------------------------- | ------------------------------- |
+| `SwitchAccessory`      | Switch / Outlet / Lightbulb   | Binary relays, IP outlets        | `switch`, `outlet`, `lightbulb` |
+| `DimmerAccessory`      | Lightbulb (with Brightness)   | Dimmable lights                  | –                               |
+| `BlindAccessory`       | WindowCovering                | Roller shutters, blinds          | –                               |
+| `ThermostatAccessory`  | Thermostat                    | Radiator and IP wall thermostats | –                               |
+| `ContactAccessory`     | ContactSensor / Door / Window | Door & window contacts           | `contact`, `door`, `window`     |
+| `MotionAccessory`      | MotionSensor                  | Motion + IR detectors            | –                               |
+| `SmokeAccessory`       | SmokeSensor                   | Homematic smoke detectors        | –                               |
+| `LeakAccessory`        | LeakSensor                    | Water-detection sensors          | –                               |
+| `TemperatureAccessory` | TemperatureSensor             | Climate / weather channels       | –                               |
+| `HumidityAccessory`    | HumiditySensor                | Climate / weather channels       | –                               |
 
 ## Security
 
@@ -134,7 +134,7 @@ mappings.
 The interface failed to subscribe at startup. Most common cause: the
 CCU firewall blocks the XML-RPC ports. Open the CCU WebUI →
 **Settings → Control Panel → Security → Configure firewall**, set
-**XML-RPC API** to *Open* or *Restricted access* with the Homebridge
+**XML-RPC API** to _Open_ or _Restricted access_ with the Homebridge
 host whitelisted, and restart Homebridge.
 
 **Heavy log spam from `[HapHomematic:ccu:events]`**

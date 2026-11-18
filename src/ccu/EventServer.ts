@@ -62,9 +62,14 @@ export function describeCall(method: string, params: unknown[]): string {
     return `event(${String(cb)}) ${String(address)}.${String(dp)}=${short(value)}`;
   }
   if (method === 'system.multicall') {
-    const calls = Array.isArray(params[0]) ? (params[0] as Array<{ methodName?: unknown; params?: unknown }>) : [];
-    const parts = calls.slice(0, SUMMARY_CALLS).map((c) =>
-      describeCall(String(c?.methodName ?? '?'), Array.isArray(c?.params) ? c.params : []));
+    const calls = Array.isArray(params[0])
+      ? (params[0] as Array<{ methodName?: unknown; params?: unknown }>)
+      : [];
+    const parts = calls
+      .slice(0, SUMMARY_CALLS)
+      .map((c) =>
+        describeCall(String(c?.methodName ?? '?'), Array.isArray(c?.params) ? c.params : []),
+      );
     const more = calls.length > SUMMARY_CALLS ? `; … ${calls.length - SUMMARY_CALLS} more` : '';
     return `system.multicall[${calls.length}] ${parts.join('; ')}${more}`;
   }
@@ -80,7 +85,10 @@ export function describeCall(method: string, params: unknown[]): string {
  * STALE every few minutes. HMIPServer accepts chunked answers.
  */
 function send(res: http.ServerResponse, status: number, type: string, body: string): void {
-  res.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body, 'utf8') });
+  res.writeHead(status, {
+    'Content-Type': type,
+    'Content-Length': Buffer.byteLength(body, 'utf8'),
+  });
   res.end(body);
 }
 
@@ -146,7 +154,10 @@ export class EventServer extends EventEmitter {
   override on<K extends keyof EventServerEvents>(event: K, listener: EventServerEvents[K]): this {
     return super.on(event, listener as (...args: unknown[]) => void);
   }
-  override emit<K extends keyof EventServerEvents>(event: K, ...args: Parameters<EventServerEvents[K]>): boolean {
+  override emit<K extends keyof EventServerEvents>(
+    event: K,
+    ...args: Parameters<EventServerEvents[K]>
+  ): boolean {
     return super.emit(event, ...args);
   }
 
@@ -196,7 +207,11 @@ export class EventServer extends EventEmitter {
             next.add(normalizeAddress(address));
           }
         } catch (err) {
-          this.log.warn('Cannot resolve %s for the event server sender check: %s', host, (err as Error).message);
+          this.log.warn(
+            'Cannot resolve %s for the event server sender check: %s',
+            host,
+            (err as Error).message,
+          );
           for (const a of this.allowedAddresses) {
             next.add(a);
           }
@@ -222,12 +237,18 @@ export class EventServer extends EventEmitter {
     }
     if (!this.warnedSenders.has(remote)) {
       this.warnedSenders.add(remote);
-      this.log.warn('Rejected a callback from %s: only the CCU (%s) may send events',
-        remote || '?', this.allowedSenders.join(', '));
+      this.log.warn(
+        'Rejected a callback from %s: only the CCU (%s) may send events',
+        remote || '?',
+        this.allowedSenders.join(', '),
+      );
     } else {
       this.log.debug('%s rejected callback from %s', tag, remote || '?');
     }
-    if (Date.now() - this.resolvedAt > RESOLVE_INTERVAL_MS && this.allowedSenders.some((h) => !isIP(h))) {
+    if (
+      Date.now() - this.resolvedAt > RESOLVE_INTERVAL_MS &&
+      this.allowedSenders.some((h) => !isIP(h))
+    ) {
       void this.resolveAllowedSenders();
     }
     return false;
@@ -236,9 +257,19 @@ export class EventServer extends EventEmitter {
   private trackConnection(socket: Socket): void {
     const info: ConnectionInfo = { id: ++this.connectionSeq, requests: 0 };
     this.connections.set(socket, info);
-    this.log.debug('connection #%d from %s:%s', info.id, socket.remoteAddress ?? '?', String(socket.remotePort ?? '?'));
+    this.log.debug(
+      'connection #%d from %s:%s',
+      info.id,
+      socket.remoteAddress ?? '?',
+      String(socket.remotePort ?? '?'),
+    );
     socket.on('close', (hadError: boolean) => {
-      this.log.debug('connection #%d closed after %d request(s)%s', info.id, info.requests, hadError ? ' (error)' : '');
+      this.log.debug(
+        'connection #%d closed after %d request(s)%s',
+        info.id,
+        info.requests,
+        hadError ? ' (error)' : '',
+      );
     });
   }
 
@@ -284,8 +315,13 @@ export class EventServer extends EventEmitter {
         const result = this.dispatch(parsed.method, parsed.params);
         const xml = serializeResponse(result);
         send(res, 200, 'text/xml', xml);
-        this.log.debug('%s %s → %d bytes in %d ms', tag, describeCall(parsed.method, parsed.params),
-          Buffer.byteLength(xml), Date.now() - started);
+        this.log.debug(
+          '%s %s → %d bytes in %d ms',
+          tag,
+          describeCall(parsed.method, parsed.params),
+          Buffer.byteLength(xml),
+          Date.now() - started,
+        );
       } catch (err) {
         this.log.error('Event server handler error (%s): %s', tag, (err as Error).message);
         send(res, 200, 'text/xml', serializeFault(-1, (err as Error).message));
@@ -302,7 +338,12 @@ export class EventServer extends EventEmitter {
     }
     switch (method) {
       case 'event': {
-        const [callbackId, channelAddress, datapoint, value] = params as [string, string, string, unknown];
+        const [callbackId, channelAddress, datapoint, value] = params as [
+          string,
+          string,
+          string,
+          unknown,
+        ];
         const ev: ChannelEvent = {
           callbackId,
           channelAddress,
@@ -314,7 +355,8 @@ export class EventServer extends EventEmitter {
         return '';
       }
       case 'system.multicall': {
-        const calls = (params[0] as Array<{ methodName: string; params: unknown[] }> | undefined) ?? [];
+        const calls =
+          (params[0] as Array<{ methodName: string; params: unknown[] }> | undefined) ?? [];
         const results: unknown[] = [];
         for (const call of calls) {
           if (call && typeof call.methodName === 'string') {

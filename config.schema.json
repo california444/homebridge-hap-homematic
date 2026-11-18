@@ -109,9 +109,7 @@
             "maximum": 65535
           }
         },
-        "required": [
-          "callbackHost"
-        ]
+        "required": ["callbackHost"]
       },
       "sendQueue": {
         "title": "Send queue",
@@ -137,9 +135,6 @@
         }
       }
     },
-    "required": [
-      "name",
-      "ccuIp"
-    ]
+    "required": ["name", "ccuIp"]
   }
 }

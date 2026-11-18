@@ -54,13 +54,13 @@ Stateless Programmable Switch, slats, battery and fault states.
 
 ## How it differs from other plugins
 
-| | homebridge-hap-homematic | Other HomeMatic plugins for Homebridge / CCU add-ons |
-| --- | --- | --- |
-| CCU access | XML-RPC only, no login | often JSON-RPC / ReGa with a CCU user |
-| Runs on | Homebridge, one child bridge | Homebridge (partly several bridges) or as a CCU add-on |
-| Configuration | custom UI, channel by channel, stored in `devices.json` | config.json lists or the add-on's UI |
-| System variables, programs | no | yes, in some of them |
-| Irrigation | IrrigationSystem with valves, fixed or Home-set run time | depends on the plugin |
+|                            | homebridge-hap-homematic                                 | Other HomeMatic plugins for Homebridge / CCU add-ons   |
+| -------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| CCU access                 | XML-RPC only, no login                                   | often JSON-RPC / ReGa with a CCU user                  |
+| Runs on                    | Homebridge, one child bridge                             | Homebridge (partly several bridges) or as a CCU add-on |
+| Configuration              | custom UI, channel by channel, stored in `devices.json`  | config.json lists or the add-on's UI                   |
+| System variables, programs | no                                                       | yes, in some of them                                   |
+| Irrigation                 | IrrigationSystem with valves, fixed or Home-set run time | depends on the plugin                                  |
 
 ## Screenshots
 
@@ -84,18 +84,18 @@ in the
 
 Tested on real hardware with an OpenCCU:
 
-| Device | Interface | Service |
-| --- | --- | --- |
-| HM-LC-Sw1PBU-FM | BidCos-RF | Switch / Light |
-| HM-LC-Sw1-DR | BidCos-RF | Switch / Light |
-| HM-LC-Sw4-DR-2 | BidCos-RF | Irrigation system (4 valves) |
-| HM-LC-Bl1PBU-FM | BidCos-RF | Blind |
-| HM-Sec-SCo | BidCos-RF | Contact sensor |
-| HmIP-PS | HmIP-RF | Switch / Outlet |
-| HmIP-DRSI4 | HmIP-RF | Switch / Light (4 outputs) |
-| HmIP-BROLL | HmIP-RF | Blind |
-| HmIP-SWSD | HmIP-RF | Smoke detector |
-| HmIP-DSD-PCB | HmIP-RF | Doorbell |
+| Device          | Interface | Service                      |
+| --------------- | --------- | ---------------------------- |
+| HM-LC-Sw1PBU-FM | BidCos-RF | Switch / Light               |
+| HM-LC-Sw1-DR    | BidCos-RF | Switch / Light               |
+| HM-LC-Sw4-DR-2  | BidCos-RF | Irrigation system (4 valves) |
+| HM-LC-Bl1PBU-FM | BidCos-RF | Blind                        |
+| HM-Sec-SCo      | BidCos-RF | Contact sensor               |
+| HmIP-PS         | HmIP-RF   | Switch / Outlet              |
+| HmIP-DRSI4      | HmIP-RF   | Switch / Light (4 outputs)   |
+| HmIP-BROLL      | HmIP-RF   | Blind                        |
+| HmIP-SWSD       | HmIP-RF   | Smoke detector               |
+| HmIP-DSD-PCB    | HmIP-RF   | Doorbell                     |
 
 The other services are implemented and unit-tested, but have not been
 checked on real devices yet. Reports are welcome as an

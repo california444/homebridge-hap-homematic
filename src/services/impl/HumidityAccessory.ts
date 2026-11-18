@@ -18,7 +18,8 @@ class HumidityHandler extends AccessoryBase implements ChannelService {
   attach(channel: CcuChannel): void {
     const service = this.getOrAddService(this.Service.HumiditySensor, channel.name);
 
-    service.getCharacteristic(this.Characteristic.CurrentRelativeHumidity)
+    service
+      .getCharacteristic(this.Characteristic.CurrentRelativeHumidity)
       .onGet(this.wrapGet<number>(() => this.value));
 
     const apply = (raw: unknown): void => {

@@ -37,17 +37,32 @@ const $ = (id) => document.getElementById(id);
  * /test-connection result still updates the inline status text.
  */
 function toast(kind, msg, title) {
-  try { homebridge?.toast?.[kind]?.(msg ?? '', title ?? ''); } catch { /* ignore */ }
+  try {
+    homebridge?.toast?.[kind]?.(msg ?? '', title ?? '');
+  } catch {
+    /* ignore */
+  }
 }
 function spinner(on) {
-  try { (on ? homebridge?.showSpinner : homebridge?.hideSpinner)?.call(homebridge); } catch { /* ignore */ }
+  try {
+    (on ? homebridge?.showSpinner : homebridge?.hideSpinner)?.call(homebridge);
+  } catch {
+    /* ignore */
+  }
 }
-const h = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-const sortBy = (arr, fn) => [...arr].sort((a, b) => {
-  const av = fn(a); const bv = fn(b);
-  if (av < bv) return -1; if (av > bv) return 1; return 0;
-});
+const h = (s) =>
+  String(s ?? '').replace(
+    /[&<>"']/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch],
+  );
+const sortBy = (arr, fn) =>
+  [...arr].sort((a, b) => {
+    const av = fn(a);
+    const bv = fn(b);
+    if (av < bv) return -1;
+    if (av > bv) return 1;
+    return 0;
+  });
 
 // ---------------------------------------------------------------- state
 
@@ -83,11 +98,11 @@ const state = {
   discovered: { devices: [] },
   services: { channelServices: [] },
   ui: {
-    search:     { channels: '' },
-    filter:     { channels: 'configured' }, // configured | all | unconfigured
-    filterType: { channels: 'all' },        // CCU channel type, e.g. SWITCH_VIRTUAL_RECEIVER, or 'all'
-    sort:       { channels: 'name' },       // name | device | address | type
-    page:       { channels: 1 },
+    search: { channels: '' },
+    filter: { channels: 'configured' }, // configured | all | unconfigured
+    filterType: { channels: 'all' }, // CCU channel type, e.g. SWITCH_VIRTUAL_RECEIVER, or 'all'
+    sort: { channels: 'name' }, // name | device | address | type
+    page: { channels: 1 },
     /** false: hide channels that are not worth mapping (see hiddenChannels). */
     showAll: false,
     /** Channels help text expanded (collapsed by default). */
@@ -133,7 +148,9 @@ function hiddenChannels(device) {
   if (/RCV-50$/i.test(device.type ?? '')) return new Set(channels.map((c) => c.address));
   const handled = new Set(state.services.channelServices.flatMap((s) => s.channelTypes));
   const hidden = new Set();
-  const isActuator = channels.some((c) => /^(SWITCH|SHUTTER|BLIND|DIMMER)_TRANSMITTER$/.test(c.type ?? ''));
+  const isActuator = channels.some((c) =>
+    /^(SWITCH|SHUTTER|BLIND|DIMMER)_TRANSMITTER$/.test(c.type ?? ''),
+  );
   for (let i = 0; i < channels.length; i++) {
     const c = channels[i];
     if (isActuator && (c.type === 'KEY_TRANSCEIVER' || c.type === 'MULTI_MODE_INPUT_TRANSMITTER')) {
@@ -149,7 +166,8 @@ function hiddenChannels(device) {
       continue;
     }
     const group = [c];
-    for (let j = i + 1; j < channels.length && channels[j].type === `${m[1]}_VIRTUAL_RECEIVER`; j++) group.push(channels[j]);
+    for (let j = i + 1; j < channels.length && channels[j].type === `${m[1]}_VIRTUAL_RECEIVER`; j++)
+      group.push(channels[j]);
     const keep = handled.has(c.type) ? c : (group[1] ?? c);
     for (const g of group) if (g !== keep) hidden.add(g.address);
   }
@@ -168,7 +186,10 @@ function hiddenAddresses() {
 }
 
 const deviceMode = (dev) => dev.mode ?? (dev.service ? 'device' : 'perChannel');
-const splitKey = (key) => { const i = key.indexOf(':'); return [key.slice(0, i), key.slice(i + 1)]; };
+const splitKey = (key) => {
+  const i = key.indexOf(':');
+  return [key.slice(0, i), key.slice(i + 1)];
+};
 // Same fallback as the plugin: HmIP serials are 14 hex digits.
 const guessInterface = (serial) => (/^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF');
 
@@ -183,13 +204,30 @@ function configuredChannels() {
     const [intf, serial] = splitKey(key);
     const devOn = dev.enabled !== false;
     if (deviceMode(dev) === 'device') {
-      out.push({ address: serial, interface: intf, kind: 'device', name: dev.name, service: dev.service,
-        subtype: dev.variant, enabled: devOn, options: dev.options ?? {}, channels: dev.channels ?? {} });
+      out.push({
+        address: serial,
+        interface: intf,
+        kind: 'device',
+        name: dev.name,
+        service: dev.service,
+        subtype: dev.variant,
+        enabled: devOn,
+        options: dev.options ?? {},
+        channels: dev.channels ?? {},
+      });
       continue;
     }
     for (const [idx, ch] of Object.entries(dev.channels ?? {})) {
-      out.push({ address: `${serial}:${idx}`, interface: intf, kind: 'channel', name: ch.name, service: ch.service,
-        subtype: ch.variant, enabled: devOn && ch.enabled !== false, options: ch.options ?? {} });
+      out.push({
+        address: `${serial}:${idx}`,
+        interface: intf,
+        kind: 'channel',
+        name: ch.name,
+        service: ch.service,
+        subtype: ch.variant,
+        enabled: devOn && ch.enabled !== false,
+        options: ch.options ?? {},
+      });
     }
   }
   return out;
@@ -200,8 +238,15 @@ function findDeviceKey(serial) {
   return Object.keys(state.devicesFile.devices).find((k) => splitKey(k)[1] === serial);
 }
 
-const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ''
-  && !(typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length === 0)));
+const clean = (o) =>
+  Object.fromEntries(
+    Object.entries(o).filter(
+      ([, v]) =>
+        v !== undefined &&
+        v !== '' &&
+        !(typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length === 0),
+    ),
+  );
 
 /** Per-channel mapping `SERIAL:N`; keeps unknown fields of the entry. */
 function saveChannelMapping(address, intf, fields) {
@@ -213,7 +258,7 @@ function saveChannelMapping(address, intf, fields) {
     throw new Error('This device is mapped as a whole; remove that mapping first.');
   }
   dev.channels = dev.channels ?? {};
-  dev.channels[idx] = clean({ ...(dev.channels[idx] ?? {}), ...fields });
+  dev.channels[idx] = clean({ ...dev.channels[idx], ...fields });
   devices[key] = dev;
 }
 
@@ -264,7 +309,9 @@ async function saveDevices(successMsg) {
     toast('error', err.message, 'devices.json');
     await loadDevices(); // back to what is on disk
     return false;
-  } finally { spinner(false); }
+  } finally {
+    spinner(false);
+  }
 }
 
 function devicesErrorHTML() {
@@ -287,8 +334,14 @@ function navigate(view) {
   rerender();
 }
 
-function pushNav(entry) { state.nav.push(entry); rerender(); }
-function popNav() { state.nav.pop(); rerender(); }
+function pushNav(entry) {
+  state.nav.push(entry);
+  rerender();
+}
+function popNav() {
+  state.nav.pop();
+  rerender();
+}
 
 function rerender() {
   const host = $('hgui-view-host');
@@ -304,8 +357,8 @@ function rerender() {
 // ---------------------------------------------------------------- top-level views
 
 const VIEWS = {
-  settings:  viewSettings,
-  channels:  viewChannels,
+  settings: viewSettings,
+  channels: viewChannels,
 };
 
 // ---------------------------------------------------------------- channels view
@@ -320,7 +373,8 @@ function viewChannels(host) {
   const hidden = hiddenAddresses();
   const channelTypes = new Set();
   for (const d of state.discovered.devices) {
-    for (const c of d.channels) if (c.type && c.index !== 0 && !hidden.has(c.address)) channelTypes.add(c.type);
+    for (const c of d.channels)
+      if (c.type && c.index !== 0 && !hidden.has(c.address)) channelTypes.add(c.type);
   }
 
   const discovered = state.discovered.devices.length;
@@ -357,7 +411,10 @@ function viewChannels(host) {
       </select>
       <select class="form-select" id="hgui-filterType-channels" title="Filter by channel type">
         <option value="all">All types</option>
-        ${Array.from(channelTypes).sort().map((t) => `<option value="${h(t)}">${h(t)}</option>`).join('')}
+        ${Array.from(channelTypes)
+          .sort()
+          .map((t) => `<option value="${h(t)}">${h(t)}</option>`)
+          .join('')}
       </select>
       <select class="form-select" id="hgui-sort-channels" title="Sort by">
         <option value="name">Sort: HomeKit name</option>
@@ -375,12 +432,16 @@ function viewChannels(host) {
     <div id="hgui-rows-host"></div>
     <div id="hgui-pager-host"></div>
   `;
-  $('hgui-filter-channels').value       = state.ui.filter.channels;
-  $('hgui-filterType-channels').value   = channelTypes.has(state.ui.filterType.channels) ? state.ui.filterType.channels : 'all';
-  $('hgui-sort-channels').value         = state.ui.sort.channels;
+  $('hgui-filter-channels').value = state.ui.filter.channels;
+  $('hgui-filterType-channels').value = channelTypes.has(state.ui.filterType.channels)
+    ? state.ui.filterType.channels
+    : 'all';
+  $('hgui-sort-channels').value = state.ui.sort.channels;
 
   $('hgui-discover-btn').addEventListener('click', () => onDiscover());
-  $('hgui-help').addEventListener('toggle', (e) => { state.ui.helpOpen = e.target.open; });
+  $('hgui-help').addEventListener('toggle', (e) => {
+    state.ui.helpOpen = e.target.open;
+  });
 
   $('hgui-search-channels').addEventListener('input', (e) => {
     state.ui.search.channels = e.target.value;
@@ -431,7 +492,8 @@ function drawChannelRows() {
       // A whole-device mapping (e.g. irrigation) is one card, not N channels.
       const whole = configuredByAddr.get(d.address);
       if (whole) {
-        if (filter !== 'unconfigured') rows.push({ ...whole, _info: { device: d, channel: undefined }, isConfigured: true });
+        if (filter !== 'unconfigured')
+          rows.push({ ...whole, _info: { device: d, channel: undefined }, isConfigured: true });
         continue;
       }
       for (const c of d.channels) {
@@ -465,9 +527,18 @@ function drawChannelRows() {
   if (q) {
     rows = rows.filter((r) => {
       const t = [
-        r.address, r.name, r._info?.channel?.name, r._info?.device?.name,
-        r._info?.device?.type, r._info?.channel?.type, r.service, r.subtype,
-      ].filter(Boolean).join(' ').toLowerCase();
+        r.address,
+        r.name,
+        r._info?.channel?.name,
+        r._info?.device?.name,
+        r._info?.device?.type,
+        r._info?.channel?.type,
+        r.service,
+        r.subtype,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
       return t.includes(q);
     });
   }
@@ -476,14 +547,19 @@ function drawChannelRows() {
   const sortKey = state.ui.sort.channels;
   rows = sortBy(rows, (r) => {
     switch (sortKey) {
-      case 'device':  return (r._info?.device?.name ?? '').toLowerCase();
-      case 'address': return r.address.toLowerCase();
-      case 'type':    return (r._info?.channel?.type ?? '').toLowerCase();
-      default:        return (r.name ?? r._info?.channel?.name ?? r.address).toLowerCase();
+      case 'device':
+        return (r._info?.device?.name ?? '').toLowerCase();
+      case 'address':
+        return r.address.toLowerCase();
+      case 'type':
+        return (r._info?.channel?.type ?? '').toLowerCase();
+      default:
+        return (r.name ?? r._info?.channel?.name ?? r.address).toLowerCase();
     }
   });
 
-  $('hgui-channels-count').textContent = `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;
+  $('hgui-channels-count').textContent =
+    `${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`;
 
   // Pagination.
   let page = state.ui.page.channels;
@@ -495,19 +571,34 @@ function drawChannelRows() {
     host.innerHTML = `<div class="hgui-empty">No channels match. ${
       filter === 'configured' && configured.length === 0
         ? 'Switch the filter to "Not in HomeKit" and click "+ Add" on a channel.'
-        : 'Try clearing the search or switching the filter.'}</div>`;
+        : 'Try clearing the search or switching the filter.'
+    }</div>`;
     pagerHost.innerHTML = '';
     return;
   }
 
   host.innerHTML = `<div class="hgui-tiles">${slice.map(channelTileHTML).join('')}</div>`;
   pagerHost.innerHTML = pagerHTML('channels', page, pageCount);
-  host.querySelectorAll('[data-edit-channel]').forEach((b) =>
-    b.addEventListener('click', () => pushNav({ kind: 'editChannel', props: { address: b.dataset.editChannel, mode: 'edit' } })));
-  host.querySelectorAll('[data-add-from]').forEach((b) =>
-    b.addEventListener('click', () => pushNav({ kind: 'editChannel', props: { address: b.dataset.addFrom, mode: 'add' } })));
+  host
+    .querySelectorAll('[data-edit-channel]')
+    .forEach((b) =>
+      b.addEventListener('click', () =>
+        pushNav({ kind: 'editChannel', props: { address: b.dataset.editChannel, mode: 'edit' } }),
+      ),
+    );
+  host
+    .querySelectorAll('[data-add-from]')
+    .forEach((b) =>
+      b.addEventListener('click', () =>
+        pushNav({ kind: 'editChannel', props: { address: b.dataset.addFrom, mode: 'add' } }),
+      ),
+    );
   pagerHost.querySelectorAll('[data-pager]').forEach((b) =>
-    b.addEventListener('click', () => { state.ui.page.channels = parseInt(b.dataset.pager, 10); drawChannelRows(); }));
+    b.addEventListener('click', () => {
+      state.ui.page.channels = parseInt(b.dataset.pager, 10);
+      drawChannelRows();
+    }),
+  );
 }
 
 function effectiveHkName(r) {
@@ -535,8 +626,12 @@ function tileText(r) {
   const serial = String(r.address).split(':')[0];
   const type = info?.device?.type ?? '';
   const ccuName = info?.channel?.name || info?.device?.name || '';
-  const custom = typeof r.name === 'string' && r.name && r.name !== ccuName && !isPlaceholderName(r.name, type, serial);
-  const title = custom ? r.name : (type || effectiveHkName(r));
+  const custom =
+    typeof r.name === 'string' &&
+    r.name &&
+    r.name !== ccuName &&
+    !isPlaceholderName(r.name, type, serial);
+  const title = custom ? r.name : type || effectiveHkName(r);
   const parts = [custom && type ? `${type} · ${serial}` : serial];
   if (!isPlaceholderName(ccuName, type, serial)) parts.push(`CCU: ${ccuName}`);
   return { title, sub: parts.join(' · '), channelType: info?.channel?.type ?? '' };
@@ -551,21 +646,38 @@ function channelTileHTML(r) {
       <div class="hgui-tile-head">
         <div class="hgui-tile-name">${h(t.title)}</div>
         <div class="hgui-tile-actions">
-          ${inHK
-            ? `<button class="btn btn-sm btn-outline-primary" data-edit-channel="${h(r.address)}">Edit</button>`
-            : `<button class="btn btn-sm btn-primary" data-add-from="${h(r.address)}">+ Add</button>`}
+          ${
+            inHK
+              ? `<button class="btn btn-sm btn-outline-primary" data-edit-channel="${h(r.address)}">Edit</button>`
+              : `<button class="btn btn-sm btn-primary" data-add-from="${h(r.address)}">+ Add</button>`
+          }
         </div>
       </div>
-      <div class="hgui-tile-sub">${info?.device ? h(t.sub)
-        : '<span class="hgui-meta">discovery data not loaded — click "Discover"</span>'}</div>
+      <div class="hgui-tile-sub">${
+        info?.device
+          ? h(t.sub)
+          : '<span class="hgui-meta">discovery data not loaded — click "Discover"</span>'
+      }</div>
       <div class="hgui-tile-meta"><code>${h(r.address)}</code>${t.channelType ? ` · ${h(t.channelType)}` : ''}</div>
-      ${r.kind === 'device' && Object.keys(r.channels ?? {}).length ? `
-        <div class="hgui-tile-meta">${Object.entries(r.channels).map(([i, c]) => `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}${c.duration ? ` ${h(c.duration)} s` : ''}</span>`).join('')}</div>` : ''}
+      ${
+        r.kind === 'device' && Object.keys(r.channels ?? {}).length
+          ? `
+        <div class="hgui-tile-meta">${Object.entries(r.channels)
+          .map(
+            ([i, c]) =>
+              `<span class="me-2">${h(i)}: ${h(c.name ?? '—')}${c.valveType ? ` (${h(c.valveType)})` : ''}${c.duration ? ` ${h(c.duration)} s` : ''}</span>`,
+          )
+          .join('')}</div>`
+          : ''
+      }
       <div class="hgui-tile-pills">
         ${inHK ? `<span class="hgui-pill primary">${h(r.service ?? '?')}</span>` : '<span class="hgui-pill muted">not in HomeKit</span>'}
         ${r.subtype ? `<span class="hgui-pill">${h(r.subtype)}</span>` : ''}
         ${r.kind === 'device' ? '<span class="hgui-pill">whole device</span>' : ''}
-        ${Object.entries(r.options ?? {}).filter(([, v]) => v !== false).map(([k, v]) => `<span class="hgui-pill">${h(k)}${v === true ? '' : `=${h(v)}`}</span>`).join('')}
+        ${Object.entries(r.options ?? {})
+          .filter(([, v]) => v !== false)
+          .map(([k, v]) => `<span class="hgui-pill">${h(k)}${v === true ? '' : `=${h(v)}`}</span>`)
+          .join('')}
         ${r.enabled === false ? '<span class="hgui-pill warning">disabled</span>' : ''}
       </div>
     </div>`;
@@ -603,10 +715,22 @@ function statHTML(label, value, sub) {
 
 /** sendQueue.* in config.json; limits as in src/util/config.ts. */
 const SEND_QUEUE_FIELDS = [
-  { key: 'timeoutMs', label: 'Timeout (ms)', def: 5000, min: 100, max: 60000,
-    hint: 'How long to wait for the CCU\'s answer to a command before the next one is sent.' },
-  { key: 'gapMs', label: 'Pause after success (ms)', def: 100, min: 0, max: 10000,
-    hint: 'Pause after a delivered command. 0 = no pause.' },
+  {
+    key: 'timeoutMs',
+    label: 'Timeout (ms)',
+    def: 5000,
+    min: 100,
+    max: 60000,
+    hint: "How long to wait for the CCU's answer to a command before the next one is sent.",
+  },
+  {
+    key: 'gapMs',
+    label: 'Pause after success (ms)',
+    def: 100,
+    min: 0,
+    max: 10000,
+    hint: 'Pause after a delivered command. 0 = no pause.',
+  },
 ];
 
 function viewSettings(host) {
@@ -636,11 +760,15 @@ function viewSettings(host) {
           <input class="form-control" id="cf-callback-host" list="cf-callback-list" placeholder="192.168.0.13" value="${h(m.eventServer.callbackHost ?? '')}" />
           <datalist id="cf-callback-list">${state.network.map((n) => `<option value="${h(n.address)}">${h(n.name)}</option>`).join('')}</datalist>
           <div class="hgui-hint">IP of this Homebridge host as seen from the CCU. The CCU sends its events to <code>http://&lt;address&gt;:&lt;port&gt;</code>.</div>
-          ${state.network.length ? `<div class="hgui-hint"><details>
+          ${
+            state.network.length
+              ? `<div class="hgui-hint"><details>
             <summary>Local addresses of this host (${state.network.length})</summary>
             <div class="mt-1">${state.network.map((n) => `<a href="#" data-pick-ip="${h(n.address)}">${h(n.address)}</a> (${h(n.name)})`).join(', ')}</div>
             <div class="mt-1">Click one to use it. In Docker these are container addresses — use the host's IP instead.</div>
-          </details></div>` : ''}
+          </details></div>`
+              : ''
+          }
         </div>
       </div>
     </div>
@@ -667,60 +795,95 @@ function viewSettings(host) {
     <div class="hgui-card">
       <h6>Interfaces</h6>
       <div class="row g-2">
-        ${[['bidcosRf','BidCos-RF'],['hmIpRf','HmIP-RF']]
-          .map(([k,label]) => `
+        ${[
+          ['bidcosRf', 'BidCos-RF'],
+          ['hmIpRf', 'HmIP-RF'],
+        ]
+          .map(
+            ([k, label]) => `
             <div class="col-md-3 form-check">
               <input class="form-check-input" type="checkbox" id="cf-if-${k}" ${m.interfaces[k] ? 'checked' : ''} />
               <label class="form-check-label" for="cf-if-${k}">${h(label)}</label>
-            </div>`).join('')}
+            </div>`,
+          )
+          .join('')}
       </div>
     </div>
     <div class="hgui-card">
       <h6>XML-RPC ports</h6>
       <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF) and <code>2010</code> (HmIP-RF), with TLS <code>42001</code> / <code>42010</code>.</p>
       <div class="row g-2">
-        ${[['BidCos-RF','2001'],['HmIP-RF','2010']]
-          .map(([k,ph]) => `
+        ${[
+          ['BidCos-RF', '2001'],
+          ['HmIP-RF', '2010'],
+        ]
+          .map(
+            ([k, ph]) => `
             <div class="col-md-3">
               <label class="form-label">${h(k)}</label>
               <input class="form-control" type="number" id="cf-port-${h(k)}" placeholder="${ph}" value="${h(m.interfacePorts?.[k] ?? '')}" />
-            </div>`).join('')}
+            </div>`,
+          )
+          .join('')}
       </div>
     </div>
     <div class="hgui-card">
       <h6>Send queue</h6>
       <p class="hgui-meta">Commands go to the CCU one at a time, across BidCos-RF and HmIP-RF. Leave blank for the defaults.</p>
       <div class="row g-2">
-        ${SEND_QUEUE_FIELDS.map((f) => `
+        ${SEND_QUEUE_FIELDS.map(
+          (f) => `
             <div class="col-md-4">
               <label class="form-label">${h(f.label)}</label>
               <input class="form-control" type="number" min="${f.min}" max="${f.max}" step="1" id="cf-sq-${f.key}" placeholder="${f.def}" value="${h(m.sendQueue?.[f.key] ?? '')}" />
               <div class="hgui-hint">${h(f.hint)}</div>
-            </div>`).join('')}
+            </div>`,
+        ).join('')}
       </div>
     </div>
     <div class="hgui-card d-flex align-items-center gap-2 flex-wrap">
       <button class="btn btn-outline-primary" id="hgui-test-btn">Test CCU</button>
-      <span class="small" id="hgui-test-result">${state.testResult
-        || '<span class="hgui-meta">Checks the connection with the settings above (not saved yet is fine).</span>'}</span>
+      <span class="small" id="hgui-test-result">${
+        state.testResult ||
+        '<span class="hgui-meta">Checks the connection with the settings above (not saved yet is fine).</span>'
+      }</span>
     </div>
   `;
   $('hgui-test-btn').addEventListener('click', onTestConnection);
-  const propagate = (mut) => { mut(state.cfg); pushConfig(); };
-  $('cf-ccu-ip').addEventListener('input', (e) => propagate((b) => b.ccuIp = e.target.value.trim()));
-  $('cf-event-port').addEventListener('input', (e) => propagate((b) => b.eventServer.port = parseInt(e.target.value, 10) || 9875));
-  $('cf-tls').addEventListener('change', (e) => propagate((b) => b.useTls = e.target.checked));
-  $('cf-callback-host').addEventListener('input', (e) => propagate((b) => b.eventServer.callbackHost = e.target.value.trim()));
-  host.querySelectorAll('[data-pick-ip]').forEach((a) => a.addEventListener('click', (e) => {
-    e.preventDefault();
-    $('cf-callback-host').value = a.dataset.pickIp;
-    propagate((b) => b.eventServer.callbackHost = a.dataset.pickIp);
-  }));
-  $('cf-auth-enabled').addEventListener('change', (e) => propagate((b) => b.rpcAuth.enabled = e.target.checked));
-  $('cf-auth-user').addEventListener('input', (e) => propagate((b) => b.rpcAuth.username = e.target.value));
-  $('cf-auth-pass').addEventListener('input', (e) => propagate((b) => b.rpcAuth.password = e.target.value));
-  for (const k of ['bidcosRf','hmIpRf']) {
-    $(`cf-if-${k}`).addEventListener('change', (e) => propagate((b) => b.interfaces[k] = e.target.checked));
+  const propagate = (mut) => {
+    mut(state.cfg);
+    pushConfig();
+  };
+  $('cf-ccu-ip').addEventListener('input', (e) =>
+    propagate((b) => (b.ccuIp = e.target.value.trim())),
+  );
+  $('cf-event-port').addEventListener('input', (e) =>
+    propagate((b) => (b.eventServer.port = parseInt(e.target.value, 10) || 9875)),
+  );
+  $('cf-tls').addEventListener('change', (e) => propagate((b) => (b.useTls = e.target.checked)));
+  $('cf-callback-host').addEventListener('input', (e) =>
+    propagate((b) => (b.eventServer.callbackHost = e.target.value.trim())),
+  );
+  host.querySelectorAll('[data-pick-ip]').forEach((a) =>
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      $('cf-callback-host').value = a.dataset.pickIp;
+      propagate((b) => (b.eventServer.callbackHost = a.dataset.pickIp));
+    }),
+  );
+  $('cf-auth-enabled').addEventListener('change', (e) =>
+    propagate((b) => (b.rpcAuth.enabled = e.target.checked)),
+  );
+  $('cf-auth-user').addEventListener('input', (e) =>
+    propagate((b) => (b.rpcAuth.username = e.target.value)),
+  );
+  $('cf-auth-pass').addEventListener('input', (e) =>
+    propagate((b) => (b.rpcAuth.password = e.target.value)),
+  );
+  for (const k of ['bidcosRf', 'hmIpRf']) {
+    $(`cf-if-${k}`).addEventListener('change', (e) =>
+      propagate((b) => (b.interfaces[k] = e.target.checked)),
+    );
   }
   for (const f of SEND_QUEUE_FIELDS) {
     $(`cf-sq-${f.key}`).addEventListener('input', (e) => {
@@ -732,7 +895,7 @@ function viewSettings(host) {
       });
     });
   }
-  for (const k of ['BidCos-RF','HmIP-RF']) {
+  for (const k of ['BidCos-RF', 'HmIP-RF']) {
     $(`cf-port-${k}`).addEventListener('input', (e) => {
       const v = e.target.value.trim();
       propagate((b) => {
@@ -747,7 +910,7 @@ function viewSettings(host) {
 // ---------------------------------------------------------------- subviews
 
 const SUBVIEWS = {
-  editChannel:  subEditChannel,
+  editChannel: subEditChannel,
 };
 
 function subviewHeader(host, title, breadcrumb) {
@@ -788,8 +951,12 @@ function subEditChannel(host, props) {
   }
 
   const draft = entry
-    ? { ...entry, name: effectiveHkName({ ...entry, _info: info }), options: { ...(entry.options ?? {}) },
-        channels: JSON.parse(JSON.stringify(entry.channels ?? {})) }
+    ? {
+        ...entry,
+        name: effectiveHkName({ ...entry, _info: info }),
+        options: { ...entry.options },
+        channels: JSON.parse(JSON.stringify(entry.channels ?? {})),
+      }
     : {
         address,
         name: info?.channel?.name ?? device?.name ?? address,
@@ -803,7 +970,8 @@ function subEditChannel(host, props) {
   /** Channels a whole-device service works on (e.g. irrigation valves). */
   const deviceChannels = (def) => {
     const fromDevice = (device?.channels ?? [])
-      .filter((c) => c.index > 0 && def.channelTypes.includes(c.type)).map((c) => String(c.index));
+      .filter((c) => c.index > 0 && def.channelTypes.includes(c.type))
+      .map((c) => String(c.index));
     if (fromDevice.length) return fromDevice;
     const fromEntry = Object.keys(draft.channels ?? {});
     return fromEntry.length ? fromEntry : ['1', '2', '3', '4'];
@@ -816,8 +984,9 @@ function subEditChannel(host, props) {
         return `<div class="form-check"><input class="form-check-input" type="checkbox" id="${id}" ${v ? 'checked' : ''} />
           <label class="form-check-label" for="${id}">${h(spec.label)}</label></div>`;
       case 'enum':
-        return `<select class="form-select" id="${id}">${(spec.values ?? []).map((x) =>
-          `<option value="${h(x)}" ${x === v ? 'selected' : ''}>${h(x)}</option>`).join('')}</select>`;
+        return `<select class="form-select" id="${id}">${(spec.values ?? [])
+          .map((x) => `<option value="${h(x)}" ${x === v ? 'selected' : ''}>${h(x)}</option>`)
+          .join('')}</select>`;
       case 'number':
         return `<input class="form-control" type="number" id="${id}" value="${h(v ?? '')}"
           ${spec.min !== undefined ? `min="${spec.min}"` : ''} ${spec.max !== undefined ? `max="${spec.max}"` : ''} />`;
@@ -834,16 +1003,23 @@ function subEditChannel(host, props) {
     return el.value;
   };
 
-  subviewHeader(host, mode === 'add' ? 'Add to HomeKit' : `Edit: ${draft.name || address}`, address);
+  subviewHeader(
+    host,
+    mode === 'add' ? 'Add to HomeKit' : `Edit: ${draft.name || address}`,
+    address,
+  );
   const body = $('hgui-sub-body');
   const draw = () => {
     const def = byKey(draft.service);
     const variants = def?.variants ?? [];
     const asDevice = isDeviceRow || def?.scope === 'device';
     const serviceChanged = mode === 'edit' && originalService && draft.service !== originalService;
-    const otherChannels = asDevice && !isDeviceRow
-      ? configuredChannels().filter((r) => r.kind === 'channel' && r.address.startsWith(`${serial}:`))
-      : [];
+    const otherChannels =
+      asDevice && !isDeviceRow
+        ? configuredChannels().filter(
+            (r) => r.kind === 'channel' && r.address.startsWith(`${serial}:`),
+          )
+        : [];
     const chans = asDevice && def?.channelOptions?.length ? deviceChannels(def) : [];
     body.innerHTML = `
       <div class="hgui-card">
@@ -851,10 +1027,18 @@ function subEditChannel(host, props) {
           <code>${h(asDevice ? serial : address)}</code>${!asDevice && info?.channel?.type ? ` · ${h(info.channel.type)}` : ''}${device?.type ? ` · ${h(device.type)}` : ''}
           ${asDevice ? '<span class="hgui-pill ms-2">whole device</span>' : ''}
         </div>
-        ${serviceChanged ? `<div class="alert alert-warning">Changing the service creates a <strong>new accessory</strong> in Home —
-          its room and automations are lost (the accessory identity includes the service).</div>` : ''}
-        ${otherChannels.length ? `<div class="alert alert-info">${h(def.key)} maps the whole device. The existing
-          channel mappings of this device (${otherChannels.map((r) => h(r.address)).join(', ')}) are replaced.</div>` : ''}
+        ${
+          serviceChanged
+            ? `<div class="alert alert-warning">Changing the service creates a <strong>new accessory</strong> in Home —
+          its room and automations are lost (the accessory identity includes the service).</div>`
+            : ''
+        }
+        ${
+          otherChannels.length
+            ? `<div class="alert alert-info">${h(def.key)} maps the whole device. The existing
+          channel mappings of this device (${otherChannels.map((r) => h(r.address)).join(', ')}) are replaced.</div>`
+            : ''
+        }
         <div class="hgui-form-row">
           <label>HomeKit name</label>
           <div>
@@ -866,12 +1050,18 @@ function subEditChannel(host, props) {
           <label>Service</label>
           <div>
             <select class="form-select" id="ec-service">
-              ${candidates.map((s) =>
-                `<option value="${h(s.key)}" ${s.key === draft.service ? 'selected' : ''}>${h(s.description)} (${h(s.key)})</option>`).join('')}
+              ${candidates
+                .map(
+                  (s) =>
+                    `<option value="${h(s.key)}" ${s.key === draft.service ? 'selected' : ''}>${h(s.description)} (${h(s.key)})</option>`,
+                )
+                .join('')}
             </select>
           </div>
         </div>
-        ${variants.length ? `
+        ${
+          variants.length
+            ? `
           <div class="hgui-form-row">
             <label>Variant</label>
             <div>
@@ -879,31 +1069,65 @@ function subEditChannel(host, props) {
                 ${variants.map((v) => `<option value="${h(v.id)}" ${v.id.toLowerCase() === String(draft.subtype ?? '').toLowerCase() ? 'selected' : ''}>${h(v.label)}</option>`).join('')}
               </select>
             </div>
-          </div>` : ''}
-        ${(def?.options ?? []).map((o, i) => `
+          </div>`
+            : ''
+        }
+        ${(def?.options ?? [])
+          .map(
+            (o, i) => `
           <div class="hgui-form-row">
             <label>${o.type === 'boolean' ? '' : h(o.label)}</label>
             <div>${optionInput(o, draft.options[o.key], `ec-opt-${i}`)}${o.hint ? `<div class="hgui-hint">${h(o.hint)}</div>` : ''}</div>
-          </div>`).join('')}
-        ${chans.length ? `
+          </div>`,
+          )
+          .join('')}
+        ${
+          chans.length
+            ? `
           <h6 class="mt-3">Channels</h6>
           <div class="hgui-form-row mb-1">
             <label class="pt-0 hgui-meta">Channel</label>
-            <div class="d-flex gap-2">${def.channelOptions.map((o) =>
-              `<div class="flex-fill hgui-meta fw-semibold" title="${h(o.hint ?? '')}">${h(o.label)}</div>`).join('')}</div>
+            <div class="d-flex gap-2">${def.channelOptions
+              .map(
+                (o) =>
+                  `<div class="flex-fill hgui-meta fw-semibold" title="${h(o.hint ?? '')}">${h(o.label)}</div>`,
+              )
+              .join('')}</div>
           </div>
-          ${chans.map((idx) => `
+          ${chans
+            .map(
+              (idx) => `
             <div class="hgui-form-row">
               <label>${h(idx)}</label>
-              <div class="d-flex gap-2">${def.channelOptions.map((o, j) =>
-                `<div class="flex-fill">${optionInput(o, draft.channels[idx]?.[o.key], `ec-ch-${idx}-${j}`,
-                  o.key === 'name' ? `Valve ${idx}` : undefined)}</div>`).join('')}</div>
-            </div>`).join('')}
-          ${def.channelOptions.some((o) => o.hint) ? `<div class="hgui-hint">${def.channelOptions.filter((o) => o.hint)
-            .map((o) => `<strong>${h(o.label)}:</strong> ${h(o.hint)}`).join('<br>')}</div>` : ''}` : ''}
+              <div class="d-flex gap-2">${def.channelOptions
+                .map(
+                  (o, j) =>
+                    `<div class="flex-fill">${optionInput(
+                      o,
+                      draft.channels[idx]?.[o.key],
+                      `ec-ch-${idx}-${j}`,
+                      o.key === 'name' ? `Valve ${idx}` : undefined,
+                    )}</div>`,
+                )
+                .join('')}</div>
+            </div>`,
+            )
+            .join('')}
+          ${
+            def.channelOptions.some((o) => o.hint)
+              ? `<div class="hgui-hint">${def.channelOptions
+                  .filter((o) => o.hint)
+                  .map((o) => `<strong>${h(o.label)}:</strong> ${h(o.hint)}`)
+                  .join('<br>')}</div>`
+              : ''
+          }`
+            : ''
+        }
       </div>
     `;
-    body.querySelector('#ec-name').addEventListener('input', (e) => { draft.name = e.target.value; });
+    body.querySelector('#ec-name').addEventListener('input', (e) => {
+      draft.name = e.target.value;
+    });
     body.querySelector('#ec-service').addEventListener('change', (e) => {
       draft.service = e.target.value;
       draft.subtype = byKey(draft.service)?.variants?.[0]?.id;
@@ -911,15 +1135,19 @@ function subEditChannel(host, props) {
       draw();
     });
     if (variants.length) {
-      body.querySelector('#ec-subtype').addEventListener('change', (e) => { draft.subtype = e.target.value; });
+      body.querySelector('#ec-subtype').addEventListener('change', (e) => {
+        draft.subtype = e.target.value;
+      });
     }
     (def?.options ?? []).forEach((o, i) => {
-      body.querySelector(`#ec-opt-${i}`).addEventListener('change', (e) => { draft.options[o.key] = readOption(o, e.target); });
+      body.querySelector(`#ec-opt-${i}`).addEventListener('change', (e) => {
+        draft.options[o.key] = readOption(o, e.target);
+      });
     });
     for (const idx of chans) {
       def.channelOptions.forEach((o, j) => {
         body.querySelector(`#ec-ch-${idx}-${j}`).addEventListener('change', (e) => {
-          draft.channels[idx] = { ...(draft.channels[idx] ?? {}), [o.key]: readOption(o, e.target) };
+          draft.channels[idx] = { ...draft.channels[idx], [o.key]: readOption(o, e.target) };
         });
       });
     }
@@ -934,27 +1162,45 @@ function subEditChannel(host, props) {
   `;
   footer.querySelector('#ec-cancel').addEventListener('click', popNav);
   footer.querySelector('#ec-save').addEventListener('click', async () => {
-    if (state.devicesErrors) { toast('warning', 'Fix devices.json first'); return; }
+    if (state.devicesErrors) {
+      toast('warning', 'Fix devices.json first');
+      return;
+    }
     const name = (draft.name ?? '').trim();
-    if (!name) { toast('warning', 'HomeKit name cannot be empty'); return; }
+    if (!name) {
+      toast('warning', 'HomeKit name cannot be empty');
+      return;
+    }
     const def = byKey(draft.service);
     const intf = device?.interface ?? entry?.interface ?? guessInterface(serial);
     const options = clean(draft.options ?? {});
     try {
       if (isDeviceRow || def?.scope === 'device') {
         const channels = {};
-        for (const idx of (def?.channelOptions?.length ? deviceChannels(def) : Object.keys(draft.channels ?? {}))) {
+        for (const idx of def?.channelOptions?.length
+          ? deviceChannels(def)
+          : Object.keys(draft.channels ?? {})) {
           const c = clean(draft.channels?.[idx] ?? {});
           if (Object.keys(c).length) channels[idx] = c;
         }
         saveDeviceMapping(serial, intf, {
-          service: draft.service, variant: variantOf(def, draft.subtype), name, options, channels,
+          service: draft.service,
+          variant: variantOf(def, draft.subtype),
+          name,
+          options,
+          channels,
         });
       } else {
-        saveChannelMapping(address, intf, { name, service: draft.service, variant: variantOf(def, draft.subtype), options });
+        saveChannelMapping(address, intf, {
+          name,
+          service: draft.service,
+          variant: variantOf(def, draft.subtype),
+          options,
+        });
       }
     } catch (err) {
-      toast('warning', err.message); return;
+      toast('warning', err.message);
+      return;
     }
     if (await saveDevices(mode === 'add' ? 'Added' : 'Updated')) popNav();
   });
@@ -979,14 +1225,18 @@ async function onTestConnection() {
   spinner(true);
   try {
     const res = await homebridge.request('/test-connection', state.cfg);
-    show(res.ok
-      ? `<span class="text-success">✓ ${h(res.message)}</span>`
-      : `<span class="text-danger">✗ ${h(res.message)}</span>`);
+    show(
+      res.ok
+        ? `<span class="text-success">✓ ${h(res.message)}</span>`
+        : `<span class="text-danger">✗ ${h(res.message)}</span>`,
+    );
     toast(res.ok ? 'success' : 'warning', res.message, 'CCU');
   } catch (err) {
     show(`<span class="text-danger">✗ ${h(err.message)}</span>`);
     toast('error', err.message, 'CCU');
-  } finally { spinner(false); }
+  } finally {
+    spinner(false);
+  }
 }
 
 /**
@@ -1003,7 +1253,9 @@ async function onDiscover({ quiet = false } = {}) {
     if (!quiet) toast('success', `${res.devices.length} devices`, 'Discovery complete');
   } catch (err) {
     toast('error', err.message, 'Discovery');
-  } finally { if (!quiet) spinner(false); }
+  } finally {
+    if (!quiet) spinner(false);
+  }
 }
 
 /**
@@ -1027,9 +1279,15 @@ function discoverySourceText() {
   const d = state.discovered;
   if (!d.devices?.length) return 'not discovered yet';
   const at = d.fetchedAt ? new Date(d.fetchedAt) : null;
-  const when = at && !Number.isNaN(at.getTime())
-    ? at.toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-    : '';
+  const when =
+    at && !Number.isNaN(at.getTime())
+      ? at.toLocaleString(undefined, {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '';
   return d.source === 'cache'
     ? `saved list${when ? `, ${when}` : ''}`
     : `live from the CCU${when ? `, ${when}` : ''}`;
@@ -1056,27 +1314,36 @@ async function init() {
   // the host's built-in Save button enabled — it's the single canonical
   // place to persist config. Every mutation calls pushConfig() to stage
   // the change, and the host save button writes it to disk.
-  try { homebridge.hideSchemaForm?.(); } catch { /* older host */ }
+  try {
+    homebridge.hideSchemaForm?.();
+  } catch {
+    /* older host */
+  }
 
   try {
     // One platform block only (config.schema.json is `singular`).
-    const blocks = (await homebridge.getPluginConfig() ?? []).filter(Boolean);
+    const blocks = ((await homebridge.getPluginConfig()) ?? []).filter(Boolean);
     if (blocks.length > 1) {
-      toast('warning', `Found ${blocks.length} platform blocks; only the first is kept when you save.`, 'Config');
+      toast(
+        'warning',
+        `Found ${blocks.length} platform blocks; only the first is kept when you save.`,
+        'Config',
+      );
     }
     const b = blocks[0] ?? {};
     const def = DEFAULT_BLOCK();
     state.cfg = {
-      ...def, ...b,
+      ...def,
+      ...b,
       platform: 'HapHomematic',
       interfaces: {
         bidcosRf: b.interfaces?.bidcosRf ?? def.interfaces.bidcosRf,
         hmIpRf: b.interfaces?.hmIpRf ?? def.interfaces.hmIpRf,
       },
-      rpcAuth: { ...def.rpcAuth, ...(b.rpcAuth ?? {}) },
-      eventServer: { ...def.eventServer, ...(b.eventServer ?? {}) },
-      interfacePorts: { ...(b.interfacePorts ?? {}) },
-      sendQueue: { ...(b.sendQueue ?? {}) },
+      rpcAuth: { ...def.rpcAuth, ...b.rpcAuth },
+      eventServer: { ...def.eventServer, ...b.eventServer },
+      interfacePorts: { ...b.interfacePorts },
+      sendQueue: { ...b.sendQueue },
     };
     // Fields of removed features; channel mappings now live in devices.json.
     // `_bridge` (child bridge settings incl. debugModeEnabled) is kept as is.
@@ -1089,7 +1356,9 @@ async function init() {
   await loadDevices();
   try {
     state.network = (await homebridge.request('/network')).addresses ?? [];
-  } catch { /* optional */ }
+  } catch {
+    /* optional */
+  }
 
   try {
     const r = await homebridge.request('/services');
@@ -1103,8 +1372,9 @@ async function init() {
   }
 
   // Tab listeners.
-  document.querySelectorAll('#hgui-tabs [data-tab]').forEach((t) =>
-    t.addEventListener('click', () => navigate(t.dataset.tab)));
+  document
+    .querySelectorAll('#hgui-tabs [data-tab]')
+    .forEach((t) => t.addEventListener('click', () => navigate(t.dataset.tab)));
 
   // Esc pops the sub-view stack (back button affordance).
   document.addEventListener('keydown', (e) => {
@@ -1122,7 +1392,9 @@ async function init() {
     navigate('channels');
     loadCachedDiscovery()
       .then((ok) => (ok ? undefined : onDiscover({ quiet: true })))
-      .catch(() => { /* errors already toasted by onDiscover */ });
+      .catch(() => {
+        /* errors already toasted by onDiscover */
+      });
   }
 }
 

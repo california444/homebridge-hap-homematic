@@ -27,10 +27,18 @@ class TestService extends AccessoryBase {
 }
 
 function build() {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+  const config = resolveConfig({
+    platform: 'HapHomematic',
+    ccuIp: '127.0.0.1',
+    eventServer: { callbackHost: '127.0.0.1' },
+  });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'a') });
   const hap = makeHapStub();
-  const accessory = makeAccessory<AccessoryContext>('uuid', 'X', { kind: 'channel', id: 'X', service: 'k' });
+  const accessory = makeAccessory<AccessoryContext>('uuid', 'X', {
+    kind: 'channel',
+    id: 'X',
+    service: 'k',
+  });
   const ctx: ServiceContext = {
     accessory: asPlatformAccessory(accessory),
     ccu,
@@ -71,32 +79,44 @@ describe('AccessoryBase', () => {
     const off = helpers.register('A.0:1', 'STATE', () => undefined);
     expect(typeof off).toBe('function');
     // The CcuClient should have it
-    expect((ccu as unknown as { datapointListeners: Map<string, Set<unknown>> }).datapointListeners.has('A.0:1.STATE')).toBe(true);
+    expect(
+      (ccu as unknown as { datapointListeners: Map<string, Set<unknown>> }).datapointListeners.has(
+        'A.0:1.STATE',
+      ),
+    ).toBe(true);
   });
 
   it('dispose cleans up registered listeners', () => {
     const { svc, helpers, ccu } = build();
     helpers.register('A.0:1', 'STATE', () => undefined);
     svc.dispose();
-    expect((ccu as unknown as { datapointListeners: Map<string, Set<unknown>> }).datapointListeners.size).toBe(0);
+    expect(
+      (ccu as unknown as { datapointListeners: Map<string, Set<unknown>> }).datapointListeners.size,
+    ).toBe(0);
   });
 
   it('wrapSet rethrows after logging', async () => {
     const { helpers } = build();
-    const wrapped = helpers.wrapSet(async () => { throw new Error('fail'); });
+    const wrapped = helpers.wrapSet(async () => {
+      throw new Error('fail');
+    });
     await expect(wrapped(true as unknown as never)).rejects.toThrow(/fail/);
   });
 
   it('wrapGet rethrows after logging cache miss', async () => {
     const { helpers } = build();
-    const wrapped = helpers.wrapGet(() => { throw new Error('miss'); });
+    const wrapped = helpers.wrapGet(() => {
+      throw new Error('miss');
+    });
     await expect(wrapped()).rejects.toThrow(/miss/);
   });
 
   it('wrapSet succeeds for normal handlers', async () => {
     const { helpers } = build();
     let captured: unknown;
-    const wrapped = helpers.wrapSet(async (v) => { captured = v; });
+    const wrapped = helpers.wrapSet(async (v) => {
+      captured = v;
+    });
     await wrapped(true as unknown as never);
     expect(captured).toBe(true);
   });
@@ -110,8 +130,12 @@ describe('AccessoryBase', () => {
   it('dispose tolerates listener that throws on cleanup', () => {
     const { svc, ccu } = build();
     // Inject a disposer that throws
-    (svc as unknown as { disposers: Array<() => void> }).disposers.push(() => { throw new Error('x'); });
+    (svc as unknown as { disposers: Array<() => void> }).disposers.push(() => {
+      throw new Error('x');
+    });
     expect(() => svc.dispose()).not.toThrow();
-    expect((ccu as unknown as { datapointListeners: Map<string, Set<unknown>> }).datapointListeners.size).toBe(0);
+    expect(
+      (ccu as unknown as { datapointListeners: Map<string, Set<unknown>> }).datapointListeners.size,
+    ).toBe(0);
   });
 });

@@ -7,7 +7,17 @@ import { EventServer, describeCall, normalizeAddress } from '../../src/ccu/Event
 import { PrefixedLogger } from '../../src/util/logger.js';
 import { makeLog } from '../helpers/hapStub.js';
 
-function call(port: number, body: string, method = 'POST'): Promise<{ status: number; body: string; connection?: string; length?: string; chunked?: string }> {
+function call(
+  port: number,
+  body: string,
+  method = 'POST',
+): Promise<{
+  status: number;
+  body: string;
+  connection?: string;
+  length?: string;
+  chunked?: string;
+}> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       // agent: false → one connection per call, closed afterwards.
@@ -15,13 +25,15 @@ function call(port: number, body: string, method = 'POST'): Promise<{ status: nu
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve({
-          status: res.statusCode ?? 0,
-          body: Buffer.concat(chunks).toString('utf8'),
-          connection: res.headers.connection,
-          length: res.headers['content-length'],
-          chunked: res.headers['transfer-encoding'],
-        }));
+        res.on('end', () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString('utf8'),
+            connection: res.headers.connection,
+            length: res.headers['content-length'],
+            chunked: res.headers['transfer-encoding'],
+          }),
+        );
       },
     );
     req.on('error', reject);
@@ -37,7 +49,9 @@ let port = 0;
 let log: Logging;
 
 const debugLines = (): string[] =>
-  (log.debug as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => c.map(String).join(' '));
+  (log.debug as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) =>
+    c.map(String).join(' '),
+  );
 
 async function until(cond: () => boolean): Promise<void> {
   for (let i = 0; i < 100 && !cond(); i++) {
@@ -49,7 +63,7 @@ beforeEach(async () => {
   log = makeLog();
   server = new EventServer({ host: '127.0.0.1', port: 0, log: new PrefixedLogger(log, 'ev') });
   await server.start();
-  port = ((server as unknown as { server: { address(): { port: number } } }).server.address()).port;
+  port = (server as unknown as { server: { address(): { port: number } } }).server.address().port;
 });
 
 afterEach(async () => {
@@ -58,14 +72,18 @@ afterEach(async () => {
 
 describe('EventServer', () => {
   it('answers with Connection: close (one request per connection)', async () => {
-    const body = '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>';
+    const body =
+      '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>';
     const res = await call(port, body);
     expect(res.connection).toBe('close');
     expect((await call(port, '', 'GET')).connection).toBe('close');
   });
 
   it('sends Content-Length, never chunked (rfd cannot read chunked answers)', async () => {
-    const ok = await call(port, '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>');
+    const ok = await call(
+      port,
+      '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>',
+    );
     expect(ok.chunked).toBeUndefined();
     expect(Number(ok.length)).toBe(Buffer.byteLength(ok.body));
     const fault = await call(port, 'not xml');
@@ -83,41 +101,47 @@ describe('EventServer', () => {
   it('dispatches event() to event listeners', async () => {
     const handler = vi.fn();
     server.on('event', handler);
-    const body = '<methodCall><methodName>event</methodName><params>'
-      + '<param><value><string>cb</string></value></param>'
-      + '<param><value><string>HmIP.0:1</string></value></param>'
-      + '<param><value><string>STATE</string></value></param>'
-      + '<param><value><boolean>1</boolean></value></param>'
-      + '</params></methodCall>';
+    const body =
+      '<methodCall><methodName>event</methodName><params>' +
+      '<param><value><string>cb</string></value></param>' +
+      '<param><value><string>HmIP.0:1</string></value></param>' +
+      '<param><value><string>STATE</string></value></param>' +
+      '<param><value><boolean>1</boolean></value></param>' +
+      '</params></methodCall>';
     const res = await call(port, body);
     expect(res.status).toBe(200);
-    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: true }));
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ channelAddress: 'HmIP.0:1', datapoint: 'STATE', value: true }),
+    );
   });
 
   it('handles system.multicall batched events', async () => {
     const handler = vi.fn();
     server.on('event', handler);
-    const inner = '<struct>'
-      + '<member><name>methodName</name><value><string>event</string></value></member>'
-      + '<member><name>params</name><value><array><data>'
-      + '<value><string>cb</string></value>'
-      + '<value><string>HmIP.0:1</string></value>'
-      + '<value><string>STATE</string></value>'
-      + '<value><boolean>0</boolean></value>'
-      + '</data></array></value></member>'
-      + '</struct>';
-    const body = '<methodCall><methodName>system.multicall</methodName><params><param><value>'
-      + '<array><data>'
-      + `<value>${inner}</value>`
-      + `<value>${inner}</value>`
-      + '</data></array>'
-      + '</value></param></params></methodCall>';
+    const inner =
+      '<struct>' +
+      '<member><name>methodName</name><value><string>event</string></value></member>' +
+      '<member><name>params</name><value><array><data>' +
+      '<value><string>cb</string></value>' +
+      '<value><string>HmIP.0:1</string></value>' +
+      '<value><string>STATE</string></value>' +
+      '<value><boolean>0</boolean></value>' +
+      '</data></array></value></member>' +
+      '</struct>';
+    const body =
+      '<methodCall><methodName>system.multicall</methodName><params><param><value>' +
+      '<array><data>' +
+      `<value>${inner}</value>` +
+      `<value>${inner}</value>` +
+      '</data></array>' +
+      '</value></param></params></methodCall>';
     await call(port, body);
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
   it('replies to system.listMethods', async () => {
-    const body = '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>';
+    const body =
+      '<methodCall><methodName>system.listMethods</methodName><params></params></methodCall>';
     const res = await call(port, body);
     expect(res.body).toContain('event');
     expect(res.body).toContain('system.multicall');
@@ -132,9 +156,10 @@ describe('EventServer', () => {
   it('emits newDevices', async () => {
     const handler = vi.fn();
     server.on('newDevices', handler);
-    const body = '<methodCall><methodName>newDevices</methodName><params>'
-      + '<param><value><string>cb</string></value></param>'
-      + '</params></methodCall>';
+    const body =
+      '<methodCall><methodName>newDevices</methodName><params>' +
+      '<param><value><string>cb</string></value></param>' +
+      '</params></methodCall>';
     await call(port, body);
     expect(handler).toHaveBeenCalledWith('cb');
   });
@@ -146,7 +171,8 @@ describe('EventServer', () => {
   });
 
   it('returns "" for unknown methods', async () => {
-    const body = '<methodCall><methodName>unknown.method</methodName><params></params></methodCall>';
+    const body =
+      '<methodCall><methodName>unknown.method</methodName><params></params></methodCall>';
     const res = await call(port, body);
     expect(res.status).toBe(200);
     expect(res.body).toContain('<string></string>');
@@ -155,32 +181,36 @@ describe('EventServer', () => {
   it('skips multicall entries with no methodName', async () => {
     const handler = vi.fn();
     server.on('event', handler);
-    const goodInner = '<struct>'
-      + '<member><name>methodName</name><value><string>event</string></value></member>'
-      + '<member><name>params</name><value><array><data>'
-      + '<value><string>cb</string></value>'
-      + '<value><string>X.0:1</string></value>'
-      + '<value><string>STATE</string></value>'
-      + '<value><boolean>1</boolean></value>'
-      + '</data></array></value></member>'
-      + '</struct>';
-    const badInner = '<struct><member><name>params</name><value><array><data></data></array></value></member></struct>';
-    const body = '<methodCall><methodName>system.multicall</methodName><params><param><value>'
-      + '<array><data>'
-      + `<value>${badInner}</value>`
-      + `<value>${goodInner}</value>`
-      + '</data></array></value></param></params></methodCall>';
+    const goodInner =
+      '<struct>' +
+      '<member><name>methodName</name><value><string>event</string></value></member>' +
+      '<member><name>params</name><value><array><data>' +
+      '<value><string>cb</string></value>' +
+      '<value><string>X.0:1</string></value>' +
+      '<value><string>STATE</string></value>' +
+      '<value><boolean>1</boolean></value>' +
+      '</data></array></value></member>' +
+      '</struct>';
+    const badInner =
+      '<struct><member><name>params</name><value><array><data></data></array></value></member></struct>';
+    const body =
+      '<methodCall><methodName>system.multicall</methodName><params><param><value>' +
+      '<array><data>' +
+      `<value>${badInner}</value>` +
+      `<value>${goodInner}</value>` +
+      '</data></array></value></param></params></methodCall>';
     await call(port, body);
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it('debug-logs connections and calls', async () => {
-    const body = '<methodCall><methodName>event</methodName><params>'
-      + '<param><value><string>cb</string></value></param>'
-      + '<param><value><string>X:1</string></value></param>'
-      + '<param><value><string>STATE</string></value></param>'
-      + '<param><value><boolean>1</boolean></value></param>'
-      + '</params></methodCall>';
+    const body =
+      '<methodCall><methodName>event</methodName><params>' +
+      '<param><value><string>cb</string></value></param>' +
+      '<param><value><string>X:1</string></value></param>' +
+      '<param><value><string>STATE</string></value></param>' +
+      '<param><value><boolean>1</boolean></value></param>' +
+      '</params></methodCall>';
     await call(port, body);
     await until(() => debugLines().some((l) => l.includes('closed after')));
     const lines = debugLines();
@@ -202,16 +232,24 @@ describe('EventServer', () => {
 });
 
 describe('EventServer sender check', () => {
-  const EVENT = '<methodCall><methodName>event</methodName><params>'
-    + '<param><value>cb</value></param><param><value>ABC:1</value></param>'
-    + '<param><value>STATE</value></param><param><value><boolean>1</boolean></value></param>'
-    + '</params></methodCall>';
+  const EVENT =
+    '<methodCall><methodName>event</methodName><params>' +
+    '<param><value>cb</value></param><param><value>ABC:1</value></param>' +
+    '<param><value>STATE</value></param><param><value><boolean>1</boolean></value></param>' +
+    '</params></methodCall>';
 
-  async function startWith(allowedSenders: string[]): Promise<{ srv: EventServer; p: number; l: Logging }> {
+  async function startWith(
+    allowedSenders: string[],
+  ): Promise<{ srv: EventServer; p: number; l: Logging }> {
     const l = makeLog();
-    const srv = new EventServer({ host: '127.0.0.1', port: 0, log: new PrefixedLogger(l, 'ev'), allowedSenders });
+    const srv = new EventServer({
+      host: '127.0.0.1',
+      port: 0,
+      log: new PrefixedLogger(l, 'ev'),
+      allowedSenders,
+    });
     await srv.start();
-    const p = ((srv as unknown as { server: { address(): { port: number } } }).server.address()).port;
+    const p = (srv as unknown as { server: { address(): { port: number } } }).server.address().port;
     return { srv, p, l };
   }
 
@@ -269,11 +307,14 @@ describe('describeCall', () => {
   it('summarizes event, multicall and other calls', () => {
     expect(describeCall('event', ['cb', 'A:1', 'LEVEL', 0.5])).toBe('event(cb) A:1.LEVEL=0.5');
     expect(describeCall('event', ['cb', 'A:1', 'X', { a: 'x'.repeat(50) }])).toMatch(/…$/);
-    const calls = Array.from({ length: 7 }, (_, i) => ({ methodName: 'event', params: ['cb', `A:${i}`, 'STATE', true] }));
+    const calls = Array.from({ length: 7 }, (_, i) => ({
+      methodName: 'event',
+      params: ['cb', `A:${i}`, 'STATE', true],
+    }));
     const s = describeCall('system.multicall', [calls]);
     expect(s).toMatch(/^system\.multicall\[7\] event\(cb\) A:0\.STATE=true/);
     expect(s).toContain('… 2 more');
-    expect(describeCall('system.multicall', [[{ }]])).toBe('system.multicall[1] ?');
+    expect(describeCall('system.multicall', [[{}]])).toBe('system.multicall[1] ?');
     expect(describeCall('system.multicall', ['x'])).toBe('system.multicall[0] ');
     expect(describeCall('listDevices', ['cb'])).toBe('listDevices(cb)');
     expect(describeCall('system.listMethods', [])).toBe('system.listMethods');

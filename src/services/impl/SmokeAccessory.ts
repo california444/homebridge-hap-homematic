@@ -4,17 +4,23 @@ import { AccessoryBase, isTrue } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
 
-const SMOKE_CHANNEL_TYPES = [
-  'SMOKE_DETECTOR',
-  'SMOKE_DETECTOR_COMMUNICATION',
-];
+const SMOKE_CHANNEL_TYPES = ['SMOKE_DETECTOR', 'SMOKE_DETECTOR_COMMUNICATION'];
 
 /** HmIP-SWSD SMOKE_DETECTOR_ALARM_STATUS (plan 3.1 / 8.3). */
-export const ALARM_STATUS = ['IDLE_OFF', 'PRIMARY_ALARM', 'INTRUSION_ALARM', 'SECONDARY_ALARM'] as const;
+export const ALARM_STATUS = [
+  'IDLE_OFF',
+  'PRIMARY_ALARM',
+  'INTRUSION_ALARM',
+  'SECONDARY_ALARM',
+] as const;
 
 /** HmIP-SWSD SMOKE_DETECTOR_TEST_RESULT (VALUE_LIST from the CCU). */
 export const TEST_RESULT = [
-  'NONE', 'SMOKE_TEST_OK', 'SMOKE_TEST_FAILED', 'COMMUNICATION_TEST_SENT', 'COMMUNICATION_TEST_OK',
+  'NONE',
+  'SMOKE_TEST_OK',
+  'SMOKE_TEST_FAILED',
+  'COMMUNICATION_TEST_SENT',
+  'COMMUNICATION_TEST_OK',
 ] as const;
 
 /** ENUM index or name → name; undefined for anything else. */
@@ -54,11 +60,16 @@ class SmokeHandler extends AccessoryBase implements ChannelService {
     const service = this.getOrAddService(this.Service.SmokeSensor, channel.name);
     const secondary = this.accessory.context.settings?.secondaryAlarm !== false;
 
-    service.getCharacteristic(this.Characteristic.SmokeDetected)
+    service
+      .getCharacteristic(this.Characteristic.SmokeDetected)
       .onGet(this.wrapGet<number>(() => this.toHap()));
 
     // Fault while the chamber is degraded or no value is known yet.
-    const reevaluate = this.watchFault(service, channel.address, () => this.degraded || this.detected === undefined);
+    const reevaluate = this.watchFault(
+      service,
+      channel.address,
+      () => this.degraded || this.detected === undefined,
+    );
 
     const set = (detected: boolean): void => {
       const changed = this.detected !== detected;
@@ -116,7 +127,10 @@ class SmokeHandler extends AccessoryBase implements ChannelService {
     this.need(channel.address, 'ERROR_DEGRADED_CHAMBER', (raw) => {
       this.degraded = isTrue(raw);
       if (this.degraded) {
-        this.log.warn('%s: smoke chamber degraded — replace the detector', this.accessory.displayName);
+        this.log.warn(
+          '%s: smoke chamber degraded — replace the detector',
+          this.accessory.displayName,
+        );
       }
       reevaluate();
     });
@@ -140,8 +154,13 @@ export const smokeService: ServiceDefinition = {
   channelTypes: SMOKE_CHANNEL_TYPES,
   priority: 10,
   options: [
-    { key: 'secondaryAlarm', label: 'Show group alarms', type: 'boolean', default: true,
-      hint: 'Off: an alarm of another detector of the group does not show smoke on this one.' },
+    {
+      key: 'secondaryAlarm',
+      label: 'Show group alarms',
+      type: 'boolean',
+      default: true,
+      hint: 'Off: an alarm of another detector of the group does not show smoke on this one.',
+    },
   ],
   build: (ctx: ServiceContext) => new SmokeHandler(ctx),
 };

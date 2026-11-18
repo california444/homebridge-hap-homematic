@@ -65,7 +65,9 @@ describe('service option metadata (UI, plan 5.3)', () => {
   });
 
   it('only whole-device services have scope "device"; enum options list their values', () => {
-    expect(SERVICE_DEFINITIONS.filter((d) => d.scope === 'device').map((d) => d.key)).toEqual(['IrrigationAccessory']);
+    expect(SERVICE_DEFINITIONS.filter((d) => d.scope === 'device').map((d) => d.key)).toEqual([
+      'IrrigationAccessory',
+    ]);
     for (const d of SERVICE_DEFINITIONS) {
       for (const o of [...(d.options ?? []), ...(d.channelOptions ?? [])]) {
         if (o.type === 'enum') {

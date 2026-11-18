@@ -4,18 +4,19 @@ import { describe, it, expect, vi } from 'vitest';
 import { CcuClient } from '../../src/ccu/CcuClient.js';
 import { resolveConfig } from '../../src/util/config.js';
 import { PrefixedLogger } from '../../src/util/logger.js';
-import {
-  asPlatformAccessory,
-  makeAccessory,
-  makeHapStub,
-  makeLog,
-} from '../helpers/hapStub.js';
+import { asPlatformAccessory, makeAccessory, makeHapStub, makeLog } from '../helpers/hapStub.js';
 import type { AccessoryContext, CcuChannel } from '../../src/types.js';
 import type { ServiceContext } from '../../src/services/types.js';
 
 import { lockService } from '../../src/services/impl/LockAccessory.js';
-import { colorTempDimmerService, _testing as colorTempTesting } from '../../src/services/impl/ColorTempDimmerAccessory.js';
-import { rgbLightService, _testing as rgbTesting } from '../../src/services/impl/RgbLightAccessory.js';
+import {
+  colorTempDimmerService,
+  _testing as colorTempTesting,
+} from '../../src/services/impl/ColorTempDimmerAccessory.js';
+import {
+  rgbLightService,
+  _testing as rgbTesting,
+} from '../../src/services/impl/RgbLightAccessory.js';
 import { powerMeterService } from '../../src/services/impl/PowerMeterAccessory.js';
 import { slatBlindService } from '../../src/services/impl/SlatBlindAccessory.js';
 
@@ -28,23 +29,47 @@ interface TestEnv {
 }
 
 function makeEnv(): TestEnv {
-  const config = resolveConfig({ platform: 'HapHomematic', ccuIp: '127.0.0.1', eventServer: { callbackHost: '127.0.0.1' } });
+  const config = resolveConfig({
+    platform: 'HapHomematic',
+    ccuIp: '127.0.0.1',
+    eventServer: { callbackHost: '127.0.0.1' },
+  });
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'sv') });
   let valueFn: (address: string, datapoint: string) => unknown = () => undefined;
-  vi.spyOn(ccu, 'readValues').mockImplementation(async (address: string) => new Proxy({}, {
-    has: (_t, dp) => valueFn(address, String(dp)) !== undefined,
-    get: (_t, dp) => valueFn(address, String(dp)),
-  }));
+  vi.spyOn(ccu, 'readValues').mockImplementation(
+    async (address: string) =>
+      new Proxy(
+        {},
+        {
+          has: (_t, dp) => valueFn(address, String(dp)) !== undefined,
+          get: (_t, dp) => valueFn(address, String(dp)),
+        },
+      ),
+  );
   return {
     ccu,
     setValueMock: vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined),
     getValueMock: vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined),
-    values(fn: (address: string, datapoint: string) => unknown) { valueFn = fn; },
+    values(fn: (address: string, datapoint: string) => unknown) {
+      valueFn = fn;
+    },
     fireEvent(address, datapoint, value) {
-      (ccu as unknown as {
-        handleEvent(ev: { callbackId: string; channelAddress: string; datapoint: string; value: unknown; receivedAt: number }): void;
-      }).handleEvent({
-        callbackId: 'homebridge-hap-homematic:HmIP-RF', channelAddress: address, datapoint, value, receivedAt: 0,
+      (
+        ccu as unknown as {
+          handleEvent(ev: {
+            callbackId: string;
+            channelAddress: string;
+            datapoint: string;
+            value: unknown;
+            receivedAt: number;
+          }): void;
+        }
+      ).handleEvent({
+        callbackId: 'homebridge-hap-homematic:HmIP-RF',
+        channelAddress: address,
+        datapoint,
+        value,
+        receivedAt: 0,
       });
     },
   };
@@ -53,7 +78,10 @@ function makeEnv(): TestEnv {
 function buildCtx(env: TestEnv, context: AccessoryContext) {
   const hap = makeHapStub();
   const charClass = (name: string, extra: Record<string, unknown> = {}) => {
-    class C { static UUID = `char:${name}`; UUID = `char:${name}`; }
+    class C {
+      static UUID = `char:${name}`;
+      UUID = `char:${name}`;
+    }
     Object.assign(C, extra);
     Object.defineProperty(C, 'name', { value: name });
     return C;
@@ -95,17 +123,30 @@ function buildCtx(env: TestEnv, context: AccessoryContext) {
       this.UUID = uuid ?? '';
       this.props = props ?? {};
     }
-    onGet() { return this; }
-    onSet() { return this; }
-    setProps(p: Record<string, unknown>) { Object.assign(this.props, p); return this; }
-    updateValue(v: unknown) { this.value = v; return this; }
+    onGet() {
+      return this;
+    }
+    onSet() {
+      return this;
+    }
+    setProps(p: Record<string, unknown>) {
+      Object.assign(this.props, p);
+      return this;
+    }
+    updateValue(v: unknown) {
+      this.value = v;
+      return this;
+    }
   }
   // Copy existing slots from hap.Characteristic onto CharRoot.
   Object.assign(CharRoot, hap.Characteristic);
   // Add the new characteristic classes we need.
   Object.assign(CharRoot as unknown as Record<string, unknown>, {
     LockCurrentState: charClass('LockCurrentState', {
-      UNSECURED: 0, SECURED: 1, JAMMED: 2, UNKNOWN: 3,
+      UNSECURED: 0,
+      SECURED: 1,
+      JAMMED: 2,
+      UNKNOWN: 3,
     }),
     LockTargetState: charClass('LockTargetState', { UNSECURED: 0, SECURED: 1 }),
     Hue: charClass('Hue'),
@@ -128,11 +169,20 @@ function buildCtx(env: TestEnv, context: AccessoryContext) {
 }
 
 describe('LockAccessory', () => {
-  const channel: CcuChannel = { address: 'HmIP.L:1', name: 'Front Door', index: 1, type: 'KEYMATIC' };
+  const channel: CcuChannel = {
+    address: 'HmIP.L:1',
+    name: 'Front Door',
+    index: 1,
+    type: 'KEYMATIC',
+  };
 
   it('writes inverted STATE on lock command', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'LockAccessory',
+    });
     await attachAndRefresh(lockService.build(ctx), channel);
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;
     await target.onSetHandler!(1); // SECURED
@@ -141,7 +191,11 @@ describe('LockAccessory', () => {
 
   it('writes inverted STATE on unlock command', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'LockAccessory',
+    });
     await attachAndRefresh(lockService.build(ctx), channel);
     const target = accessory.services[0]!.characteristics.get('char:LockTargetState')!;
     await target.onSetHandler!(0); // UNSECURED
@@ -150,7 +204,11 @@ describe('LockAccessory', () => {
 
   it('reflects STATE=true (unlocked) push event as UNSECURED', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'LockAccessory',
+    });
     await attachAndRefresh(lockService.build(ctx), channel);
     env.fireEvent('HmIP.L:1', 'STATE', true);
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
@@ -159,7 +217,11 @@ describe('LockAccessory', () => {
 
   it('reflects STATE=false (locked) push event as SECURED', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'LockAccessory',
+    });
     await attachAndRefresh(lockService.build(ctx), channel);
     env.fireEvent('HmIP.L:1', 'STATE', false);
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
@@ -171,8 +233,12 @@ describe('LockAccessory', () => {
   it('initial pull seeds SECURED / UNSECURED based on STATE', async () => {
     const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
     const env = makeEnv();
-    env.values((_a, dp) => dp === 'STATE' ? false : undefined);
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
+    env.values((_a, dp) => (dp === 'STATE' ? false : undefined));
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'LockAccessory',
+    });
     await attachAndRefresh(lockService.build(ctx), channel);
     await flush();
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
@@ -181,7 +247,11 @@ describe('LockAccessory', () => {
 
   it('reflects ERROR>0 as JAMMED', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'LockAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'LockAccessory',
+    });
     await attachAndRefresh(lockService.build(ctx), channel);
     env.fireEvent('HmIP.L:1', 'ERROR', 1);
     const current = accessory.services[0]!.characteristics.get('char:LockCurrentState')!;
@@ -202,12 +272,19 @@ describe('ColorTempDimmerAccessory.deriveColortempAddress', () => {
 
 describe('ColorTempDimmerAccessory', () => {
   const channel: CcuChannel = {
-    address: 'HmIP.D:1', name: 'Dim', index: 1, type: 'DIMMER_VIRTUAL_RECEIVER',
+    address: 'HmIP.D:1',
+    name: 'Dim',
+    index: 1,
+    type: 'DIMMER_VIRTUAL_RECEIVER',
   };
 
   it('writes brightness LEVEL to the bound channel', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ColorTempDimmerAccessory',
+    });
     await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     const brightness = accessory.services[0]!.characteristics.get('char:Brightness')!;
     await brightness.onSetHandler!(60);
@@ -216,7 +293,11 @@ describe('ColorTempDimmerAccessory', () => {
 
   it('writes color temperature LEVEL to the sibling channel (auto-derived)', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ColorTempDimmerAccessory',
+    });
     await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     const ct = accessory.services[0]!.characteristics.get('char:ColorTemperature')!;
     // mired = 320 => fraction = (320-140)/360 ≈ 0.5
@@ -227,7 +308,9 @@ describe('ColorTempDimmerAccessory', () => {
   it('respects an explicit coltempAddress in settings', async () => {
     const env = makeEnv();
     const { ctx, accessory } = buildCtx(env, {
-      kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory',
+      kind: 'channel',
+      id: channel.address,
+      service: 'ColorTempDimmerAccessory',
       settings: { coltempAddress: 'HmIP.D:7' },
     });
     await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
@@ -238,7 +321,11 @@ describe('ColorTempDimmerAccessory', () => {
 
   it('reflects sibling LEVEL events as a mired value', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'ColorTempDimmerAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ColorTempDimmerAccessory',
+    });
     await attachAndRefresh(colorTempDimmerService.build(ctx), channel);
     env.fireEvent('HmIP.D:2', 'LEVEL', 1);
     const ct = accessory.services[0]!.characteristics.get('char:ColorTemperature')!;
@@ -248,19 +335,27 @@ describe('ColorTempDimmerAccessory', () => {
 
 describe('RgbLightAccessory', () => {
   const channel: CcuChannel = {
-    address: 'HmIP.B:8', name: 'BSL', index: 8, type: 'DIMMER_VIRTUAL_RECEIVER',
+    address: 'HmIP.B:8',
+    name: 'BSL',
+    index: 8,
+    type: 'DIMMER_VIRTUAL_RECEIVER',
   };
 
   it('snapHueToBslIndex picks the closest discrete colour', async () => {
-    expect(rgbTesting.snapHueToBslIndex(0, 100)).toBe(4);     // red
-    expect(rgbTesting.snapHueToBslIndex(120, 100)).toBe(2);   // green
-    expect(rgbTesting.snapHueToBslIndex(240, 100)).toBe(1);   // blue
-    expect(rgbTesting.snapHueToBslIndex(0, 0)).toBe(7);       // saturation 0 => white
+    expect(rgbTesting.snapHueToBslIndex(0, 100)).toBe(4); // red
+    expect(rgbTesting.snapHueToBslIndex(120, 100)).toBe(2); // green
+    expect(rgbTesting.snapHueToBslIndex(240, 100)).toBe(1); // blue
+    expect(rgbTesting.snapHueToBslIndex(0, 0)).toBe(7); // saturation 0 => white
   });
 
   it('discrete subtype writes COLOR as integer enum 0..7', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'discrete' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'RgbLightAccessory',
+      subtype: 'discrete',
+    });
     await attachAndRefresh(rgbLightService.build(ctx), channel);
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
@@ -271,7 +366,12 @@ describe('RgbLightAccessory', () => {
 
   it('continuous subtype writes COLOR as 0..199 hue ring', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'RgbLightAccessory',
+      subtype: 'continuous',
+    });
     await attachAndRefresh(rgbLightService.build(ctx), channel);
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
@@ -285,7 +385,12 @@ describe('RgbLightAccessory', () => {
 
   it('continuous subtype writes 200 (white) for saturation 0', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'RgbLightAccessory',
+      subtype: 'continuous',
+    });
     await attachAndRefresh(rgbLightService.build(ctx), channel);
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     await sat.onSetHandler!(0);
@@ -294,39 +399,54 @@ describe('RgbLightAccessory', () => {
 
   it('initial pull: COLOR getValue applies discrete index back to Hue/Sat', async () => {
     const env = makeEnv();
-    env.values((_a, dp) => dp === 'COLOR' ? 4 : undefined);
+    env.values((_a, dp) => (dp === 'COLOR' ? 4 : undefined));
     const channel: CcuChannel = { address: 'HmIP.B:8', name: 'BSL', index: 8, type: 'RGBW' };
     const { ctx, accessory } = buildCtx(env, {
-      kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'discrete',
+      kind: 'channel',
+      id: channel.address,
+      service: 'RgbLightAccessory',
+      subtype: 'discrete',
     });
     await attachAndRefresh(rgbLightService.build(ctx), channel);
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
     expect(hue.value).toBeDefined();
   });
 
   it('initial pull: continuous COLOR=200 maps to white (sat=0)', async () => {
     const env = makeEnv();
-    env.values((_a, dp) => dp === 'COLOR' ? 200 : undefined);
+    env.values((_a, dp) => (dp === 'COLOR' ? 200 : undefined));
     const channel: CcuChannel = { address: 'HmIP.B:8', name: 'RGBW', index: 8, type: 'RGBW' };
     const { ctx, accessory } = buildCtx(env, {
-      kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous',
+      kind: 'channel',
+      id: channel.address,
+      service: 'RgbLightAccessory',
+      subtype: 'continuous',
     });
     await attachAndRefresh(rgbLightService.build(ctx), channel);
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     const sat = accessory.services[0]!.characteristics.get('char:Saturation')!;
     expect(sat.value).toBe(0);
   });
 
   it('initial pull: continuous COLOR=99 maps to mid-spectrum hue', async () => {
     const env = makeEnv();
-    env.values((_a, dp) => dp === 'COLOR' ? 99 : undefined);
+    env.values((_a, dp) => (dp === 'COLOR' ? 99 : undefined));
     const channel: CcuChannel = { address: 'HmIP.B:8', name: 'RGBW', index: 8, type: 'RGBW' };
     const { ctx, accessory } = buildCtx(env, {
-      kind: 'channel', id: channel.address, service: 'RgbLightAccessory', subtype: 'continuous',
+      kind: 'channel',
+      id: channel.address,
+      service: 'RgbLightAccessory',
+      subtype: 'continuous',
     });
     await attachAndRefresh(rgbLightService.build(ctx), channel);
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     const hue = accessory.services[0]!.characteristics.get('char:Hue')!;
     expect(hue.value).toBeCloseTo((99 / 199) * 360, 1);
   });
@@ -334,12 +454,19 @@ describe('RgbLightAccessory', () => {
 
 describe('SlatBlindAccessory', () => {
   const channel: CcuChannel = {
-    address: 'HmIP.S:4', name: 'Slats', index: 4, type: 'BLIND_VIRTUAL_RECEIVER',
+    address: 'HmIP.S:4',
+    name: 'Slats',
+    index: 4,
+    type: 'BLIND_VIRTUAL_RECEIVER',
   };
 
   it('writes LEVEL_2 for tilt angle, mapped from -90..90 to 0..1', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'SlatBlindAccessory',
+    });
     await attachAndRefresh(slatBlindService.build(ctx), channel);
     const target = accessory.services[0]!.characteristics.get('char:TargetHorizontalTiltAngle')!;
     await target.onSetHandler!(0);
@@ -350,7 +477,11 @@ describe('SlatBlindAccessory', () => {
 
   it('reflects LEVEL_2 events as a tilt angle', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'SlatBlindAccessory',
+    });
     await attachAndRefresh(slatBlindService.build(ctx), channel);
     env.fireEvent('HmIP.S:4', 'LEVEL_2', 1);
     const current = accessory.services[0]!.characteristics.get('char:CurrentHorizontalTiltAngle')!;
@@ -359,17 +490,27 @@ describe('SlatBlindAccessory', () => {
 
   it('seeds LEVEL_2 from getValue at attach (initial pull)', async () => {
     const env = makeEnv();
-    env.values((_a, dp) => dp === 'LEVEL_2' ? 0 : undefined);
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
+    env.values((_a, dp) => (dp === 'LEVEL_2' ? 0 : undefined));
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'SlatBlindAccessory',
+    });
     await attachAndRefresh(slatBlindService.build(ctx), channel);
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     const current = accessory.services[0]!.characteristics.get('char:CurrentHorizontalTiltAngle')!;
     expect(current.value).toBe(-90); // -90 + 0*180 = -90
   });
 
   it('PositionState reflects target>current (increasing) and target<current (decreasing)', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'SlatBlindAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'SlatBlindAccessory',
+    });
     await attachAndRefresh(slatBlindService.build(ctx), channel);
     const positionState = accessory.services[0]!.characteristics.get('char:PositionState')!;
     const target = accessory.services[0]!.characteristics.get('char:TargetPosition')!;
@@ -395,12 +536,19 @@ describe('SlatBlindAccessory', () => {
 
 describe('PowerMeterAccessory', () => {
   const channel: CcuChannel = {
-    address: 'HmIP.P:6', name: 'PSM Meter', index: 6, type: 'ENERGIE_METER_TRANSMITTER',
+    address: 'HmIP.P:6',
+    name: 'PSM Meter',
+    index: 6,
+    type: 'ENERGIE_METER_TRANSMITTER',
   };
 
   it('subscribes and exposes Eve custom characteristics on the Outlet service', async () => {
     const env = makeEnv();
-    const { ctx, accessory } = buildCtx(env, { kind: 'channel', id: channel.address, service: 'PowerMeterAccessory' });
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'PowerMeterAccessory',
+    });
     await attachAndRefresh(powerMeterService.build(ctx), channel);
     expect(accessory.services[0]!.UUID).toBe('srv:Outlet');
     // Push a POWER event and verify the OutletInUse characteristic flips on.
@@ -411,7 +559,10 @@ describe('PowerMeterAccessory', () => {
 });
 
 /** attach() and then refresh(): start values come from getParamset now. */
-async function attachAndRefresh(h: { attach(c: CcuChannel): void; refresh?(): void | Promise<void> }, c: CcuChannel): Promise<void> {
+async function attachAndRefresh(
+  h: { attach(c: CcuChannel): void; refresh?(): void | Promise<void> },
+  c: CcuChannel,
+): Promise<void> {
   h.attach(c);
   await h.refresh?.();
 }

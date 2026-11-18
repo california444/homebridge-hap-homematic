@@ -43,12 +43,12 @@ mapping in `devices.json` (set in the UI) or from the Home app.
 
 ## Configuration and storage
 
-| Data | Where |
-| --- | --- |
-| Connection | `config.json`, platform block (`util/config.ts`) |
-| Device mappings | `<storagePath>/homebridge-hap-homematic/devices.json` (`util/devices.ts`, format in [DEVICES.md](DEVICES.md)) |
-| Discovery cache (`listDevices` per interface) | `…/discovery.json` (`ccu/Discovery.ts`) |
-| Paramset cache (`getParamsetDescription` per device type + firmware + channel type) | `…/paramsets.json` (`ccu/Discovery.ts`) |
+| Data                                                                                | Where                                                                                                         |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Connection                                                                          | `config.json`, platform block (`util/config.ts`)                                                              |
+| Device mappings                                                                     | `<storagePath>/homebridge-hap-homematic/devices.json` (`util/devices.ts`, format in [DEVICES.md](DEVICES.md)) |
+| Discovery cache (`listDevices` per interface)                                       | `…/discovery.json` (`ccu/Discovery.ts`)                                                                       |
+| Paramset cache (`getParamsetDescription` per device type + firmware + channel type) | `…/paramsets.json` (`ccu/Discovery.ts`)                                                                       |
 
 All writes go through `util/storage.ts` (confined to the storage
 directory, temp file + rename, mode 0600). The caches are rebuilt if
@@ -92,7 +92,7 @@ homebridge-ui/
 1. **Homebridge constructs `HomematicPlatform`** with the user's config
    block. `resolveConfig` validates it; if validation fails, the
    platform logs `error` and stays idle (per the verified-plugin
-   "must not start unless configured" rule). It does *not* throw,
+   "must not start unless configured" rule). It does _not_ throw,
    because that would crash the bridge.
 2. **`configureAccessory`** is called once per cached accessory restored
    from disk. We just remember them; we never re-register.
@@ -240,12 +240,12 @@ answers again but has forgotten every client and does not re-register
 it. Each interface therefore has an `InterfaceSupervisor`
 ([src/ccu/InterfaceSupervisor.ts](../src/ccu/InterfaceSupervisor.ts)):
 
-| State | Leaves when … |
-| --- | --- |
-| `CONNECTING` | first `init` succeeds → `CONNECTED`, fails → `DISCONNECTED` |
-| `CONNECTED` | `ping(callerId)` every 60 s fails → `DISCONNECTED`; no own PONG and no other callback for 90 s → `STALE` |
-| `STALE` | `init` again → `CONNECTED` (or `DISCONNECTED`) |
-| `DISCONNECTED` | a `ping` call succeeds again → `init` at once → `CONNECTED` |
+| State          | Leaves when …                                                                                            |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| `CONNECTING`   | first `init` succeeds → `CONNECTED`, fails → `DISCONNECTED`                                              |
+| `CONNECTED`    | `ping(callerId)` every 60 s fails → `DISCONNECTED`; no own PONG and no other callback for 90 s → `STALE` |
+| `STALE`        | `init` again → `CONNECTED` (or `DISCONNECTED`)                                                           |
+| `DISCONNECTED` | a `ping` call succeeds again → `init` at once → `CONNECTED`                                              |
 
 - Signs of life per interface: every inbound callback with that
   interface's callback id — events, foreign PONGs (other clients' pings

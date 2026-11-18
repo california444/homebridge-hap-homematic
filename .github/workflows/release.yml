@@ -10,11 +10,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Git tag to publish (e.g. v0.2.0)"
+        description: 'Git tag to publish (e.g. v0.2.0)'
         required: true
         type: string
       channel:
-        description: "npm dist-tag"
+        description: 'npm dist-tag'
         required: true
         type: choice
         default: latest
