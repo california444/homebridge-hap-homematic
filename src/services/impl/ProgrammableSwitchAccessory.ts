@@ -45,6 +45,12 @@ class ProgrammableSwitchHandler extends AccessoryBase implements ChannelService 
         eventChar.updateValue(LONG_PRESS);
       }
     });
+
+    // Remotes and wall buttons run on batteries; button inputs of
+    // flush-mount actuators do not (no LOW_BAT on channel 0). Until the
+    // first value: "battery normal" instead of "No Response" — a remote
+    // may not send anything for a long time after a CCU restart.
+    this.attachBatteryIfPresent(channel.address, { assumeNormal: true });
   }
 }
 

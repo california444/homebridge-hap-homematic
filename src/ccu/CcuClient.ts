@@ -362,6 +362,11 @@ export class CcuClient extends EventEmitter {
     this.describer = fn;
   }
 
+  /** VALUES description of a channel, if the paramset cache has it. */
+  describeChannel(address: string): Record<string, ParameterDescription> | undefined {
+    return this.describer(address);
+  }
+
   /** Description of one datapoint, if the paramset cache has it. */
   describe(address: string, datapoint: string): ParameterDescription | undefined {
     return this.describer(address)?.[datapoint];
