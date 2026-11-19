@@ -161,6 +161,51 @@ describe('ProgrammableSwitchAccessory', () => {
     env.fireEvent('HmIP.K:1', 'PRESS_LONG', false);
     expect(eventChar.value).toBeUndefined();
   });
+
+  const attachWith = (env: TestEnv, description: Record<string, unknown> | undefined) => {
+    vi.spyOn(env.ccu, 'describeChannel').mockReturnValue(description as never);
+    const { ctx, accessory } = buildCtx(env, {
+      kind: 'channel',
+      id: channel.address,
+      service: 'ProgrammableSwitchAccessory',
+    });
+    const handler = programmableSwitchService.build(ctx);
+    handler.attach(channel);
+    const battery = () => accessory.services.find((s) => s.subtype === 'battery');
+    return { handler, accessory, battery };
+  };
+
+  it('battery remote (LOW_BAT on channel 0): battery service, "normal" until the first value', async () => {
+    const env = makeEnv();
+    const { battery } = attachWith(env, { LOW_BAT: { TYPE: 'BOOL' } });
+    const low = battery()!.characteristics.get('char:StatusLowBattery')!;
+    expect(await low.onGetHandler!()).toBe(0);
+    env.fireEvent('HmIP.K:0', 'LOW_BAT', true);
+    expect(await low.onGetHandler!()).toBe(1);
+    expect(battery()!.characteristics.has('char:BatteryLevel')).toBe(false);
+  });
+
+  it('BidCos remote (LOWBAT) gets a battery service too', () => {
+    const env = makeEnv();
+    expect(attachWith(env, { LOWBAT: { TYPE: 'BOOL' } }).battery()).toBeDefined();
+  });
+
+  it('mains-powered button input (no LOW_BAT) and unknown description: no battery service', () => {
+    expect(attachWith(makeEnv(), { UNREACH: { TYPE: 'BOOL' } }).battery()).toBeUndefined();
+    expect(attachWith(makeEnv(), undefined).battery()).toBeUndefined();
+  });
+
+  it('keeps a restored battery service without description, removes it when channel 0 has no LOW_BAT', () => {
+    const env = makeEnv();
+    const describe = vi.spyOn(env.ccu, 'describeChannel');
+    const { handler, battery } = attachWith(env, { LOW_BAT: { TYPE: 'BOOL' } });
+    describe.mockReturnValue(undefined);
+    handler.attach(channel);
+    expect(battery()).toBeDefined();
+    describe.mockReturnValue({ UNREACH: { TYPE: 'BOOL' } } as never);
+    handler.attach(channel);
+    expect(battery()).toBeUndefined();
+  });
 });
 
 describe('DoorOpenerAccessory', () => {

@@ -353,6 +353,30 @@ export abstract class AccessoryBase {
   }
 
   /**
+   * attachBattery() only if channel 0 has LOW_BAT / LOWBAT in its paramset
+   * description. For channel types found on battery and mains-powered
+   * devices alike (push buttons on remotes vs. flush-mount actuators):
+   * a mains device would otherwise report "unknown" forever. Without a
+   * cached description, a battery service restored from the cache is
+   * kept; a description without LOW_BAT removes it.
+   */
+  protected attachBatteryIfPresent(
+    featureChannelAddress: string,
+    opts: { assumeNormal?: boolean } = {},
+  ): void {
+    const description = this.ccu.describeChannel(maintenanceAddress(featureChannelAddress));
+    const existing = this.accessory.getServiceById(this.Service.Battery, 'battery');
+    const hasBattery = description
+      ? 'LOW_BAT' in description || 'LOWBAT' in description
+      : existing !== undefined;
+    if (hasBattery) {
+      this.attachBattery(featureChannelAddress, opts);
+    } else if (existing) {
+      this.accessory.removeService(existing);
+    }
+  }
+
+  /**
    * Attach a HAP BatteryService that mirrors the device-level LOW_BAT
    * (HmIP) / LOWBAT (BidCos) datapoint and OPERATING_VOLTAGE into
    * HomeKit's StatusLowBattery + BatteryLevel characteristics. Battery
@@ -381,17 +405,41 @@ export abstract class AccessoryBase {
           : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL;
       }),
     );
-    service
-      .getCharacteristic(this.Characteristic.BatteryLevel)
-      .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
-      // Without a voltage reading only LOW_BAT is known: report 100 / 10 %.
-      .onGet(
-        this.wrapGet<number>(
-          () =>
-            level ??
-            (lowBat === undefined ? (opts.assumeNormal ? 100 : this.unknown()) : lowBat ? 10 : 100),
-        ),
-      );
+    // BatteryLevel (optional in HAP) only for devices that report
+    // OPERATING_VOLTAGE. Devices with LOW_BAT / LOWBAT alone show just
+    // "battery low" in Home, no made-up percentage. The paramset cache
+    // of channel 0 decides; without it the level appears with the first
+    // voltage value.
+    const description = this.ccu.describeChannel(deviceAddress);
+    let levelReady = false;
+    const ensureLevel = (): void => {
+      if (levelReady) return;
+      levelReady = true;
+      service
+        .getCharacteristic(this.Characteristic.BatteryLevel)
+        .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
+        // Until the first voltage value only LOW_BAT is known: 100 / 10 %.
+        .onGet(
+          this.wrapGet<number>(
+            () =>
+              level ??
+              (lowBat === undefined
+                ? opts.assumeNormal
+                  ? 100
+                  : this.unknown()
+                : lowBat
+                  ? 10
+                  : 100),
+          ),
+        );
+    };
+    const hasLevel = service.testCharacteristic(this.Characteristic.BatteryLevel);
+    if (description ? 'OPERATING_VOLTAGE' in description : hasLevel) {
+      ensureLevel();
+    } else if (description && hasLevel) {
+      // Cached accessory from a version that showed 100 / 10 %.
+      service.removeCharacteristic(service.getCharacteristic(this.Characteristic.BatteryLevel));
+    }
     service
       .getCharacteristic(this.Characteristic.ChargingState)
       .onGet(() => this.Characteristic.ChargingState.NOT_CHARGEABLE);
@@ -413,6 +461,7 @@ export abstract class AccessoryBase {
       if (!Number.isFinite(v)) return;
       const pct = Math.min(100, Math.max(0, Math.round(((v - 2.4) / (3.2 - 2.4)) * 100)));
       level = pct;
+      ensureLevel();
       service.updateCharacteristic(this.Characteristic.BatteryLevel, pct);
     };
 

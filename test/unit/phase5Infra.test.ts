@@ -303,8 +303,12 @@ describe('AccessoryBase helpers', () => {
     expect(a.svc('Switch').characteristics.has('char:StatusFault')).toBe(false);
   });
 
-  it('battery: unknown until read, LOW_BAT / LOWBAT, voltage → level', async () => {
+  it('battery with OPERATING_VOLTAGE: unknown until read, LOW_BAT / LOWBAT, voltage → level', async () => {
     const env = makeSvcEnv();
+    vi.spyOn(env.ccu, 'describeChannel').mockReturnValue({
+      LOW_BAT: { TYPE: 'BOOL' },
+      OPERATING_VOLTAGE: { TYPE: 'FLOAT' },
+    } as never);
     const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
     const bat = a.svc('battery');
     const low = a.char(bat, 'StatusLowBattery');
@@ -323,5 +327,41 @@ describe('AccessoryBase helpers', () => {
     env.fire('ABC0000001:0', 'OPERATING_VOLTAGE', 'x');
     expect(await level.onGetHandler!()).toBe(50);
     expect(a.char(bat, 'ChargingState').onGetHandler!()).toBe(2);
+  });
+
+  it('battery with LOW_BAT only: no BatteryLevel, a cached one is removed', async () => {
+    const env = makeSvcEnv();
+    const describe = vi
+      .spyOn(env.ccu, 'describeChannel')
+      .mockReturnValue({ LOWBAT: { TYPE: 'BOOL' } } as never);
+    const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+    const bat = a.svc('battery');
+    expect(bat.characteristics.has('char:BatteryLevel')).toBe(false);
+    env.fire('ABC0000001:0', 'LOWBAT', true);
+    expect(await a.char(bat, 'StatusLowBattery').onGetHandler!()).toBe(1);
+    expect(bat.characteristics.has('char:BatteryLevel')).toBe(false);
+
+    // Restored accessory that still carries the old 100 / 10 % level.
+    describe.mockReturnValue({
+      LOW_BAT: { TYPE: 'BOOL' },
+      OPERATING_VOLTAGE: { TYPE: 'FLOAT' },
+    } as never);
+    const cached = build(env, probeDef, ch('ABC0000002:1', 'X'));
+    const cachedBat = cached.svc('battery');
+    expect(cachedBat.characteristics.has('char:BatteryLevel')).toBe(true);
+    describe.mockReturnValue({ LOW_BAT: { TYPE: 'BOOL' } } as never);
+    cached.handler.attach(ch('ABC0000002:1', 'X'));
+    expect(cachedBat.characteristics.has('char:BatteryLevel')).toBe(false);
+  });
+
+  it('battery without a cached description: BatteryLevel appears with the first voltage', async () => {
+    const env = makeSvcEnv();
+    const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+    const bat = a.svc('battery');
+    expect(bat.characteristics.has('char:BatteryLevel')).toBe(false);
+    env.fire('ABC0000001:0', 'LOW_BAT', false);
+    expect(bat.characteristics.has('char:BatteryLevel')).toBe(false);
+    env.fire('ABC0000001:0', 'OPERATING_VOLTAGE', 3.2);
+    expect(await a.char(bat, 'BatteryLevel').onGetHandler!()).toBe(100);
   });
 });

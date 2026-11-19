@@ -68,7 +68,7 @@ describe('SmokeAccessory (plan 8.3)', () => {
     expect(fault.value).toBe(1);
     const bat = a.svc('battery');
     expect(await a.char(bat, 'StatusLowBattery').onGetHandler!()).toBe(0);
-    expect(await a.char(bat, 'BatteryLevel').onGetHandler!()).toBe(100);
+    expect(bat.characteristics.has('char:BatteryLevel')).toBe(false); // LOW_BAT only, no %
     env.fire(SMOKE.address, 'SMOKE_DETECTOR_ALARM_STATUS', 0);
     expect(fault.value).toBe(0);
     env.fire(SMOKE.address, 'SMOKE_DETECTOR_ALARM_STATUS', 1); // later changes: no re-evaluation needed
