@@ -107,6 +107,8 @@ const state = {
     showAll: false,
     /** Channels help text expanded (collapsed by default). */
     helpOpen: false,
+    /** Settings cards expanded (collapsed by default). */
+    settingsOpen: { auth: false, ports: false, sendQueue: false },
   },
   /** Last "Test CCU" result as HTML; survives re-renders. */
   testResult: '',
@@ -771,9 +773,24 @@ function viewSettings(host) {
           }
         </div>
       </div>
+      <label class="form-label">Interfaces</label>
+      <div class="row g-2">
+        ${[
+          ['bidcosRf', 'BidCos-RF'],
+          ['hmIpRf', 'HmIP-RF'],
+        ]
+          .map(
+            ([k, label]) => `
+            <div class="col-md-3 form-check">
+              <input class="form-check-input" type="checkbox" id="cf-if-${k}" ${m.interfaces[k] ? 'checked' : ''} />
+              <label class="form-check-label" for="cf-if-${k}">${h(label)}</label>
+            </div>`,
+          )
+          .join('')}
+      </div>
     </div>
-    <div class="hgui-card">
-      <h6>XML-RPC authentication</h6>
+    <details class="hgui-card" data-settings-card="auth" ${state.ui.settingsOpen.auth ? 'open' : ''}>
+      <summary>XML-RPC authentication</summary>
       <p class="hgui-meta">Only if authentication is enabled on the CCU (Settings → Control Panel → Security).</p>
       <div class="row g-2">
         <div class="col-md-3 d-flex align-items-end">
@@ -791,26 +808,9 @@ function viewSettings(host) {
           <input class="form-control" type="password" id="cf-auth-pass" autocomplete="new-password" value="${h(m.rpcAuth.password || '')}" />
         </div>
       </div>
-    </div>
-    <div class="hgui-card">
-      <h6>Interfaces</h6>
-      <div class="row g-2">
-        ${[
-          ['bidcosRf', 'BidCos-RF'],
-          ['hmIpRf', 'HmIP-RF'],
-        ]
-          .map(
-            ([k, label]) => `
-            <div class="col-md-3 form-check">
-              <input class="form-check-input" type="checkbox" id="cf-if-${k}" ${m.interfaces[k] ? 'checked' : ''} />
-              <label class="form-check-label" for="cf-if-${k}">${h(label)}</label>
-            </div>`,
-          )
-          .join('')}
-      </div>
-    </div>
-    <div class="hgui-card">
-      <h6>XML-RPC ports</h6>
+    </details>
+    <details class="hgui-card" data-settings-card="ports" ${state.ui.settingsOpen.ports ? 'open' : ''}>
+      <summary>XML-RPC ports</summary>
       <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF) and <code>2010</code> (HmIP-RF), with TLS <code>42001</code> / <code>42010</code>.</p>
       <div class="row g-2">
         ${[
@@ -826,9 +826,9 @@ function viewSettings(host) {
           )
           .join('')}
       </div>
-    </div>
-    <div class="hgui-card">
-      <h6>Send queue</h6>
+    </details>
+    <details class="hgui-card" data-settings-card="sendQueue" ${state.ui.settingsOpen.sendQueue ? 'open' : ''}>
+      <summary>Send queue</summary>
       <p class="hgui-meta">Commands go to the CCU one at a time, across BidCos-RF and HmIP-RF. Leave blank for the defaults.</p>
       <div class="row g-2">
         ${SEND_QUEUE_FIELDS.map(
@@ -840,7 +840,7 @@ function viewSettings(host) {
             </div>`,
         ).join('')}
       </div>
-    </div>
+    </details>
     <div class="hgui-card d-flex align-items-center gap-2 flex-wrap">
       <button class="btn btn-outline-primary" id="hgui-test-btn">Test CCU</button>
       <span class="small" id="hgui-test-result">${
@@ -850,6 +850,11 @@ function viewSettings(host) {
     </div>
   `;
   $('hgui-test-btn').addEventListener('click', onTestConnection);
+  for (const el of host.querySelectorAll('details[data-settings-card]')) {
+    el.addEventListener('toggle', () => {
+      state.ui.settingsOpen[el.dataset.settingsCard] = el.open;
+    });
+  }
   const propagate = (mut) => {
     mut(state.cfg);
     pushConfig();
