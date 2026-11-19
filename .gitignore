@@ -5,7 +5,7 @@
 
 # Local planning notes and CCU dumps (contain real device serials)
 /plan*.md
-/ccu-dump/
+/plans/
 
 # Dependencies
 node_modules/
@@ -58,3 +58,10 @@ hap-homematic-backup*
 ccu-credentials*
 *.creds
 .ccu-probe.*
+
+# CCU mock: own dumps (real serials) and runtime state
+tools/ccu-mock/catalog/local/
+tools/ccu-mock/state.json
+
+# CCU probe outputs (real device addresses)
+tools/ccu-probe/out/

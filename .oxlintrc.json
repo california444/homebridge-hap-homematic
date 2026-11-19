@@ -36,7 +36,13 @@
         "no-unused-vars": "off",
         "typescript/no-explicit-any": "off"
       }
+    },
+    {
+      "files": ["tools/**/*.mjs"],
+      "rules": {
+        "no-console": "off"
+      }
     }
   ],
-  "ignorePatterns": ["dist/", "coverage/", "references/", "ccu-dump/", "homebridge-ui/server.js"]
+  "ignorePatterns": ["dist/", "coverage/", "references/", "homebridge-ui/server.js"]
 }

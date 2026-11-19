@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CCU-Mock</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #fff;
+        --line: #d9dde3;
+        --text: #1d2228;
+        --muted: #67707c;
+        --accent: #1f6feb;
+        --warn: #b3261e;
+        --ok: #1a7f37;
+        --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15181c;
+          --panel: #1d2127;
+          --line: #333a43;
+          --text: #e6e9ed;
+          --muted: #9aa3ae;
+          --accent: #4c8dff;
+          --warn: #ff6b60;
+          --ok: #4ac26b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr 32vh;
+      }
+      header,
+      section {
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      header {
+        padding: 8px 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        align-items: center;
+      }
+      header h1 {
+        font-size: 15px;
+        margin: 0 8px 0 0;
+      }
+      .iface {
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .iface b.on {
+        color: var(--ok);
+      }
+      .iface b.off {
+        color: var(--muted);
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(280px, 34%) 1fr;
+        min-height: 0;
+      }
+      #catalog,
+      #detail {
+        overflow: auto;
+        padding: 8px 12px;
+        min-height: 0;
+      }
+      #catalog {
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+      }
+      #detail {
+        background: var(--bg);
+      }
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        position: sticky;
+        top: -8px;
+        background: var(--panel);
+        padding: 6px 0;
+        z-index: 1;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        color: inherit;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      button.small {
+        font-size: 11px;
+        padding: 0 5px;
+      }
+      details {
+        margin: 2px 0;
+      }
+      summary {
+        cursor: pointer;
+        padding: 2px 0;
+      }
+      summary .src {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .dev {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 1px 0 1px 14px;
+      }
+      .dev a {
+        color: var(--accent);
+        cursor: pointer;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .dev.active a {
+        font-weight: 700;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 10px;
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 13px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      td {
+        padding: 2px 6px;
+        border-top: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      td.dp {
+        font-family: var(--mono);
+        white-space: nowrap;
+      }
+      td.val {
+        font-family: var(--mono);
+        color: var(--muted);
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #log {
+        overflow: auto;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        padding: 4px 12px;
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+      }
+      #log div {
+        white-space: nowrap;
+      }
+      #log .in {
+        color: var(--accent);
+      }
+      #log .out {
+        color: var(--ok);
+      }
+      #log .fault {
+        color: var(--warn);
+      }
+      #log .corr {
+        color: var(--muted);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        align-items: center;
+      }
+      @media (max-width: 760px) {
+        body {
+          grid-template-rows: auto 1fr 40vh;
+        }
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 45% 55%;
+        }
+        #catalog {
+          border-right: none;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>CCU-Mock</h1>
+      <span id="ifaces"></span>
+      <span class="row" id="globals"></span>
+    </header>
+    <main>
+      <div id="catalog">
+        <div class="filters">
+          <input id="q" placeholder="Suche Typ/Adresse" size="18" />
+          <select id="src">
+            <option value="">alle Quellen</option>
+            <option value="local">eigene</option>
+            <option value="pydevccu">pydevccu</option>
+            <option value="instance">Instanzen/Gruppen</option>
+          </select>
+          <select id="ifc">
+            <option value="">alle Interfaces</option>
+            <option>HmIP-RF</option>
+            <option>BidCos-RF</option>
+            <option>VirtualDevices</option>
+          </select>
+          <label><input type="checkbox" id="onlySel" /> nur ausgewählte</label>
+          <span id="groupButtons"></span>
+        </div>
+        <div id="list"></div>
+      </div>
+      <div id="detail"><p class="muted">Gerät links anklicken.</p></div>
+    </main>
+    <div id="log"></div>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const esc = (s) =>
+        String(s ?? '').replace(
+          /[&<>"]/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+        );
+      let catalog = { devices: [], templates: [] };
+      let current = null;
+      const open = new Set();
+
+      async function api(path, body) {
+        const r = await fetch(
+          path,
+          body
+            ? {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+              }
+            : {},
+        );
+        const j = await r.json();
+        if (!r.ok) {
+          alert(j.error ?? r.status);
+          throw new Error(j.error);
+        }
+        return j;
+      }
+
+      // ---- Kopfzeile -------------------------------------------------------------
+      const GLOBALS = [
+        ['multicall', 'Events per multicall', 'bool'],
+        ['suppressPong', 'PONG unterdrücken (alle)', 'bool'],
+        ['virtualPong', 'VirtualDevices: PONG', 'bool'],
+        ['virtualPongAddress', 'PONG-Adresse', ['CENTRAL', 'CENTRAL:0']],
+        ['virtualLowBat', 'Gruppe: LOW_BAT an Kanal 0', 'bool'],
+        ['blindTravelSeconds', 'Fahrzeit s', 'num'],
+        ['blindIntermediate', 'Zwischenwerte', 'bool'],
+        ['restartSeconds', 'Neustart s', 'num'],
+      ];
+      async function loadStatus() {
+        const s = await api('/api/status');
+        $('#ifaces').innerHTML = s.interfaces
+          .map((i) => {
+            const c = i.clients.map((c) => `${esc(c.id)} → ${esc(c.url)}`).join(', ');
+            return `<span class="iface"><b class="${i.clients.length ? 'on' : 'off'}">●</b> ${esc(i.name)} :${i.port}${esc(i.path)} ${c ? esc(c) : '<span class="muted">nicht angemeldet</span>'}${i.lastPing ? ` <span class="muted">Ping ${i.lastPing.slice(11, 19)}</span>` : ''}</span>`;
+          })
+          .join('<br>');
+        if ($('#globals').contains(document.activeElement)) return;
+        $('#globals').innerHTML =
+          GLOBALS.map(([k, label, t]) => {
+            const v = s.global[k];
+            if (t === 'bool')
+              return `<label><input type="checkbox" data-g="${k}" ${v ? 'checked' : ''}> ${label}</label>`;
+            if (t === 'num')
+              return `<label>${label} <input type="number" data-g="${k}" value="${v}" style="width:5em"></label>`;
+            return `<label>${label} <select data-g="${k}">${t.map((o) => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
+          }).join('') +
+          ` <button class="primary" id="restart">CCU-Neustart simulieren</button>` +
+          (s.restartUntil
+            ? ` <b style="color:var(--warn)">Neustart bis ${s.restartUntil.slice(11, 19)}</b>`
+            : '');
+        document.querySelectorAll('[data-g]').forEach((el) =>
+          el.addEventListener('change', () =>
+            api('/api/global', {
+              [el.dataset.g]: el.type === 'checkbox' ? el.checked : el.value,
+            }),
+          ),
+        );
+        $('#restart').onclick = () => api('/api/restart', {}).then(loadStatus);
+      }
+
+      // ---- Katalog ---------------------------------------------------------------
+      async function loadCatalog() {
+        catalog = await api('/api/catalog');
+        $('#groupButtons').innerHTML = catalog.templates
+          .filter((t) => t.source === 'virtual')
+          .map(
+            (t) =>
+              `<button class="small" data-tpl="${esc(t.key)}">+ Gruppe ${esc(t.type)}</button>`,
+          )
+          .join(' ');
+        document
+          .querySelectorAll('[data-tpl]')
+          .forEach((b) => (b.onclick = () => addInstance(b.dataset.tpl)));
+        renderList();
+      }
+      function renderList() {
+        const q = $('#q').value.trim().toLowerCase();
+        const src = $('#src').value;
+        const ifc = $('#ifc').value;
+        const onlySel = $('#onlySel').checked;
+        const byType = new Map();
+        for (const d of catalog.devices) {
+          if (q && !d.type.toLowerCase().includes(q) && !d.address.toLowerCase().includes(q))
+            continue;
+          if (ifc && d.iface !== ifc) continue;
+          if (onlySel && !d.selected) continue;
+          const isInst =
+            d.template && !d.template.startsWith('pydevccu:')
+              ? true
+              : d.template && d.address.startsWith('VCU0');
+          if (src === 'instance' && !(isInst || d.isGroup)) continue;
+          if (src && src !== 'instance' && d.source !== src) continue;
+          if (!byType.has(d.type)) byType.set(d.type, []);
+          byType.get(d.type).push(d);
+        }
+        const types = [...byType.keys()].sort((a, b) => a.localeCompare(b));
+        $('#list').innerHTML =
+          types
+            .map((t) => {
+              const devs = byType.get(t);
+              const sel = devs.filter((d) => d.selected).length;
+              const tpl = catalog.templates.find((x) => x.type === t && x.source === 'pydevccu');
+              return `<details ${open.has(t) || q || onlySel ? 'open' : ''} data-type="${esc(t)}"><summary>${esc(t)} <span class="src">${esc(devs[0].iface)} · ${devs.length} Gerät(e)${sel ? ` · ${sel} ausgewählt` : ''}</span>${tpl ? ` <button class="small" data-add="${esc(tpl.key)}">Instanz hinzufügen</button>` : ''}</summary>${devs
+                .map(
+                  (d) =>
+                    `<div class="dev ${current === d.address ? 'active' : ''}"><input type="checkbox" data-sel="${esc(d.address)}" ${d.selected ? 'checked' : ''}><a data-open="${esc(d.address)}">${esc(d.address)}</a><span class="muted">${esc(d.source)}</span></div>`,
+                )
+                .join('')}</details>`;
+            })
+            .join('') || '<p class="muted">Nichts gefunden.</p>';
+        document
+          .querySelectorAll('details[data-type]')
+          .forEach((el) =>
+            el.addEventListener('toggle', () =>
+              el.open ? open.add(el.dataset.type) : open.delete(el.dataset.type),
+            ),
+          );
+        document
+          .querySelectorAll('[data-sel]')
+          .forEach(
+            (el) =>
+              (el.onchange = () =>
+                api('/api/selection', { address: el.dataset.sel, selected: el.checked }).then(
+                  loadCatalog,
+                )),
+          );
+        document
+          .querySelectorAll('[data-open]')
+          .forEach((el) => (el.onclick = () => showDevice(el.dataset.open)));
+        document.querySelectorAll('[data-add]').forEach(
+          (el) =>
+            (el.onclick = (ev) => {
+              ev.preventDefault();
+              addInstance(el.dataset.add);
+            }),
+        );
+      }
+      async function addInstance(tpl) {
+        const r = await api('/api/instance', { template: tpl });
+        await loadCatalog();
+        showDevice(r.address);
+      }
+      ['#q', '#src', '#ifc', '#onlySel'].forEach((s) => $(s).addEventListener('input', renderList));
+
+      // ---- Gerät -----------------------------------------------------------------
+      function inputFor(dp) {
+        const v = dp.value;
+        if (dp.type === 'ACTION') return '';
+        if (dp.type === 'BOOL')
+          return `<input type="checkbox" ${v === true || v === 'true' ? 'checked' : ''}>`;
+        if (dp.type === 'ENUM' && Array.isArray(dp.valueList))
+          return `<select>${dp.valueList.map((o, i) => `<option value="${i}" ${Number(v) === i ? 'selected' : ''}>${i} ${esc(o)}</option>`).join('')}</select>`;
+        if (dp.type === 'FLOAT' || dp.type === 'INTEGER' || dp.type === 'ENUM')
+          return `<input type="number" step="${dp.type === 'FLOAT' ? 'any' : '1'}" value="${esc(v)}" style="width:7em"> <span class="muted">${esc(dp.min)}…${esc(dp.max)} ${esc(dp.unit ?? '')}</span>`;
+        return `<input value="${esc(v)}" style="width:10em">`;
+      }
+      function readInput(dp, td) {
+        const el = td.querySelector('input,select');
+        if (!el) return true;
+        if (dp.type === 'BOOL') return el.checked;
+        if (dp.type === 'STRING') return el.value;
+        return Number(el.value);
+      }
+      async function showDevice(addr) {
+        current = addr;
+        const d = await api(`/api/device/${encodeURIComponent(addr)}`);
+        const isInstance = d.template && (d.isGroup || /^VCU0/.test(d.address));
+        let html = `<div class="card"><h3>${esc(d.type)} · <span class="iface">${esc(d.address)}</span> <span class="muted">${esc(d.iface)} · ${esc(d.source)}${d.memberOf ? ` · Mitglied von ${esc(d.memberOf)}` : ''}</span></h3>
+          <div class="row">
+            <label><input type="checkbox" id="dSel" ${d.selected ? 'checked' : ''}> ausgewählt (listDevices)</label>
+            <label><input type="checkbox" data-f="unreach" ${d.fault.unreach ? 'checked' : ''}> UNREACH</label>
+            <label><input type="checkbox" data-f="failOnce" ${d.fault.failOnce ? 'checked' : ''}> setValue-Fehler einmalig</label>
+            <label><input type="checkbox" data-f="failAlways" ${d.fault.failAlways ? 'checked' : ''}> dauerhaft</label>
+            <label>Verzögerung <input type="number" data-f="delayMs" value="${d.fault.delayMs ?? 0}" style="width:6em"> ms</label>
+            ${isInstance ? '<button class="small" id="delInst">Instanz löschen</button>' : ''}
+          </div></div>`;
+        if (d.group) {
+          html += `<div class="card"><h3>Gruppe</h3><div class="row">
+            <label><input type="checkbox" id="gFollow" ${d.group.follow ? 'checked' : ''}> Gruppe folgt Mitgliedern</label>
+            <label><input type="checkbox" id="gEcho" ${d.group.echo ? 'checked' : ''}> Gruppe meldet setValue zurück</label></div>
+            <p class="muted">Mitglieder (ausgewählte Geräte mit passendem Thermostat-Kanal):</p>
+            ${
+              d.group.candidates.length
+                ? d.group.candidates
+                    .map(
+                      (c) =>
+                        `<label class="dev"><input type="checkbox" data-member="${esc(c.address)}" ${d.group.members.includes(c.address) ? 'checked' : ''} ${c.groupOf && c.groupOf !== d.address ? 'disabled' : ''}> <span class="iface">${esc(c.address)}</span> ${esc(c.type)} ${c.groupOf && c.groupOf !== d.address ? `<span class="muted">(in ${esc(c.groupOf)})</span>` : ''}</label>`,
+                    )
+                    .join('')
+                : '<p class="muted">Keine. Erst Thermostate auswählen.</p>'
+            }</div>`;
+        }
+        for (const ch of d.channels) {
+          if (!ch.datapoints.length) continue;
+          html += `<div class="card"><h3><span class="iface">${esc(ch.address)}</span> ${esc(ch.type)}</h3><table>${ch.datapoints
+            .map(
+              (dp, i) =>
+                `<tr data-ch="${esc(ch.address)}" data-i="${i}"><td class="dp">${esc(dp.id)}</td><td class="muted">${esc(dp.type)} ${dp.operations & 1 ? 'r' : '-'}${dp.operations & 2 ? 'w' : '-'}${dp.operations & 4 ? 'e' : '-'}</td><td class="val" title="${esc(JSON.stringify(dp.value))}">${esc(JSON.stringify(dp.value))}</td><td class="in">${inputFor(dp)}</td><td>${
+                  dp.type === 'ACTION'
+                    ? '<button class="small" data-act="ev">Auslösen</button>'
+                    : '<button class="small" data-act="set">Setzen</button> <button class="small primary" data-act="ev">Setzen + Event</button>'
+                }</td></tr>`,
+            )
+            .join('')}</table></div>`;
+        }
+        $('#detail').innerHTML = html;
+        $('#dSel').onchange = (e) =>
+          api('/api/selection', { address: d.address, selected: e.target.checked })
+            .then(loadCatalog)
+            .then(() => showDevice(addr));
+        document.querySelectorAll('[data-f]').forEach(
+          (el) =>
+            (el.onchange = () =>
+              api('/api/fault', {
+                address: d.address,
+                [el.dataset.f]: el.type === 'checkbox' ? el.checked : el.value,
+              })),
+        );
+        if ($('#delInst'))
+          $('#delInst').onclick = () =>
+            api('/api/instance/delete', { address: d.address })
+              .then(loadCatalog)
+              .then(() => ($('#detail').innerHTML = ''));
+        if (d.group) {
+          $('#gFollow').onchange = (e) =>
+            api('/api/group', { address: d.address, follow: e.target.checked });
+          $('#gEcho').onchange = (e) =>
+            api('/api/group', { address: d.address, echo: e.target.checked });
+          document.querySelectorAll('[data-member]').forEach(
+            (el) =>
+              (el.onchange = () => {
+                const members = [...document.querySelectorAll('[data-member]:checked')].map(
+                  (x) => x.dataset.member,
+                );
+                api('/api/group', { address: d.address, members }).then(() => showDevice(addr));
+              }),
+          );
+        }
+        document.querySelectorAll('[data-act]').forEach(
+          (b) =>
+            (b.onclick = async () => {
+              const tr = b.closest('tr');
+              const ch = d.channels.find((c) => c.address === tr.dataset.ch);
+              const dp = ch.datapoints[Number(tr.dataset.i)];
+              await api('/api/set', {
+                channel: ch.address,
+                datapoint: dp.id,
+                value: readInput(dp, tr.querySelector('td.in')),
+                event: b.dataset.act === 'ev',
+              });
+              setTimeout(() => current === addr && showDevice(addr), 300);
+            }),
+        );
+        renderList();
+      }
+
+      // ---- Protokoll -------------------------------------------------------------
+      const logEl = $('#log');
+      const es = new EventSource('/api/log');
+      es.onmessage = (m) => {
+        const e = JSON.parse(m.data);
+        const div = document.createElement('div');
+        const isFault =
+          typeof e.result === 'string' && /^Fault|Timeout|ECONNREFUSED|404/.test(e.result);
+        div.className = isFault ? 'fault' : e.dir;
+        const arrow = { in: 'Plugin →', out: '→ Plugin', ui: 'UI', info: 'Info' }[e.dir] ?? e.dir;
+        div.innerHTML = `${esc(e.t.slice(11, 23))} ${esc(arrow.padEnd(8))} ${esc(String(e.iface).padEnd(14))} ${esc(e.method)} ${esc(JSON.stringify(e.params ?? ''))}${e.result !== undefined ? ` → ${esc(typeof e.result === 'string' ? e.result : JSON.stringify(e.result))}` : ''}${e.corr ? ` <span class="corr">#${e.corr}</span>` : ''}`;
+        const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+        logEl.appendChild(div);
+        while (logEl.childElementCount > 200) logEl.firstChild.remove();
+        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+        if (e.dir === 'in' && e.method === 'init') loadStatus();
+        if (
+          $('#detail').contains(document.activeElement) &&
+          document.activeElement.matches('input,select')
+        )
+          return;
+        if (
+          current &&
+          (e.dir === 'out' || e.dir === 'ui') &&
+          JSON.stringify(e.params ?? '').includes(current)
+        )
+          (clearTimeout(window.__rt), (window.__rt = setTimeout(() => showDevice(current), 400)));
+      };
+
+      loadStatus();
+      loadCatalog();
+      setInterval(loadStatus, 5000);
+    </script>
+  </body>
+</html>
