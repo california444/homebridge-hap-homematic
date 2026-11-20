@@ -22,8 +22,11 @@
  *
  * Saving:
  *   - Mapping changes (add / edit / remove) write devices.json at once.
- *   - Settings changes are staged with updatePluginConfig(); the host's
- *     "Save" button writes config.json.
+ *   - Settings changes are staged with updatePluginConfig(). They are
+ *     written to config.json by the Save button next to the tabs (shown
+ *     only while there are unsaved settings, savePluginConfig()) or by
+ *     the host's Save button below the page. The host's close button
+ *     discards them; the plugin UI API offers no way to intercept it.
  */
 
 // ---------------------------------------------------------------- helpers
@@ -1357,16 +1360,41 @@ function discoverySourceText() {
 }
 
 /**
- * Push state.cfg to the homebridge UI host. The host's built-in "Save"
- * button at the bottom of the plugin settings page persists this to
- * disk — we deliberately don't call savePluginConfig() ourselves so
- * the user has one canonical Save control, not two.
+ * Push state.cfg to the homebridge UI host (staged, not saved) and show
+ * the Save button next to the tabs while it differs from config.json.
  */
 function pushConfig() {
   try {
     homebridge.updatePluginConfig([state.cfg]);
   } catch (err) {
     toast('error', `Could not stage config update: ${err.message}`);
+  }
+  updateUnsaved();
+}
+
+/** state.cfg as last read from / written to config.json. */
+let savedCfg = '';
+
+function updateUnsaved() {
+  const dirty = savedCfg !== '' && JSON.stringify(state.cfg) !== savedCfg;
+  $('hgui-unsaved')?.classList.toggle('d-none', !dirty);
+  $('hgui-save-btn')?.classList.toggle('d-none', !dirty);
+}
+
+/** Write the staged settings to config.json (the host's Save, without closing). */
+async function saveSettings() {
+  const btn = $('hgui-save-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await homebridge.updatePluginConfig([state.cfg]);
+    await homebridge.savePluginConfig();
+    savedCfg = JSON.stringify(state.cfg);
+    toast('success', 'Settings saved. Restart the child bridge to apply them.');
+  } catch (err) {
+    toast('error', `Could not save settings: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+    updateUnsaved();
   }
 }
 
@@ -1416,6 +1444,9 @@ async function init() {
   } catch (err) {
     toast('error', `Could not load config: ${err.message}`);
   }
+
+  savedCfg = JSON.stringify(state.cfg);
+  $('hgui-save-btn')?.addEventListener('click', () => void saveSettings());
 
   await loadDevices();
   try {
