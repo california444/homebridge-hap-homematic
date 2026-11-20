@@ -762,10 +762,13 @@ function viewSettings(host) {
           <label class="form-label">Event server port</label>
           <input class="form-control" type="number" min="1024" max="65535" id="cf-event-port" value="${h(m.eventServer.port)}" />
         </div>
-        <div class="col-md-3 d-flex align-items-end">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="cf-tls" ${m.useTls ? 'checked' : ''} />
-            <label class="form-check-label" for="cf-tls">Use TLS (42001 / 42010 / 49292)</label>
+        <div class="col-md-3">
+          <label class="form-label d-none d-md-block">&nbsp;</label>
+          <div class="d-flex align-items-center hgui-input-height">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="cf-tls" ${m.useTls ? 'checked' : ''} />
+              <label class="form-check-label" for="cf-tls">Use TLS</label>
+            </div>
           </div>
         </div>
       </div>
@@ -825,7 +828,7 @@ function viewSettings(host) {
     </details>
     <details class="hgui-card" data-settings-card="ports" ${state.ui.settingsOpen.ports ? 'open' : ''}>
       <summary>XML-RPC ports</summary>
-      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF), <code>2010</code> (HmIP-RF) and <code>9292</code> (VirtualDevices), with TLS <code>42001</code> / <code>42010</code> / <code>49292</code>.</p>
+      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF), <code>2010</code> (HmIP-RF) and <code>9292</code> (VirtualDevices). With <em>Use TLS</em>: <code>42001</code> / <code>42010</code> / <code>49292</code>.</p>
       <div class="row g-2">
         ${[
           ['BidCos-RF', '2001'],
