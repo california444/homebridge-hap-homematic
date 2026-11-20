@@ -341,12 +341,19 @@ export abstract class AccessoryBase {
   }
 
   protected wrapGet<T extends CharacteristicValue>(handler: () => Promise<T> | T) {
-    return async (): Promise<CharacteristicValue> => {
+    const log = this.log;
+    // A plain function, not an arrow: hap-nodejs calls the handler as a
+    // method of the Characteristic, so `this.displayName` names the value
+    // that is missing ("get CurrentRelativeHumidity: …").
+    return async function (
+      this: { displayName?: string } | void,
+    ): Promise<CharacteristicValue> {
       try {
         const v = await handler();
         return v as CharacteristicValue;
       } catch (err) {
-        this.log.debug('get: %s', (err as Error).message);
+        const name = (this as { displayName?: string } | undefined)?.displayName;
+        log.debug('get %s: %s', name ?? '?', (err as Error).message);
         throw err;
       }
     };

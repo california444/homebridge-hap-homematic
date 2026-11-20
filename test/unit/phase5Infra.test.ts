@@ -334,6 +334,19 @@ describe('AccessoryBase helpers', () => {
     expect(a.char(bat, 'ChargingState').onGetHandler!()).toBe(2);
   });
 
+  it('a failed get names the characteristic (hap-nodejs calls it as a method)', async () => {
+    const env = makeSvcEnv();
+    const debug = vi.spyOn(env.log, 'debug');
+    const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+    const low = a.char(a.svc('battery'), 'StatusLowBattery');
+    await expect(
+      low.onGetHandler!.call({ displayName: 'Status Low Battery' }),
+    ).rejects.toMatchObject(NO_RESPONSE);
+    expect(debug).toHaveBeenCalledWith('get %s: %s', 'Status Low Battery', expect.any(String));
+    await expect(low.onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
+    expect(debug).toHaveBeenLastCalledWith('get %s: %s', '?', expect.any(String));
+  });
+
   it('battery with LOW_BAT only: no BatteryLevel, a cached one is removed', async () => {
     const env = makeSvcEnv();
     const describe = vi
