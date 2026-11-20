@@ -102,7 +102,7 @@ const state = {
   services: { channelServices: [] },
   ui: {
     search: { channels: '' },
-    filter: { channels: 'configured' }, // configured | all | unconfigured
+    filter: { channels: 'all' }, // configured | all | unconfigured
     filterType: { channels: 'all' }, // CCU channel type, e.g. SWITCH_VIRTUAL_RECEIVER, or 'all'
     sort: { channels: 'name' }, // name | device | address | type
     page: { channels: 1 },
@@ -405,19 +405,6 @@ function viewChannels(host) {
         <div class="hgui-meta">Reload devices and channels from the CCU.</div>
       </div>
     </div>
-    <details class="hgui-card" id="hgui-help" ${state.ui.helpOpen ? 'open' : ''}>
-      <summary>Which channels go to HomeKit?</summary>
-      <ol class="hgui-meta mb-2 ps-3">
-        <li>Click <strong>Discover</strong> to load the devices from the CCU.</li>
-        <li>Switch the filter to <em>Not in HomeKit</em>, pick a channel and click <strong>+ Add</strong>.
-          Give it a HomeKit name and choose the service (switch, outlet, light, blind, …).</li>
-        <li>Restart the child bridge to apply the changes.</li>
-      </ol>
-      <p class="hgui-meta mb-0">Only the channels worth mapping are listed (built-in buttons and wall-button inputs of actuators are hidden). An HmIP actuator shows one
-        channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
-        the plugin reads the state there and sends commands to the matching receiver channel itself.
-        Choose the channel and service once: changing either later creates a new accessory in Home.</p>
-    </details>
     <div class="hgui-toolbar">
       <input type="search" class="form-control" id="hgui-search-channels"
              placeholder="Search by HomeKit name, CCU name, address, type…"
@@ -449,6 +436,19 @@ function viewChannels(host) {
     ${devicesErrorHTML()}
     <div id="hgui-rows-host"></div>
     <div id="hgui-pager-host"></div>
+    <details class="hgui-card mt-3" id="hgui-help" ${state.ui.helpOpen ? 'open' : ''}>
+      <summary>Which channels go to HomeKit?</summary>
+      <ol class="hgui-meta mb-2 ps-3">
+        <li>Click <strong>Discover</strong> to load the devices from the CCU.</li>
+        <li>Switch the filter to <em>Not in HomeKit</em>, pick a channel and click <strong>+ Add</strong>.
+          Give it a HomeKit name and choose the service (switch, outlet, light, blind, …).</li>
+        <li>Restart the child bridge to apply the changes.</li>
+      </ol>
+      <p class="hgui-meta mb-0">Only the channels worth mapping are listed (built-in buttons and wall-button inputs of actuators are hidden). An HmIP actuator shows one
+        channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
+        the plugin reads the state there and sends commands to the matching receiver channel itself.
+        Choose the channel and service once: changing either later creates a new accessory in Home.</p>
+    </details>
   `;
   $('hgui-filter-channels').value = state.ui.filter.channels;
   $('hgui-filterType-channels').value = channelTypes.has(state.ui.filterType.channels)
