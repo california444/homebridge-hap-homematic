@@ -184,24 +184,53 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
    * Option showHumidity (off by default): CurrentRelativeHumidity on the
    * thermostat. Only useful with a sensor (wall thermostat; a heating
    * group with one as member). Empty groups report placeholders.
+   *
+   * Like the battery level, it needs the datapoint in the channel's
+   * paramset description: radiator thermostats have none and would show
+   * "No Response" forever. Without a cached description the
+   * characteristic appears with the first value (a restored one stays).
    */
   private attachHumidity(service: Service, datapoint: string, show: boolean): void {
     const C = this.Characteristic.CurrentRelativeHumidity;
-    if (!show) {
+    const description = this.ccu.describeChannel(this.channelAddress);
+    const exists = service.testCharacteristic(C);
+    const remove = (): void => {
       if (service.testCharacteristic(C)) {
         service.removeCharacteristic(service.getCharacteristic(C));
       }
+    };
+    if (!show) {
+      remove();
+      return;
+    }
+    if (description && !(datapoint in description)) {
+      remove();
+      this.log.info(
+        '%s: option "Show humidity" ignored, channel %s has no %s',
+        this.accessory.displayName,
+        this.channelAddress,
+        datapoint,
+      );
       return;
     }
     let humidity: number | undefined;
-    service
-      .getCharacteristic(C)
-      .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
-      .onGet(this.wrapGet<number>(() => humidity ?? this.unknown()));
+    let ready = false;
+    const ensure = (): void => {
+      if (ready) return;
+      ready = true;
+      service
+        .getCharacteristic(C)
+        .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
+        .onGet(this.wrapGet<number>(() => humidity ?? this.unknown()));
+    };
+    if (description || exists) {
+      ensure();
+    }
     this.need(this.channelAddress, datapoint, (raw) => {
       const v = toFiniteNumber(raw);
       if (v !== undefined) {
         humidity = Math.min(100, Math.max(0, Math.round(v)));
+        ensure();
         service.updateCharacteristic(C, humidity);
       }
     });
@@ -285,7 +314,8 @@ export const thermostatService: ServiceDefinition = {
       default: false,
       hint:
         'Humidity on the thermostat in Home. Only for devices with a humidity sensor (wall thermostats) ' +
-        'or heating groups with one as member; an empty group reports placeholder values.',
+        'or heating groups with one as member; an empty group reports placeholder values. ' +
+        'Ignored for channels without a humidity datapoint (radiator thermostats).',
     },
   ],
   build: (ctx: ServiceContext) => new ThermostatHandler(ctx),
