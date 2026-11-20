@@ -120,6 +120,11 @@ export class InterfaceSupervisor extends EventEmitter {
     return this.current;
   }
 
+  /** Time the last successful `init` took, ms (0 before the first). */
+  get initDurationMs(): number {
+    return Math.max(0, this.subscribedAt - this.initStartedAt);
+  }
+
   /** First subscribe attempt; resolves when it has succeeded or failed. */
   async start(): Promise<void> {
     if (this.current !== 'IDLE' && this.current !== 'STOPPED') {

@@ -27,12 +27,16 @@ A Homebridge plugin that brings **HomeMatic** (BidCos-RF) and
   thermostat, contact, motion, smoke, leak, temperature, humidity,
   weather station, energy meter, push button / remote, doorbell and
   **irrigation system with several valves**.
+- **Heating groups** of the CCU (Settings → Groups) as one HomeKit
+  thermostat each, via the CCU's VirtualDevices interface (optional,
+  beta). A change in Home goes to the group, and the CCU passes it on to
+  every member. See [Heating groups](#heating-groups).
 - HomematicIP specifics are handled for you: transmitter / receiver
   channel groups, `SMOKE_DETECTOR_ALARM_STATUS`, built-in buttons of
   actuators hidden in the UI.
 - Accessory information in Home shows the device type as model and the
   device serial as serial number.
-- Optional TLS (ports 42001 / 42010) and Basic auth on the XML-RPC ports.
+- Optional TLS (ports 42001 / 42010 / 49292) and Basic auth on the XML-RPC ports.
 
 ## What it does not do
 
@@ -40,7 +44,9 @@ A Homebridge plugin that brings **HomeMatic** (BidCos-RF) and
   JSON-RPC / ReGa, which the plugin deliberately does not use.
 - No automatic import: nothing appears in Home until you add it in the UI.
 - No Homematic IP cloud (Access Point / HCU) and no wired interfaces.
-  Supported are BidCos-RF and HmIP-RF on a CCU / OpenCCU.
+  Supported are BidCos-RF and HmIP-RF on a CCU / OpenCCU, plus heating
+  groups (VirtualDevices). Other group types, CUxD and group names or
+  member lists are not read.
 - No cameras.
 
 ## Why HAP and not Matter
@@ -102,12 +108,41 @@ checked on real devices yet. Reports are welcome as an
 [issue](https://github.com/california444/homebridge-hap-homematic/issues).
 Mapping details per device: [docs/DEVICES.md](docs/DEVICES.md).
 
+## Heating groups
+
+A heating group links thermostats on the CCU, e.g. a wall thermostat with
+radiator thermostats. Mapped as one thermostat, a change in Home reaches
+every member, just like a change made at the wall thermostat.
+
+1. Settings → CCU connection → Interfaces: tick **VirtualDevices (heating
+   groups)** (off by default). Port 9292 (TLS 49292) of the CCU must be
+   reachable from the Homebridge host.
+2. **Discover**. Groups appear with their address (`INT0000001` …) and
+   type (`HmIP-HEATING` or `HM-CC-VG-1`). The CCU does not pass group
+   names over XML-RPC; the name is in the CCU under Settings → Groups.
+3. Add channel 1 of the group as **Thermostat**, give it a name and
+   restart the child bridge.
+
+Only channel 1 is offered; the other channels of a group mirror its
+members. The battery shows "normal" until a member reports low battery.
+Humidity appears only with the thermostat option **Show humidity**, which
+is useful only if a wall thermostat with a sensor is a member.
+
+**Beta diagnostics.** While groups are in beta, the plugin logs every
+write to a group, the events that follow, a read-back after 3 s and the
+start values, each line marked `[group-diag]`. To help, change the target
+temperature and mode of a group in Home a few times and attach the output
+of `grep group-diag` from the Homebridge log to
+[issue #42](https://github.com/california444/homebridge-hap-homematic/issues/42).
+These lines will be removed again in a later version.
+
 ## Requirements
 
 - Node.js 22 or newer (tested with 22, 24 and 26)
 - Homebridge ≥ 2.4.0
 - CCU / OpenCCU with the XML-RPC ports reachable from the Homebridge host
-  (default 2001 for BidCos-RF, 2010 for HmIP-RF), and the plugin's event
+  (default 2001 for BidCos-RF, 2010 for HmIP-RF, 9292 for heating groups
+  if enabled), and the plugin's event
   server port (default 9875) reachable from the CCU. The event server only
   accepts callbacks from the configured CCU address, so the CCU must reach
   Homebridge directly, not through NAT or a proxy.

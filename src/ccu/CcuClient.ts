@@ -35,6 +35,7 @@ import {
   type ParameterDescription,
   type RpcDeviceDescription,
 } from './RpcClient.js';
+import { GroupDiagnostics } from './GroupDiagnostics.js';
 import { SendQueue, SendTimeoutError, formatSeconds } from './SendQueue.js';
 import type { CcuChannel, CcuDevice, CcuInterfaceId, ResolvedConfig } from '../types.js';
 import type { PrefixedLogger } from '../util/logger.js';
@@ -147,6 +148,8 @@ export class CcuClient extends EventEmitter {
   private readonly owners = new Map<string, SetFailureReporter>();
   /** One setValue at a time, across all interfaces. */
   readonly sendQueue: SendQueue;
+  /** Beta diagnostics for heating groups (plan-gruppen 3.9). */
+  readonly groupDiagnostics: GroupDiagnostics;
 
   constructor(opts: CcuClientOptions) {
     super();
@@ -159,6 +162,12 @@ export class CcuClient extends EventEmitter {
       log: this.log.child('send'),
       timeoutMs: this.config.sendQueue?.timeoutMs ?? SEND_QUEUE_DEFAULTS.timeoutMs,
       gapMs: this.config.sendQueue?.gapMs ?? SEND_QUEUE_DEFAULTS.gapMs,
+    });
+
+    this.groupDiagnostics = new GroupDiagnostics({
+      log: this.log.child('groups'),
+      readValues: (a) => this.readValues(a),
+      getValue: (a, dp) => this.getValue(a, dp),
     });
 
     this.eventServer = new EventServer({
@@ -205,7 +214,12 @@ export class CcuClient extends EventEmitter {
         ...(opts.timings ? { timings: opts.timings } : {}),
       });
       sup.on('state', (state, prev) => this.emit('interfaceState', id, state, prev));
-      sup.on('subscribed', (reason) => this.emit('subscribed', id, reason));
+      sup.on('subscribed', (reason) => {
+        if (id === 'VirtualDevices') {
+          this.groupDiagnostics.onInit(reason, sup.initDurationMs);
+        }
+        this.emit('subscribed', id, reason);
+      });
       this.supervisors.set(id, sup);
       this.byCallbackId.set(callbackId, sup);
     }
@@ -237,6 +251,7 @@ export class CcuClient extends EventEmitter {
     }
     this.started = false;
     this.sendQueue.stop();
+    this.groupDiagnostics.dispose();
     for (const sup of this.supervisors.values()) {
       await sup.stop();
     }
@@ -461,9 +476,12 @@ export class CcuClient extends EventEmitter {
    */
   private async sendValue(address: string, datapoint: string, value: unknown): Promise<void> {
     const typed = toTyped(this.describe(address, datapoint)?.TYPE, value);
+    const diag = this.groupDiagnostics.onSend(address, datapoint, value);
     try {
       await this.clientFor(address).setValue(address, datapoint, typed);
+      this.groupDiagnostics.onSendResult(diag);
     } catch (err) {
+      this.groupDiagnostics.onSendResult(diag, err as Error);
       throw new SetValueError(
         address,
         datapoint,
@@ -586,6 +604,7 @@ export class CcuClient extends EventEmitter {
       return;
     }
     sup.noteActivity('event');
+    this.groupDiagnostics.onEvent(ev.channelAddress, ev.datapoint, ev.value);
     if (ev.datapoint === 'RSSI_DEVICE' || ev.datapoint === 'RSSI_PEER') {
       const rssi = validRssi(ev.value);
       if (rssi !== undefined) {

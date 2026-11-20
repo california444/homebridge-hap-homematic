@@ -32,6 +32,12 @@ is; the UI shows the errors and refuses to edit until the file is fixed.
     "HmIP-RF:00000000000A02": {
       "service": "BlindAccessory",
       "options": { "invert": true }
+    },
+    "VirtualDevices:INT0000001": {
+      "mode": "perChannel",
+      "channels": {
+        "1": { "service": "ThermostatAccessory", "name": "Wohnzimmer" }
+      }
     }
   }
 }
@@ -39,8 +45,8 @@ is; the UI shows the errors and refuses to edit until the file is fixed.
 
 ### Device entry — key `"<Interface>:<Serial>"`
 
-The key is always interface + serial (`BidCos-RF` or `HmIP-RF`), never a
-name.
+The key is always interface + serial (`BidCos-RF`, `HmIP-RF` or
+`VirtualDevices` for heating groups), never a name.
 
 | Field      | Type                         | Meaning                                                               |
 | ---------- | ---------------------------- | --------------------------------------------------------------------- |
@@ -73,6 +79,7 @@ in the channel entry.
 | `SwitchAccessory`     | `variant`           | `switch`      | `switch`, `outlet` or `lightbulb` (case-insensitive)                                                                                                                                      |
 | `BlindAccessory`      | `invert`            | `false`       | HomeKit 100 % = LEVEL 0 (awnings)                                                                                                                                                         |
 | `ContactAccessory`    | `invert`            | `false`       | swap open / closed. Always a HomeKit contact sensor; the former variants `door` / `window` (motorised-door services with a useless position slider) are mapped to it                      |
+| `ThermostatAccessory` | `showHumidity`      | `false`       | humidity (`HUMIDITY` / `ACTUAL_HUMIDITY`) on the thermostat; only for devices with a sensor (wall thermostats) or heating groups with one as member — an empty group reports placeholders |
 | `SmokeAccessory`      | `secondaryAlarm`    | `true`        | `false`: an alarm of another detector of the group does not show smoke on this one                                                                                                        |
 | `DoorbellAccessory`   | `trigger`           | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge)                                                                                                                                      |
 | `DoorbellAccessory`   | `debounceSeconds`   | `2`           | repeats within this time are ignored                                                                                                                                                      |
@@ -93,6 +100,23 @@ state there and sends commands to the first `*_VIRTUAL_RECEIVER` after it.
 Mapping a receiver of the group works the same. The custom UI lists only one
 channel per group and hides channels no service can handle as well as the
 CCU's virtual remote (RCV-50) and the built-in buttons / wall-button inputs (`KEY_TRANSCEIVER`, `MULTI_MODE_INPUT_TRANSMITTER`) of actuators; "Show all channels" lists every channel.
+
+### Heating groups (VirtualDevices)
+
+Needs `interfaces.virtualDevices` in the plugin settings. Map channel 1 of
+the group as `ThermostatAccessory`:
+
+| Group type     | Radio system | Channel 1                            | Writes                                      |
+| -------------- | ------------ | ------------------------------------ | ------------------------------------------- |
+| `HmIP-HEATING` | HmIP         | `HEATING_CLIMATECONTROL_TRANSCEIVER` | `SET_POINT_TEMPERATURE`, `CONTROL_MODE`     |
+| `HM-CC-VG-1`   | BidCos       | `CLIMATECONTROL_RT_TRANSCEIVER`      | `SET_TEMPERATURE`, `MANU_MODE`, `AUTO_MODE` |
+
+The custom UI hides the other channels of a group (window contact, switch
+outputs, floor heating): they only mirror the members. `HM-CC-VG-1` sends
+its values as strings; the plugin reads them as numbers. A group has no
+`LOW_BAT` of its own until a member reports one, so its battery shows
+"normal" meanwhile. Without `SET_POINT_MODE` (possible after a CCU
+restart) the set point decides between Off (4.5 °C) and Heat.
 
 ## Accessory identity (decision D6)
 
