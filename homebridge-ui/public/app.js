@@ -25,8 +25,9 @@
  *   - Settings changes are staged with updatePluginConfig(). They are
  *     written to config.json by the Save button next to the tabs (shown
  *     only while there are unsaved settings, savePluginConfig()) or by
- *     the host's Save button below the page. The host's close button
- *     discards them; the plugin UI API offers no way to intercept it.
+ *     the host's Save button below the page, which is disabled while
+ *     nothing is unsaved. The host's close button discards them; the
+ *     plugin UI API offers no way to intercept it.
  */
 
 // ---------------------------------------------------------------- helpers
@@ -1379,6 +1380,13 @@ function updateUnsaved() {
   const dirty = savedCfg !== '' && JSON.stringify(state.cfg) !== savedCfg;
   $('hgui-unsaved')?.classList.toggle('d-none', !dirty);
   $('hgui-save-btn')?.classList.toggle('d-none', !dirty);
+  // The host's Save button below the page: usable only when there is
+  // something to save (channel mappings are written at once anyway).
+  try {
+    (dirty ? homebridge.enableSaveButton : homebridge.disableSaveButton)?.call(homebridge);
+  } catch {
+    /* older host without this API */
+  }
 }
 
 /** Write the staged settings to config.json (the host's Save, without closing). */
@@ -1446,6 +1454,7 @@ async function init() {
   }
 
   savedCfg = JSON.stringify(state.cfg);
+  updateUnsaved();
   $('hgui-save-btn')?.addEventListener('click', () => void saveSettings());
 
   await loadDevices();
