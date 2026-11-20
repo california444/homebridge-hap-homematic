@@ -9,12 +9,17 @@
 
 import type { PlatformConfig } from 'homebridge';
 
-/** The two radio interfaces this plugin talks to (XML-RPC only). */
-export type CcuInterfaceId = 'BidCos-RF' | 'HmIP-RF';
+/**
+ * CCU interfaces this plugin talks to (XML-RPC only): the two radio
+ * interfaces and VirtualDevices (heating groups, plan-gruppen.md).
+ */
+export type CcuInterfaceId = 'BidCos-RF' | 'HmIP-RF' | 'VirtualDevices';
 
 export interface InterfaceToggles {
   bidcosRf: boolean;
   hmIpRf: boolean;
+  /** Heating groups (`INT…`); off by default. */
+  virtualDevices: boolean;
 }
 
 export interface EventServerConfig {
@@ -37,7 +42,7 @@ export interface ResolvedConfig {
   name: string;
   ccuIp: string;
   interfaces: InterfaceToggles;
-  /** XML-RPC port overrides; defaults 2001 / 2010, with TLS 42001 / 42010. */
+  /** XML-RPC port overrides; defaults 2001 / 2010 / 9292, with TLS 42001 / 42010 / 49292. */
   interfacePorts: Partial<Record<CcuInterfaceId, number>>;
   useTls: boolean;
   rpcAuth: RpcAuthConfig;

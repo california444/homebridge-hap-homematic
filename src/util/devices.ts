@@ -19,7 +19,7 @@ import type { PrefixedLogger } from './logger.js';
 
 export const DEVICES_FILE = 'devices.json';
 
-const DEVICE_KEY_RE = /^(BidCos-RF|HmIP-RF):([A-Za-z0-9]{1,32})$/;
+const DEVICE_KEY_RE = /^(BidCos-RF|HmIP-RF|VirtualDevices):([A-Za-z0-9]{1,32})$/;
 const CHANNEL_KEY_RE = /^(0|[1-9][0-9]{0,2})$/;
 const SERVICE_RE = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
 const EXTRA_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
@@ -135,7 +135,7 @@ export function validateDevicesFile(
   for (const [key, dev] of entries) {
     const path = `devices["${key}"]`;
     if (!parseDeviceKey(key)) {
-      err(path, 'key must be "<BidCos-RF|HmIP-RF>:<serial>"');
+      err(path, 'key must be "<BidCos-RF|HmIP-RF|VirtualDevices>:<serial>"');
       continue;
     }
     if (!isPlainObject(dev)) {

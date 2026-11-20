@@ -85,9 +85,9 @@ describe('validateDevicesFile', () => {
         },
       }),
     ).toEqual([
-      'devices["ABC0000002"]: key must be "<BidCos-RF|HmIP-RF>:<serial>"',
-      'devices["CUxD:ABC0000002"]: key must be "<BidCos-RF|HmIP-RF>:<serial>"',
-      'devices["BidCos-RF:ABC 2"]: key must be "<BidCos-RF|HmIP-RF>:<serial>"',
+      'devices["ABC0000002"]: key must be "<BidCos-RF|HmIP-RF|VirtualDevices>:<serial>"',
+      'devices["CUxD:ABC0000002"]: key must be "<BidCos-RF|HmIP-RF|VirtualDevices>:<serial>"',
+      'devices["BidCos-RF:ABC 2"]: key must be "<BidCos-RF|HmIP-RF|VirtualDevices>:<serial>"',
       'devices["BidCos-RF:ABC0000002"]: must be an object',
     ]);
   });
@@ -299,6 +299,10 @@ describe('keys and UUID seed (D6)', () => {
       device: '00000000000A01',
     });
     expect(parseDeviceKey('HmIP-RF:')).toBeUndefined();
+    expect(parseDeviceKey('VirtualDevices:INT0000001')).toEqual({
+      interface: 'VirtualDevices',
+      device: 'INT0000001',
+    });
   });
 
   it('builds <Interface>:<Serial>:<Channel>:<Service>', () => {

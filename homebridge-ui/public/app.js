@@ -77,7 +77,7 @@ const DEFAULT_BLOCK = () => ({
   name: 'HapHomematic',
   ccuIp: '',
   useTls: false,
-  interfaces: { bidcosRf: true, hmIpRf: true },
+  interfaces: { bidcosRf: true, hmIpRf: true, virtualDevices: false },
   interfacePorts: {},
   rpcAuth: { enabled: false, username: '', password: '' },
   eventServer: { host: '0.0.0.0', callbackHost: '', port: 9875 },
@@ -192,8 +192,14 @@ const splitKey = (key) => {
   const i = key.indexOf(':');
   return [key.slice(0, i), key.slice(i + 1)];
 };
-// Same fallback as the plugin: HmIP serials are 14 hex digits.
-const guessInterface = (serial) => (/^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF');
+// Same fallback as the plugin: HmIP serials are 14 hex digits, heating
+// groups INT + 7 digits.
+const guessInterface = (serial) =>
+  /^[0-9A-F]{14}$/i.test(serial)
+    ? 'HmIP-RF'
+    : /^INT\d{7}$/.test(serial)
+      ? 'VirtualDevices'
+      : 'BidCos-RF';
 
 /**
  * devices.json flattened to one row per accessory. Per-channel mappings
@@ -752,7 +758,7 @@ function viewSettings(host) {
         <div class="col-md-3 d-flex align-items-end">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="cf-tls" ${m.useTls ? 'checked' : ''} />
-            <label class="form-check-label" for="cf-tls">Use TLS (42001 / 42010)</label>
+            <label class="form-check-label" for="cf-tls">Use TLS (42001 / 42010 / 49292)</label>
           </div>
         </div>
       </div>
@@ -778,6 +784,7 @@ function viewSettings(host) {
         ${[
           ['bidcosRf', 'BidCos-RF'],
           ['hmIpRf', 'HmIP-RF'],
+          ['virtualDevices', 'VirtualDevices (heating groups)'],
         ]
           .map(
             ([k, label]) => `
@@ -811,11 +818,12 @@ function viewSettings(host) {
     </details>
     <details class="hgui-card" data-settings-card="ports" ${state.ui.settingsOpen.ports ? 'open' : ''}>
       <summary>XML-RPC ports</summary>
-      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF) and <code>2010</code> (HmIP-RF), with TLS <code>42001</code> / <code>42010</code>.</p>
+      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF), <code>2010</code> (HmIP-RF) and <code>9292</code> (VirtualDevices), with TLS <code>42001</code> / <code>42010</code> / <code>49292</code>.</p>
       <div class="row g-2">
         ${[
           ['BidCos-RF', '2001'],
           ['HmIP-RF', '2010'],
+          ['VirtualDevices', '9292'],
         ]
           .map(
             ([k, ph]) => `
@@ -885,7 +893,7 @@ function viewSettings(host) {
   $('cf-auth-pass').addEventListener('input', (e) =>
     propagate((b) => (b.rpcAuth.password = e.target.value)),
   );
-  for (const k of ['bidcosRf', 'hmIpRf']) {
+  for (const k of ['bidcosRf', 'hmIpRf', 'virtualDevices']) {
     $(`cf-if-${k}`).addEventListener('change', (e) =>
       propagate((b) => (b.interfaces[k] = e.target.checked)),
     );
@@ -900,7 +908,7 @@ function viewSettings(host) {
       });
     });
   }
-  for (const k of ['BidCos-RF', 'HmIP-RF']) {
+  for (const k of ['BidCos-RF', 'HmIP-RF', 'VirtualDevices']) {
     $(`cf-port-${k}`).addEventListener('input', (e) => {
       const v = e.target.value.trim();
       propagate((b) => {
@@ -1344,6 +1352,7 @@ async function init() {
       interfaces: {
         bidcosRf: b.interfaces?.bidcosRf ?? def.interfaces.bidcosRf,
         hmIpRf: b.interfaces?.hmIpRf ?? def.interfaces.hmIpRf,
+        virtualDevices: b.interfaces?.virtualDevices ?? def.interfaces.virtualDevices,
       },
       rpcAuth: { ...def.rpcAuth, ...b.rpcAuth },
       eventServer: { ...def.eventServer, ...b.eventServer },

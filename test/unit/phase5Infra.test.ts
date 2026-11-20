@@ -125,6 +125,11 @@ describe('CcuClient values and typing', () => {
     expect(set.mock.calls.map((x) => x[2])).toEqual([{ explicitDouble: 1 }, false, 1]);
     expect(c.describe('A:1', 'LEVEL')?.TYPE).toBe('FLOAT');
     expect(c.interfaceOf('00000000000A01:1')).toBe('HmIP-RF');
+    // Before discovery: INT + 7 digits are heating groups, other 10-char serials BidCos.
+    expect(c.interfaceOf('INT0000001:1')).toBe('VirtualDevices');
+    expect(c.interfaceOf('INT0000001')).toBe('VirtualDevices');
+    expect(c.interfaceOf('OEQ0000001:1')).toBe('BidCos-RF');
+    expect(c.interfaceOf('INTA000001:1')).toBe('BidCos-RF');
   });
 
   it('readValues: one request per channel at a time, ACTION filtered, errors → undefined', async () => {

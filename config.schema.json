@@ -34,13 +34,19 @@
             "title": "HmIP-RF",
             "type": "boolean",
             "default": true
+          },
+          "virtualDevices": {
+            "title": "VirtualDevices (heating groups)",
+            "type": "boolean",
+            "default": false,
+            "description": "Heating groups of the CCU (Settings → Groups) as one thermostat each. Port 9292 (TLS 49292) must be reachable from this host."
           }
         }
       },
       "interfacePorts": {
         "title": "XML-RPC port overrides",
         "type": "object",
-        "description": "XML-RPC ports of the CCU interfaces. Defaults: BidCos-RF 2001, HmIP-RF 2010; with TLS 42001 / 42010.",
+        "description": "XML-RPC ports of the CCU interfaces. Defaults: BidCos-RF 2001, HmIP-RF 2010, VirtualDevices 9292; with TLS 42001 / 42010 / 49292.",
         "properties": {
           "BidCos-RF": {
             "title": "BidCos-RF port",
@@ -55,6 +61,13 @@
             "minimum": 1,
             "maximum": 65535,
             "placeholder": "2010"
+          },
+          "VirtualDevices": {
+            "title": "VirtualDevices port",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535,
+            "placeholder": "9292"
           }
         }
       },
@@ -62,7 +75,7 @@
         "title": "Use TLS to talk to CCU",
         "type": "boolean",
         "default": false,
-        "description": "XML-RPC over HTTPS (ports 42001 / 42010). The CCU's self-signed certificate is accepted."
+        "description": "XML-RPC over HTTPS (ports 42001 / 42010, VirtualDevices 49292). The CCU's self-signed certificate is accepted."
       },
       "rpcAuth": {
         "title": "XML-RPC authentication",

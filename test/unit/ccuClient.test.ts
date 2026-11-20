@@ -126,3 +126,38 @@ describe('CcuClient registerListener / event dispatch', () => {
     expect(ccu.isLive()).toBe(false);
   });
 });
+
+describe('CcuClient interfaces (plan-gruppen 3.1)', () => {
+  const make = (extra: Record<string, unknown>) =>
+    new CcuClient({
+      config: resolveConfig({
+        platform: 'HapHomematic',
+        ccuIp: '127.0.0.1',
+        eventServer: { callbackHost: '127.0.0.1' },
+        ...extra,
+      }),
+      log: new PrefixedLogger(makeLog(), 'ccu-test'),
+    });
+  const rpc = (c: CcuClient, id: string) =>
+    (c as unknown as { rpcClients: Map<string, { port: number; path: string }> }).rpcClients.get(
+      id,
+    );
+
+  it('VirtualDevices is off by default', () => {
+    expect(make({}).enabledInterfaces()).toEqual(['BidCos-RF', 'HmIP-RF']);
+  });
+
+  it('VirtualDevices on: port 9292, path /groups, port override and TLS port', () => {
+    const on = make({ interfaces: { virtualDevices: true } });
+    expect(on.enabledInterfaces()).toEqual(['BidCos-RF', 'HmIP-RF', 'VirtualDevices']);
+    expect(rpc(on, 'VirtualDevices')).toMatchObject({ port: 9292, path: '/groups' });
+    expect(rpc(on, 'HmIP-RF')).toMatchObject({ port: 2010, path: '/' });
+    const port = make({
+      interfaces: { virtualDevices: true },
+      interfacePorts: { VirtualDevices: 19292 },
+    });
+    expect(rpc(port, 'VirtualDevices')?.port).toBe(19292);
+    const tls = make({ interfaces: { virtualDevices: true }, useTls: true });
+    expect(rpc(tls, 'VirtualDevices')?.port).toBe(49292);
+  });
+});
