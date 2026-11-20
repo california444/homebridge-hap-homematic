@@ -143,11 +143,16 @@ const GROUP_RE = /^(SWITCH|SHUTTER|BLIND|DIMMER)_(TRANSMITTER|VIRTUAL_RECEIVER)$
  *     SWITCH/SHUTTER/BLIND/DIMMER_TRANSMITTER: HmIP-PS channel 1,
  *     BROLL/FROLL channels 1–2, DRSI4 wall-button inputs 1–4. A remote or
  *     a pure input device (HmIP-DSD-PCB bell signal) keeps them.
+ *   - every channel of a heating group (VirtualDevices) except the
+ *     thermostat channel 1: the others (window contact, switch outputs,
+ *     floor heating) only mirror the members (plan-gruppen 3.5).
  * Channels already in devices.json are never hidden.
  */
 function hiddenChannels(device) {
   const channels = sortBy(device.channels ?? [], (c) => c.index);
   if (/RCV-50$/i.test(device.type ?? '')) return new Set(channels.map((c) => c.address));
+  if (device.interface === 'VirtualDevices')
+    return new Set(channels.filter((c) => c.index !== 1).map((c) => c.address));
   const handled = new Set(state.services.channelServices.flatMap((s) => s.channelTypes));
   const hidden = new Set();
   const isActuator = channels.some((c) =>
@@ -1057,6 +1062,11 @@ function subEditChannel(host, props) {
           <div>
             <input class="form-control" id="ec-name" value="${h(draft.name ?? '')}" />
             <div class="hgui-hint">Shown in the Home app. Already-paired accessories keep the name they had in Home; rename there too.</div>
+            ${
+              device?.interface === 'VirtualDevices'
+                ? `<div class="hgui-hint">Heating group: the CCU does not pass group names over XML-RPC. The name is in the CCU under Settings → Groups (<code>${h(serial)}</code>).</div>`
+                : ''
+            }
           </div>
         </div>
         <div class="hgui-form-row">
