@@ -795,7 +795,7 @@ function viewSettings(host) {
         ]
           .map(
             ([k, label]) => `
-            <div class="col-md-3 form-check">
+            <div class="col-auto form-check me-3 text-nowrap">
               <input class="form-check-input" type="checkbox" id="cf-if-${k}" ${m.interfaces[k] ? 'checked' : ''} />
               <label class="form-check-label" for="cf-if-${k}">${h(label)}</label>
             </div>`,
