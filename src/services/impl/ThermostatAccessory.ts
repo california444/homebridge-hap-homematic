@@ -312,6 +312,7 @@ export const thermostatService: ServiceDefinition = {
       label: 'Show humidity',
       type: 'boolean',
       default: false,
+      datapoints: ['HUMIDITY', 'ACTUAL_HUMIDITY'],
       hint:
         'Humidity on the thermostat in Home. Only for devices with a humidity sensor (wall thermostats) ' +
         'or heating groups with one as member; an empty group reports placeholder values. ' +

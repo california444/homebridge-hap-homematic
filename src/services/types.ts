@@ -58,6 +58,12 @@ export interface OptionSpec {
   min?: number;
   max?: number;
   hint?: string;
+  /**
+   * Offered only if the channel's paramset description has one of these
+   * datapoints (the custom UI asks the CCU). Unknown description, e.g.
+   * CCU unreachable: offered.
+   */
+  datapoints?: string[];
 }
 
 export interface ServiceDefinition {

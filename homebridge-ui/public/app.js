@@ -110,6 +110,8 @@ const state = {
     /** Settings cards expanded (collapsed by default). */
     settingsOpen: { auth: false, ports: false, sendQueue: false },
   },
+  /** Datapoint names per channel address from the CCU (`/paramset`). */
+  paramsets: {},
   /** Last "Test CCU" result as HTML; survives re-renders. */
   testResult: '',
   pluginVersion: 'unknown',
@@ -1021,6 +1023,21 @@ function subEditChannel(host, props) {
     return el.value;
   };
 
+  /**
+   * Datapoints of this channel from the CCU, for options with
+   * `datapoints` (e.g. "Show humidity" only where HUMIDITY exists).
+   * undefined: not asked yet or no answer — every option is offered.
+   */
+  let channelDatapoints = isDeviceRow ? undefined : state.paramsets[address];
+  const visibleOptions = (def) =>
+    (def?.options ?? []).filter(
+      (o) =>
+        !o.datapoints ||
+        !channelDatapoints ||
+        o.datapoints.some((dp) => channelDatapoints.includes(dp)),
+    );
+  const needsDatapoints = () => all.some((s) => s.options?.some((o) => o.datapoints));
+
   subviewHeader(
     host,
     mode === 'add' ? 'Add to HomeKit' : `Edit: ${draft.name || address}`,
@@ -1095,7 +1112,7 @@ function subEditChannel(host, props) {
           </div>`
             : ''
         }
-        ${(def?.options ?? [])
+        ${visibleOptions(def)
           .map(
             (o, i) => `
           <div class="hgui-form-row">
@@ -1162,7 +1179,7 @@ function subEditChannel(host, props) {
         draft.subtype = e.target.value;
       });
     }
-    (def?.options ?? []).forEach((o, i) => {
+    visibleOptions(def).forEach((o, i) => {
       body.querySelector(`#ec-opt-${i}`).addEventListener('change', (e) => {
         draft.options[o.key] = readOption(o, e.target);
       });
@@ -1176,6 +1193,21 @@ function subEditChannel(host, props) {
     }
   };
   draw();
+  if (!isDeviceRow && channelDatapoints === undefined && needsDatapoints()) {
+    homebridge
+      .request('/paramset', {
+        config: state.cfg,
+        address,
+        interface: device?.interface ?? entry?.interface ?? guessInterface(serial),
+      })
+      .then((r) => {
+        if (!Array.isArray(r?.datapoints)) return;
+        state.paramsets[address] = r.datapoints;
+        channelDatapoints = r.datapoints;
+        if (body.isConnected) draw();
+      })
+      .catch(() => undefined);
+  }
 
   const footer = $('hgui-sub-footer');
   footer.innerHTML = `
@@ -1196,7 +1228,12 @@ function subEditChannel(host, props) {
     }
     const def = byKey(draft.service);
     const intf = device?.interface ?? entry?.interface ?? guessInterface(serial);
-    const options = clean(draft.options ?? {});
+    // An option hidden for this channel (no datapoint) is not saved.
+    const shown = new Set(visibleOptions(def).map((o) => o.key));
+    const hidden = (def?.options ?? []).filter((o) => !shown.has(o.key)).map((o) => o.key);
+    const options = clean(
+      Object.fromEntries(Object.entries(draft.options ?? {}).filter(([k]) => !hidden.includes(k))),
+    );
     try {
       if (isDeviceRow || def?.scope === 'device') {
         const channels = {};

@@ -113,6 +113,7 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     this.onRequest('/test-connection', (payload) => this.handleTestConnection(payload));
     this.onRequest('/discover', (payload) => this.handleDiscover(payload));
     this.onRequest('/discover/cached', () => this.handleCachedDiscovery());
+    this.onRequest('/paramset', (payload) => this.handleParamset(payload));
     this.onRequest('/network', () => this.handleNetwork());
     this.onRequest('/devices/get', () => this.handleGetDevices());
     this.onRequest('/devices/put', (payload) => this.handlePutDevices(payload));
@@ -197,6 +198,42 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     const devices = [];
     for (const [id, list] of results) devices.push(...toDevices(list, id));
     return { devices: enrich(devices), source: 'live', fetchedAt };
+  }
+
+  /**
+   * Datapoint names of one channel (getParamsetDescription VALUES, no
+   * radio traffic), for options that need a datapoint (OptionSpec
+   * `datapoints`). `datapoints: null` if the CCU did not answer; the UI
+   * then offers every option.
+   */
+  async handleParamset(payload) {
+    const address = typeof payload?.address === 'string' ? payload.address : '';
+    if (!/^[A-Za-z0-9]{1,32}:\d{1,3}$/.test(address)) {
+      throw new RequestError('Invalid channel address', { status: 400 });
+    }
+    const config = this.coerceConfig(payload.config);
+    const ccu = new CcuClient({ config, log: new PrefixedLogger(new UiLogger(), 'ui:paramset') });
+    // Route by the discovered interface; serials of the CCU mock (VCU…)
+    // would otherwise be guessed as BidCos-RF.
+    if (
+      typeof payload.interface === 'string' &&
+      ccu.enabledInterfaces().includes(payload.interface)
+    ) {
+      ccu.setInterfaceFor(address.split(':')[0], payload.interface);
+    }
+    try {
+      const description = await ccu.getParamsetDescription(address);
+      return { address, datapoints: Object.keys(description ?? {}) };
+    } catch (err) {
+      console.warn('[ui] getParamsetDescription(%s) failed: %s', address, err.message);
+      return { address, datapoints: null };
+    } finally {
+      try {
+        await ccu.stop();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   /**
