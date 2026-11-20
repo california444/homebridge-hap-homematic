@@ -345,9 +345,7 @@ export abstract class AccessoryBase {
     // A plain function, not an arrow: hap-nodejs calls the handler as a
     // method of the Characteristic, so `this.displayName` names the value
     // that is missing ("get CurrentRelativeHumidity: …").
-    return async function (
-      this: { displayName?: string } | void,
-    ): Promise<CharacteristicValue> {
+    return async function (this: { displayName?: string } | void): Promise<CharacteristicValue> {
       try {
         const v = await handler();
         return v as CharacteristicValue;
