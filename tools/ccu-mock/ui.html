@@ -293,6 +293,7 @@
         ['blindTravelSeconds', 'Fahrzeit s', 'num'],
         ['blindIntermediate', 'Zwischenwerte', 'bool'],
         ['restartSeconds', 'Neustart s', 'num'],
+        ['setPointLimits', 'Sollwert-Grenzen (MASTER)', ['aus', 'außer 4,5', 'alle']],
       ];
       async function loadStatus() {
         const s = await api('/api/status');
@@ -458,7 +459,18 @@
                 : '<p class="muted">Keine. Erst Thermostate auswählen.</p>'
             }</div>`;
         }
+        const masterCard = (address, title, rows) =>
+          rows.length
+            ? `<div class="card"><h3><span class="iface">${esc(address)}</span> ${esc(title)} <span class="muted">MASTER</span> <button class="small" data-mreset="${esc(address)}">Vorgaben</button></h3><table>${rows
+                .map(
+                  (dp, i) =>
+                    `<tr data-maddr="${esc(address)}" data-i="${i}"><td class="dp">${esc(dp.id)}</td><td class="muted">${esc(dp.type)}${dp.changed ? ' · geändert' : ' · Vorgabe'}</td><td class="val" title="${esc(JSON.stringify(dp.value))}">${esc(JSON.stringify(dp.value))}</td><td class="in">${inputFor(dp)}</td><td><button class="small primary" data-mset>Setzen</button></td></tr>`,
+                )
+                .join('')}</table></div>`
+            : '';
+        html += masterCard(d.address, 'Gerät', d.master);
         for (const ch of d.channels) {
+          html += masterCard(ch.address, ch.type, ch.master);
           if (!ch.datapoints.length) continue;
           html += `<div class="card"><h3><span class="iface">${esc(ch.address)}</span> ${esc(ch.type)}</h3><table>${ch.datapoints
             .map(
@@ -504,6 +516,30 @@
               }),
           );
         }
+        const masterRowsOf = (address) =>
+          address === d.address ? d.master : d.channels.find((c) => c.address === address).master;
+        document.querySelectorAll('[data-mset]').forEach(
+          (b) =>
+            (b.onclick = async () => {
+              const tr = b.closest('tr');
+              const dp = masterRowsOf(tr.dataset.maddr)[Number(tr.dataset.i)];
+              await api('/api/master', {
+                address: tr.dataset.maddr,
+                param: dp.id,
+                value: readInput(dp, tr.querySelector('td.in')),
+              });
+              setTimeout(() => current === addr && showDevice(addr), 300);
+            }),
+        );
+        document
+          .querySelectorAll('[data-mreset]')
+          .forEach(
+            (b) =>
+              (b.onclick = () =>
+                api('/api/master', { address: b.dataset.mreset, reset: true }).then(() =>
+                  showDevice(addr),
+                )),
+          );
         document.querySelectorAll('[data-act]').forEach(
           (b) =>
             (b.onclick = async () => {

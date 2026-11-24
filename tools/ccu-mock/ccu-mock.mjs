@@ -93,6 +93,11 @@ function log(entry) {
 //     defaults: {ch: {dp: wert}}, rawStrings? }
 const catalog = new Map(); // address → Gerät
 const templates = new Map(); // `${source}:${type}` → Vorlage (Adresse = Original)
+// MASTER-Beschreibungen je Gerätetyp aus pydevccu: type → { Kanalnummer | 'device' → { param → Beschreibung } }
+const masterByType = (() => {
+  const f = path.join(here, 'catalog/pydevccu/master.json');
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
+})();
 
 function ifaceForType(type) {
   if (GROUP_TYPES[type]) return 'VirtualDevices';
@@ -251,6 +256,7 @@ const state = {
   instances: [], // { template, address }
   groups: {}, // address → { members: [deviceAddress], follow: true, echo: false }
   values: {}, // channelAddress → { dp: wert }
+  master: {}, // Kanal- oder Geräteadresse → { param: wert } (MASTER, nur geänderte)
   faults: {}, // deviceAddress → { unreach, failOnce, failAlways, delayMs }
   global: {
     multicall: false,
@@ -261,6 +267,8 @@ const state = {
     restartSeconds: 60,
     blindTravelSeconds: 10,
     blindIntermediate: false,
+    // Sollwert auf TEMPERATURE_MINIMUM/MAXIMUM begrenzen: 'aus' | 'außer 4,5' | 'alle'
+    setPointLimits: 'aus',
   },
 };
 function loadState() {
@@ -319,6 +327,98 @@ function paramset(ch) {
     if (v !== undefined) out[dp] = wire(deviceOf(ch), d, v);
   }
   return out;
+}
+
+// ---- MASTER -------------------------------------------------------------------------
+/** MASTER-Beschreibung einer Kanal- oder Geräteadresse (nach Gerätetyp). */
+function masterDescOf(addr) {
+  const dev = deviceOf(addr);
+  if (!dev) return undefined;
+  const key = String(addr).includes(':') ? String(addr).split(':')[1] : 'device';
+  return masterByType[dev.type]?.[key];
+}
+function masterDefault(d) {
+  // pydevccu führt ENUM-Vorgaben als Namen; die CCU liefert den Index
+  if (d.TYPE === 'ENUM' && Array.isArray(d.VALUE_LIST) && typeof d.DEFAULT === 'string') {
+    const i = d.VALUE_LIST.indexOf(d.DEFAULT);
+    return i >= 0 ? i : 0;
+  }
+  return defaultValue(d);
+}
+function getMaster(addr, p) {
+  const v = state.master[addr];
+  if (v && p in v) return v[p];
+  const d = masterDescOf(addr)?.[p];
+  return d ? masterDefault(d) : undefined;
+}
+function masterParamset(addr) {
+  const dev = deviceOf(addr);
+  return Object.fromEntries(
+    Object.entries(masterDescOf(addr) ?? {}).map(([p, d]) => [p, wire(dev, d, getMaster(addr, p))]),
+  );
+}
+/**
+ * MASTER schreiben (putParamset oder UI). Gruppen geben Thermostat-Grenzen an die
+ * Mitglieder weiter. HmIP meldet CONFIG_PENDING kurz true, dann false.
+ * Liefert eine Fehlermeldung oder null.
+ */
+function putMaster(addr, values, corr) {
+  const desc = masterDescOf(addr) ?? {};
+  for (const p of Object.keys(values)) if (!desc[p]) return `Unknown parameter ${p}`;
+  const dev = deviceOf(addr);
+  // HM-CC-VG-1 führt alle Werte als Strings
+  const typed = (v) => (dev?.rawStrings && typeof v === 'number' ? String(v) : v);
+  for (const [p, v] of Object.entries(values)) (state.master[addr] ??= {})[p] = typed(v);
+  saveState();
+  if (dev?.iface === 'HmIP-RF') {
+    const ch0 = `${dev.address}:0`;
+    if (descOf(ch0)?.CONFIG_PENDING) {
+      emit(ch0, 'CONFIG_PENDING', true, { corr });
+      setTimeout(() => emit(ch0, 'CONFIG_PENDING', false, { corr }), 1500);
+    }
+  }
+  if (dev?.iface === 'VirtualDevices') {
+    const cfg = state.groups[dev.address];
+    for (const m of cfg?.members ?? []) {
+      for (const mch of memberChannels(dev, m)) {
+        const mdesc = masterDescOf(mch) ?? {};
+        const own = Object.fromEntries(Object.entries(values).filter(([p]) => mdesc[p]));
+        if (Object.keys(own).length) {
+          for (const [p, v] of Object.entries(own)) (state.master[mch] ??= {})[p] = v;
+          log({
+            iface: 'HmIP-RF',
+            dir: 'info',
+            method: 'MASTER von Gruppe',
+            params: [mch, own],
+            corr,
+          });
+        }
+      }
+    }
+    saveState();
+  }
+  return null;
+}
+/** Grenzen für den Sollwert eines Thermostatkanals (Kanal-MASTER, sonst Geräte-MASTER). */
+function setPointLimits(ch) {
+  const dev = deviceOf(ch);
+  const from = masterDescOf(ch)?.TEMPERATURE_MINIMUM ? ch : dev?.address;
+  if (!from || !masterDescOf(from)?.TEMPERATURE_MINIMUM) return null;
+  return {
+    min: Number(getMaster(from, 'TEMPERATURE_MINIMUM')),
+    max: Number(getMaster(from, 'TEMPERATURE_MAXIMUM')),
+    notInManu: !!getMaster(from, 'MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE'),
+  };
+}
+/** Sollwert nach Einstellung „Sollwert-Grenzen“ begrenzen. `manual` = manueller Modus. */
+function limitSetPoint(ch, value, manual) {
+  const mode = state.global.setPointLimits;
+  const v = Number(value);
+  if (mode === 'aus' || !Number.isFinite(v)) return value;
+  if (mode === 'außer 4,5' && v <= 4.5) return value;
+  const lim = setPointLimits(ch);
+  if (!lim || (manual && lim.notInManu)) return value;
+  return Math.min(lim.max, Math.max(lim.min, v));
 }
 
 // Wert für die Leitung: FLOAT immer als <double>, wie die CCU. Strings bei Geräten mit rawStrings unverändert.
@@ -413,6 +513,17 @@ function emit(ch, dp, value, { store = true, corr } = {}) {
   if (!isSelected(dev.address)) return;
   sendEvent(dev.iface, ch, dp, wire(dev, d, value), corr);
   afterChange(dev, ch, dp, value, corr);
+  if (dp === 'OPERATING_VOLTAGE') lowBatFromVoltage(dev, ch, value, corr);
+}
+
+/** Wie das Gerät: LOW_BAT folgt OPERATING_VOLTAGE ≤ LOW_BAT_LIMIT (MASTER Kanal 0 bzw. Gerät). */
+function lowBatFromVoltage(dev, ch, value, corr) {
+  const from = masterDescOf(ch)?.LOW_BAT_LIMIT ? ch : dev.address;
+  if (!masterDescOf(from)?.LOW_BAT_LIMIT) return;
+  const dp = descOf(ch)?.LOW_BAT ? 'LOW_BAT' : descOf(ch)?.LOWBAT ? 'LOWBAT' : null;
+  if (!dp) return;
+  const low = Number(value) <= Number(getMaster(from, 'LOW_BAT_LIMIT'));
+  if (Boolean(getVal(ch, dp)) !== low) emit(ch, dp, low, { corr });
 }
 
 async function doInit(iface, [url, id]) {
@@ -605,6 +716,27 @@ function applySet(dev, ch, dp, value, corr) {
   if (dp === 'LEVEL' && isBlindChannel(dev, ch)) return startTravel(dev, ch, value, corr);
   if (dp === 'STOP' && isBlindChannel(dev, ch)) return stopTravel(dev, ch, corr);
 
+  // Thermostate: Sollwert nach MASTER-Grenzen (Einstellung „Sollwert-Grenzen“)
+  const limited = (v, manual) => {
+    const out = limitSetPoint(ch, v, manual);
+    if (Number(out) !== Number(v))
+      log({
+        iface: dev.iface,
+        dir: 'info',
+        method: 'Sollwert begrenzt',
+        params: [ch, dp, v],
+        result: out,
+        corr,
+      });
+    return out;
+  };
+  if (chType === 'HEATING_CLIMATECONTROL_TRANSCEIVER' && dp === 'SET_POINT_TEMPERATURE')
+    value = limited(value, Number(getVal(ch, 'SET_POINT_MODE')) === 1);
+  if (/CLIMATECONTROL_RT_TRANSCEIVER|THERMALCONTROL_TRANSMIT/.test(chType)) {
+    if (dp === 'MANU_MODE') value = limited(value, true);
+    if (dp === 'SET_TEMPERATURE') value = limited(value, Number(getVal(ch, 'CONTROL_MODE')) === 1);
+  }
+
   // Thermostate: nur zurückmelden, plus die Modus-Datenpunkte der Plugin-Aufrufe
   if (chType === 'HEATING_CLIMATECONTROL_TRANSCEIVER' && dp === 'CONTROL_MODE') {
     emit(ch, 'SET_POINT_MODE', Number(value), { corr });
@@ -702,6 +834,7 @@ const METHODS = [
   'getParamset',
   'getValue',
   'setValue',
+  'putParamset',
   'system.listMethods',
 ];
 
@@ -729,6 +862,7 @@ async function handle(iface, method, params, rawTypes) {
       const dev = selectedDevice(addr);
       if (!dev || dev.iface !== iface.name || !channelEntry(dev, addr))
         return { fault: fault(-2, 'Unknown instance') };
+      if (key === 'MASTER') return { value: masterDescOf(addr) ?? {} };
       if (key !== 'VALUES') return { value: {} };
       return { value: descOf(addr) ?? {} };
     }
@@ -737,9 +871,35 @@ async function handle(iface, method, params, rawTypes) {
       const dev = selectedDevice(addr);
       if (!dev || dev.iface !== iface.name || !channelEntry(dev, addr))
         return { fault: fault(-2, 'Unknown instance') };
+      if (key === 'MASTER') return { value: masterParamset(addr) };
       if (key !== 'VALUES') return { value: {} };
       if (dev.iface === 'HmIP-RF' && state.faults[dev.address]?.unreach) return { value: {} };
       return { value: paramset(addr) };
+    }
+    case 'putParamset': {
+      const [addr, key, values] = params;
+      const dev = selectedDevice(addr);
+      if (!dev || dev.iface !== iface.name || !channelEntry(dev, addr))
+        return { fault: fault(-2, 'Unknown instance') };
+      if (!values || typeof values !== 'object')
+        return { fault: fault(-1, 'putParamset: Struktur erwartet') };
+      if (dev.iface === 'HmIP-RF' && state.faults[dev.address]?.unreach)
+        return { fault: fault(-1, 'Generic error (UNREACH)') };
+      const corr = ++corrSeq;
+      if (key === 'MASTER') {
+        const err = putMaster(addr, values, corr);
+        return err ? { fault: fault(-5, err) } : { value: '', corr };
+      }
+      if (key !== 'VALUES') return { fault: fault(-1, `Unknown paramset ${key}`) };
+      const desc = descOf(addr) ?? {};
+      for (const dp of Object.keys(values))
+        if (!desc[dp] || !(desc[dp].OPERATIONS & 2))
+          return { fault: fault(-5, 'Unknown Parameter value for value key') };
+      // In der Reihenfolge der Struktur, wie die CCU (CONTROL_MODE vor SET_POINT_TEMPERATURE)
+      setImmediate(() => {
+        for (const [dp, v] of Object.entries(values)) applySet(dev, addr, dp, v, corr);
+      });
+      return { value: '', corr };
     }
     case 'getValue': {
       const [addr, dp] = params;
@@ -875,6 +1035,7 @@ function summarizeResult(method, v) {
   if (method === 'system.listMethods') return `${v.length} Methoden`;
   if (method === 'getParamsetDescription') return `${Object.keys(v).length} Datenpunkte`;
   if (method === 'getParamset') return v;
+  if (method === 'putParamset') return v === '' ? 'OK' : v;
   return v === '' ? 'OK' : v;
 }
 
@@ -946,8 +1107,22 @@ function summaryOf(dev) {
     isGroup: dev.iface === 'VirtualDevices',
   };
 }
+function masterRows(addr) {
+  return Object.entries(masterDescOf(addr) ?? {}).map(([p, d]) => ({
+    id: p,
+    type: d.TYPE,
+    operations: d.OPERATIONS,
+    min: d.MIN,
+    max: d.MAX,
+    unit: d.UNIT,
+    valueList: d.VALUE_LIST,
+    value: getMaster(addr, p),
+    changed: p in (state.master[addr] ?? {}),
+  }));
+}
 function detailOf(dev) {
   return {
+    master: masterRows(dev.address),
     ...summaryOf(dev),
     fault: state.faults[dev.address] ?? {},
     group:
@@ -973,6 +1148,7 @@ function detailOf(dev) {
           valueList: d.VALUE_LIST,
           value: getVal(c.ADDRESS, dp),
         })),
+        master: masterRows(c.ADDRESS),
       })),
   };
 }
@@ -1112,6 +1288,28 @@ async function api(req, res, url) {
         corr,
       });
     }
+    return json(res, 200, { ok: true });
+  }
+  if (p === '/api/master') {
+    // { address, param, value } oder { address, reset: true } — wie putParamset MASTER
+    const dev = deviceOf(body.address);
+    if (!dev) return json(res, 404, { error: 'unbekannt' });
+    if (body.reset) {
+      delete state.master[body.address];
+      saveState();
+      log({ iface: dev.iface, dir: 'ui', method: 'MASTER zurückgesetzt', params: [body.address] });
+      return json(res, 200, { ok: true });
+    }
+    const corr = ++corrSeq;
+    const err = putMaster(body.address, { [body.param]: body.value }, corr);
+    if (err) return json(res, 400, { error: err });
+    log({
+      iface: dev.iface,
+      dir: 'ui',
+      method: 'MASTER setzen',
+      params: [body.address, body.param, body.value],
+      corr,
+    });
     return json(res, 200, { ok: true });
   }
   if (p === '/api/fault') {

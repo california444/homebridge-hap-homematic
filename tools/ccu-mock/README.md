@@ -39,34 +39,41 @@ Dann in der Mock-UI Geräte auswählen, in der Plugin-UI auf „Discover“ klic
 
 ## Katalog
 
-| Ordner              | Inhalt                                                                                                                                     | im Repo |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `catalog/pydevccu/` | Geräte- und `VALUES`-Beschreibungen aus [pydevccu](https://github.com/sukramj/pydevccu) 0.2.6 (MIT, siehe `LICENSE` dort), Adressen `VCU…` | ja      |
-| `catalog/virtual/`  | Heizungsgruppen `HmIP-HEATING` und `HM-CC-VG-1`, gemessen an einer echten CCU (nur `INT…`-Adressen)                                        | ja      |
-| `catalog/local/`    | eigene Dumps aus `dump-ccu.mjs` (echte Seriennummern)                                                                                      | nein    |
+| Ordner              | Inhalt                                                                                                                                                                                                                                     | im Repo |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `catalog/pydevccu/` | Geräte- und `VALUES`-Beschreibungen aus [pydevccu](https://github.com/sukramj/pydevccu) 0.2.6 (MIT, siehe `LICENSE` dort), Adressen `VCU…`. `master.json`: ausgewählte `MASTER`-Beschreibungen je Gerätetyp (pydevccu 6fe7695, 2026-10-02) | ja      |
+| `catalog/virtual/`  | Heizungsgruppen `HmIP-HEATING` und `HM-CC-VG-1`, gemessen an einer echten CCU (nur `INT…`-Adressen)                                                                                                                                        | ja      |
+| `catalog/local/`    | eigene Dumps aus `dump-ccu.mjs` (echte Seriennummern)                                                                                                                                                                                      | nein    |
 
 Neu erzeugen mit `import-catalog.mjs`:
 
 ```bash
 node tools/ccu-mock/import-catalog.mjs pydevccu <pydevccu-0.2.6>/pydevccu
+node tools/ccu-mock/import-catalog.mjs master   <pydevccu>/pydevccu                        # nur master.json
 node tools/ccu-mock/import-catalog.mjs virtual  tools/ccu-probe/out/virtual-devices.json   # aus p03-spike.mjs
 node tools/ccu-mock/import-catalog.mjs local    tools/ccu-probe/out/dump                   # aus dump-ccu.mjs
 ```
+
+`master.json` enthält nur die Parameter, die das Plugin auswerten könnte: `LOW_BAT_LIMIT` (Kanal 0, bei BidCos am Gerät), `TEMPERATURE_MINIMUM`, `TEMPERATURE_MAXIMUM`, `MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE` (Thermostat-Kanal, bei BidCos und `HM-CC-VG-1` am Gerät) und `CHANNEL_OPERATION_MODE` (Eingänge). Die Zuordnung geht über den Gerätetyp, gilt also auch für Instanzen, Gruppen aus `catalog/virtual/` und eigene Dumps. Werte stehen erst auf der Vorgabe (`DEFAULT`); ENUM-Vorgaben liefert der Mock als Index wie die CCU.
 
 Angeboten werden nur Geräte mit mindestens einem Kanaltyp, den ein Service des Plugins kennt (`SERVICE_DEFINITIONS` in `dist/src/services/registry.js`). Fehlt `dist/`, zeigt der Mock alles. Wired-Geräte (`HMW-`) fallen weg. Interface: Gruppentypen → VirtualDevices, `HmIP`/`HmIPW`/`ELV-SH` → HmIP-RF, sonst BidCos-RF.
 
 ## Weboberfläche
 
 - **Links:** Katalog mit Suche und Filtern. Die Checkbox entscheidet, ob `listDevices` das Gerät liefert (Standard: nichts ausgewählt). Änderungen schicken `newDevices`/`deleteDevices` an angemeldete Clients. „Instanz hinzufügen“ legt eine Kopie eines pydevccu-Typs mit neuer `VCU…`-Adresse an, „+ Gruppe …“ eine Heizungsgruppe `INT000000n`.
-- **Rechts:** Datenpunkte des Geräts. „Setzen“ ändert nur den Wert im Mock, „Setzen + Event“ schickt ihn zusätzlich ans Plugin (wie eine Meldung vom Gerät). Pro Gerät: UNREACH, setValue-Fehler einmalig/dauerhaft, Verzögerung der setValue-Antwort.
+- **Rechts:** `MASTER`-Parameter (eigene Tabelle je Kanal bzw. Gerät, „Vorgaben“ setzt sie zurück) und Datenpunkte des Geräts. „Setzen“ ändert nur den Wert im Mock, „Setzen + Event“ schickt ihn zusätzlich ans Plugin (wie eine Meldung vom Gerät). Pro Gerät: UNREACH, setValue-Fehler einmalig/dauerhaft, Verzögerung der setValue-Antwort.
 - **Gruppen:** Mitglieder (ausgewählte HmIP-Thermostate bzw. BidCos-Thermostate), Schalter „Gruppe folgt Mitgliedern“ und „Gruppe meldet setValue zurück“.
-- **Kopfzeile:** Anmeldungen je Interface, Schalter für Multicall, PONG, `LOW_BAT` an Kanal 0 der Gruppen, Fahrzeit der Rollläden, CCU-Neustart.
+- **Kopfzeile:** Anmeldungen je Interface, Schalter für Multicall, PONG, `LOW_BAT` an Kanal 0 der Gruppen, Fahrzeit der Rollläden, Sollwert-Grenzen, CCU-Neustart.
 - **Unten:** Protokoll der letzten 200 Aufrufe und Events. `#n` verbindet ein `setValue` mit den Events, die es ausgelöst hat.
 
 ## Verhalten
 
 - **setValue:** prüft Datenpunkt, Schreibrecht und dass FLOAT als `<double>` ankommt (sonst Fault). Danach: Standard = Event mit demselben Wert. HmIP-Receiver-Kanäle melden zusätzlich am Transmitter-Kanal davor. `ON_TIME` + `STATE=true` schaltet nach Ablauf aus. Rollläden fahren mit der eingestellten Fahrzeit (`ACTIVITY_STATE` bzw. `WORKING`/`DIRECTION`). Thermostate melden nur zurück; `CONTROL_MODE` (HmIP) → `SET_POINT_MODE`, `AUTO_MODE`/`MANU_MODE`/`BOOST_MODE` (BidCos) → `CONTROL_MODE`.
 - **Gruppen:** Leere Gruppe: `setValue` → OK, aber nicht gespeichert und kein Event (gemessen). Mit Mitgliedern: Wert geht mit 100–500 ms Verzögerung an jedes Mitglied; die Gruppe meldet ihn über „Gruppe folgt Mitgliedern“ bzw. sofort mit „meldet setValue zurück“. Das ist angenommenes Verhalten, nicht gemessen.
+- **putParamset:** `VALUES` wendet die Werte in der Reihenfolge der Struktur an wie einzelne `setValue` (bei Gruppen auch an die Mitglieder), `MASTER` speichert sie. Unbekannter Parameter → `-5`.
+- **MASTER:** `getParamsetDescription`/`getParamset` mit `MASTER` liefern die Daten aus `master.json` (sonst `{}`). Schreiben über `putParamset` oder die UI. HmIP-Geräte melden danach `CONFIG_PENDING` kurz `true`, dann `false`. MASTER an einer Gruppe geht an die Thermostat-Kanäle der Mitglieder (angenommen, nicht gemessen).
+- **Batterie:** Ändert sich `OPERATING_VOLTAGE`, folgt `LOW_BAT`/`LOWBAT` der Regel Spannung ≤ `LOW_BAT_LIMIT`.
+- **Sollwert-Grenzen** (Kopfzeile, Standard „aus“): Mit „alle“ begrenzt ein Thermostat geschriebene Sollwerte auf `TEMPERATURE_MINIMUM`…`TEMPERATURE_MAXIMUM`, im manuellen Modus nicht, wenn `MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE` gesetzt ist. „außer 4,5“ lässt den Aus-Wert durch. Ob echte Geräte 4,5 °C (Aus) anheben, ist nicht gemessen; „alle“ bildet den Bericht aus #42 nach (Gruppe meldet nach Aus 5 °C, weil eTRV-B und WTH-2 ab Werk 5,0 °C als Minimum haben).
 - **`HM-CC-VG-1`:** `getParamset` liefert die Werte als Strings, wie die echte CCU. Events sind nach Beschreibung typisiert (nicht gemessen).
 - **init:** HmIP-RF/BidCos-RF rufen `listDevices` und `newDevices` nach der Antwort auf `init` auf, VirtualDevices zusätzlich `setReadyConfig` je Gruppe, alles vor der Antwort (wie gemessen).
 - **ping:** PONG an alle Clients des Interfaces. „PONG unterdrücken“ testet den STALE-Pfad nach 90 s.
