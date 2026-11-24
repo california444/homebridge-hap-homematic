@@ -186,9 +186,13 @@ function loadCatalog(supported) {
       devices: v.devices,
       desc: v.descriptions,
       defaults: v.values,
-      // HM-CC-VG-1 liefert an der echten CCU alle Werte als Strings
-      rawStrings: Object.values(v.values ?? {}).some((vals) =>
-        Object.values(vals).some((x) => typeof x === 'string' && x !== ''),
+      // HM-CC-VG-1 liefert an der echten CCU alle Werte als Strings. Echte
+      // STRING-Datenpunkte (PARTY_TIME_START bei HmIP-HEATING) zählen nicht.
+      rawStrings: Object.entries(v.values ?? {}).some(([ch, vals]) =>
+        Object.entries(vals).some(
+          ([dp, x]) =>
+            typeof x === 'string' && x !== '' && v.descriptions?.[ch]?.[dp]?.TYPE !== 'STRING',
+        ),
       ),
     });
     stats.virtual++;
@@ -359,7 +363,7 @@ function masterParamset(addr) {
 }
 /**
  * MASTER schreiben (putParamset oder UI). Gruppen geben Thermostat-Grenzen an die
- * Mitglieder weiter. HmIP meldet CONFIG_PENDING kurz true, dann false.
+ * Mitglieder weiter. Gerät bzw. Gruppe (und geänderte Mitglieder) melden CONFIG_PENDING kurz true, dann false.
  * Liefert eine Fehlermeldung oder null.
  */
 function putMaster(addr, values, corr) {
@@ -370,16 +374,11 @@ function putMaster(addr, values, corr) {
   const typed = (v) => (dev?.rawStrings && typeof v === 'number' ? String(v) : v);
   for (const [p, v] of Object.entries(values)) (state.master[addr] ??= {})[p] = typed(v);
   saveState();
-  if (dev?.iface === 'HmIP-RF') {
-    const ch0 = `${dev.address}:0`;
-    if (descOf(ch0)?.CONFIG_PENDING) {
-      emit(ch0, 'CONFIG_PENDING', true, { corr });
-      setTimeout(() => emit(ch0, 'CONFIG_PENDING', false, { corr }), 1500);
-    }
-  }
+  configPending(dev, corr);
   if (dev?.iface === 'VirtualDevices') {
     const cfg = state.groups[dev.address];
     for (const m of cfg?.members ?? []) {
+      let changed = false;
       for (const mch of memberChannels(dev, m)) {
         const mdesc = masterDescOf(mch) ?? {};
         const own = Object.fromEntries(Object.entries(values).filter(([p]) => mdesc[p]));
@@ -392,13 +391,24 @@ function putMaster(addr, values, corr) {
             params: [mch, own],
             corr,
           });
+          changed = true;
         }
       }
+      if (changed) configPending(catalog.get(m), corr);
     }
     saveState();
   }
   return null;
 }
+/** Nach einer MASTER-Änderung: CONFIG_PENDING an Kanal 0 kurz true, dann false (Geräte und Gruppen). */
+function configPending(dev, corr) {
+  if (!dev) return;
+  const ch0 = `${dev.address}:0`;
+  if (!descOf(ch0)?.CONFIG_PENDING) return;
+  emit(ch0, 'CONFIG_PENDING', true, { corr });
+  setTimeout(() => emit(ch0, 'CONFIG_PENDING', false, { corr }), 1500);
+}
+
 /** Grenzen für den Sollwert eines Thermostatkanals (Kanal-MASTER, sonst Geräte-MASTER). */
 function setPointLimits(ch) {
   const dev = deviceOf(ch);
