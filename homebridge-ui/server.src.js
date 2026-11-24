@@ -19,11 +19,15 @@ import { networkInterfaces } from 'node:os';
 
 import { HomebridgePluginUiServer, RequestError } from '@homebridge/plugin-ui-utils';
 
-// Boot-time diagnostic banner. homebridge-config-ui-x captures stdout of
-// the UI subprocess and surfaces it under "Custom UI logs" — and if the
-// user is just running `node server.js` to verify the install, this is
-// the first thing they see. If you DON'T see this line, the file isn't
-// reachable from the install path.
+// homebridge-config-ui-x copies the UI subprocess's stdout into the
+// Homebridge log. @homebridge/plugin-ui-utils logs "Incoming Request:
+// <path>" for every request with no way to turn it off; drop those lines.
+const consoleLog = console.log.bind(console);
+console.log = (...args) => {
+  if (args[0] === 'Incoming Request:') return;
+  consoleLog(...args);
+};
+
 // Read once at boot so /services can return it without re-reading per
 // request and so the boot banner has the same source of truth.
 const PLUGIN_VERSION = (() => {
@@ -39,9 +43,6 @@ const PLUGIN_VERSION = (() => {
   }
   const distRoot = resolvePath(here, '..', 'dist', 'src');
   const distPresent = existsSync(distRoot);
-  console.log(
-    `[homebridge-hap-homematic UI] v${version} booting from ${here}; dist present: ${distPresent}`,
-  );
   if (!distPresent) {
     console.error(
       `[homebridge-hap-homematic UI] FATAL: ${distRoot} does not exist. ` +
@@ -119,7 +120,6 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     this.onRequest('/devices/put', (payload) => this.handlePutDevices(payload));
 
     this.ready();
-    console.log('[homebridge-hap-homematic UI] handlers registered, ready signaled');
   }
 
   // --- handlers ----------------------------------------------------
