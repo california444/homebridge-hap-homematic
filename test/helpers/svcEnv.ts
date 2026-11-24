@@ -29,10 +29,14 @@ export interface SvcEnv {
   /** ccu.setValues: writes queued as one job (irrigation ON_TIME + STATE). */
   setValues: Mock;
   readValues: Mock;
+  /** ccu.readMaster: answers from `master` by address. */
+  readMaster: Mock;
   log: PrefixedLogger;
   hap: ReturnType<typeof makeHapStub>;
   /** Start values by channel address. */
   values: Record<string, Record<string, unknown>>;
+  /** MASTER values by channel or device address. */
+  master: Record<string, Record<string, unknown>>;
   fire(address: string, datapoint: string, value: unknown, callbackId?: string): void;
 }
 
@@ -46,6 +50,7 @@ export function makeSvcEnv(): SvcEnv {
   const env = {
     ccu,
     values: {} as Record<string, Record<string, unknown>>,
+    master: {} as Record<string, Record<string, unknown>>,
     hap: makeHapStub(),
     log: new PrefixedLogger(makeLog(), 'svc'),
   } as SvcEnv;
@@ -54,6 +59,9 @@ export function makeSvcEnv(): SvcEnv {
   env.readValues = vi
     .spyOn(ccu, 'readValues')
     .mockImplementation(async (a: string) => env.values[a]) as unknown as Mock;
+  env.readMaster = vi
+    .spyOn(ccu, 'readMaster')
+    .mockImplementation(async (a: string) => env.master[a]) as unknown as Mock;
   env.fire = (address, datapoint, value, callbackId = 'homebridge-hap-homematic:HmIP-RF') => {
     (ccu as unknown as { handleEvent(ev: object): void }).handleEvent({
       callbackId,

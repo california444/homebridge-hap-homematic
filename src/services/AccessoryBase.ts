@@ -212,6 +212,11 @@ export abstract class AccessoryBase {
     service.updateCharacteristic(char, v as CharacteristicValue);
   }
 
+  /** Run `fn` on dispose() (timers and the like). */
+  protected onDispose(fn: () => void): void {
+    this.disposers.push(fn);
+  }
+
   /** Save `accessory.context` to Homebridge's accessory cache. */
   protected persist(): void {
     this.persistFn?.();

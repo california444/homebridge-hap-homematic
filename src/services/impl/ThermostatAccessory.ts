@@ -1,6 +1,6 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
-import { AccessoryBase } from '../AccessoryBase.js';
+import { AccessoryBase, isTrue, maintenanceAddress } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { Service } from 'homebridge';
 import type { CcuChannel } from '../../types.js';
@@ -21,8 +21,43 @@ const HEATING_AUTO = 3;
 const OFF_TEMP = 4.5;
 /** Set point used for Heat after Off when no earlier target is known. */
 const DEFAULT_HEAT_TEMP = 20;
+/** Range of the target temperature without user options or MASTER limits. */
+const DEFAULT_MIN_TEMP = OFF_TEMP;
+const DEFAULT_MAX_TEMP = 30.5;
+/**
+ * After Off from Home, a heating group passes on its members' reports one
+ * by one for several seconds (20 → 18 → 5 → 18 → 5 in #42). Meanwhile the
+ * accessory stays Off whatever arrives.
+ */
+const OFF_GRACE_MS = 15_000;
 
 /**
+ * Set point limits from the MASTER paramset (TEMPERATURE_MINIMUM /
+ * TEMPERATURE_MAXIMUM). With MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE they
+ * do not apply in manual mode, which is what Home always writes.
+ */
+interface SetPointLimits {
+  min: number;
+  max: number;
+  notInManu: boolean;
+}
+
+/** Persisted in accessory.context.thermostat. */
+interface ThermostatContext {
+  limits?: SetPointLimits;
+  /** Off was chosen in Home and not undone since. */
+  offRequested?: boolean;
+}
+
+/**
+ * Off on a device whose minimum set point is above 4.5 °C: the device
+ * raises the written 4.5 to its minimum (HmIP-eTRV-B and HmIP-WTH-2 ship
+ * with 5.0 °C) and reports that back. Without more, Home would show
+ * "Heat 5 °C" right after Off (#42). So the accessory remembers that Off
+ * was chosen in Home and keeps showing Off while the device stays in
+ * manual mode at or below its minimum. A higher set point or Auto from
+ * the CCU ends that, as do Heat, Auto or a temperature from Home.
+ *
  * Datapoint names differ between the two radio systems:
  *   HmIP  (HEATING_CLIMATECONTROL_TRANSCEIVER): SET_POINT_TEMPERATURE,
  *         CONTROL_MODE (write: 0 auto, 1 manual), SET_POINT_MODE (read).
@@ -56,30 +91,41 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
   private mode: number | undefined;
   /** Mode reported by the CCU; undefined until the first value arrives. */
   private ccuMode: number | undefined;
+  private service: Service | undefined;
+  /** Range from the mapping options (minTemp / maxTemp), they win over MASTER. */
+  private userMin: number | undefined;
+  private userMax: number | undefined;
+  /** When Off was chosen in Home (0: not in this run). */
+  private offRequestedAt = 0;
+  private offGraceTimer: ReturnType<typeof setTimeout> | undefined;
+  private offNoticeLogged = false;
+  private configPending = false;
 
   attach(channel: CcuChannel): void {
     this.channelAddress = channel.address;
     const dialect = this.dialectFor(channel.type);
     const service = this.getOrAddService(this.Service.Thermostat, channel.name);
 
-    // Read user-pinned target-temperature range; default to the CCU
-    // typical 4.5..30.5 °C, which is what RaspberryMatic exposes.
+    this.service = service;
+
+    // Target temperature range: the mapping options minTemp / maxTemp
+    // win; otherwise the MASTER limits of the device (last known value
+    // from the context, refreshed in refresh()); otherwise 4.5..30.5 °C.
     const settings = (this.accessory.context.settings ?? {}) as {
       minTemp?: number;
       maxTemp?: number;
       minStep?: number;
       showHumidity?: unknown;
     };
-    const minTemp =
+    this.userMin =
       typeof settings.minTemp === 'number' && Number.isFinite(settings.minTemp)
         ? settings.minTemp
-        : 4.5;
-    const maxTemp =
-      typeof settings.maxTemp === 'number' &&
-      Number.isFinite(settings.maxTemp) &&
-      settings.maxTemp > minTemp
+        : undefined;
+    this.userMax =
+      typeof settings.maxTemp === 'number' && Number.isFinite(settings.maxTemp)
         ? settings.maxTemp
-        : 30.5;
+        : undefined;
+    const { min: minTemp, max: maxTemp } = this.range();
     const minStep =
       typeof settings.minStep === 'number' &&
       Number.isFinite(settings.minStep) &&
@@ -95,9 +141,10 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     service
       .getCharacteristic(this.Characteristic.TargetTemperature)
       .setProps({ minValue: minTemp, maxValue: maxTemp, minStep })
-      .onGet(this.wrapGet<number>(() => this.targetTemp))
+      .onGet(this.wrapGet<number>(() => this.shownTarget()))
       .onSet(
         this.wrapSet<number>(async (value) => {
+          this.clearOff();
           this.applyTarget(value);
           await this.ccu.setValue(this.channelAddress, dialect.setPoint, value);
         }),
@@ -116,12 +163,21 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
           this.mode = value;
           this.ccuMode = undefined;
           if (value === HEATING_OFF) {
+            this.requestOff();
             this.applyTarget(OFF_TEMP);
             await dialect.setManual(OFF_TEMP);
           } else if (value === HEATING_AUTO) {
+            this.clearOff();
             await dialect.setAuto();
           } else {
-            const temp = this.targetTemp > OFF_TEMP ? this.targetTemp : this.lastHeatTemp;
+            const wasOff = this.isOff();
+            this.clearOff();
+            const { min, max } = this.range();
+            const restore = wasOff || this.targetTemp <= this.offLimit();
+            const temp = Math.min(
+              max,
+              Math.max(min, restore ? this.lastHeatTemp : this.targetTemp),
+            );
             this.applyTarget(temp);
             await dialect.setManual(temp);
           }
@@ -148,6 +204,7 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       const v = toFiniteNumber(raw);
       if (v !== undefined) {
         this.applyTarget(v);
+        this.checkOff();
         this.pushState(service);
       }
     });
@@ -156,9 +213,21 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       const v = toFiniteNumber(raw);
       if (v !== undefined) {
         this.ccuMode = v;
+        this.checkOff();
         this.pushState(service);
       }
     });
+
+    // MASTER values send no events. After a change in the CCU the device
+    // reports CONFIG_PENDING true, then false: read the limits again.
+    this.registerListener(maintenanceAddress(this.channelAddress), 'CONFIG_PENDING', (raw) => {
+      const pending = isTrue(raw);
+      if (this.configPending && !pending) {
+        void this.readLimits();
+      }
+      this.configPending = pending;
+    });
+    this.onDispose(() => clearTimeout(this.offGraceTimer));
 
     // Pull initial state so the accessory reflects current values
     // immediately rather than waiting for the next push event.
@@ -259,15 +328,168 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     };
   }
 
+  /** Start values, then the MASTER limits (at start and after every re-subscribe). */
+  override async refresh(): Promise<void> {
+    await super.refresh();
+    await this.readLimits();
+  }
+
+  /**
+   * TEMPERATURE_MINIMUM / MAXIMUM from MASTER: HmIP keeps them on the
+   * thermostat channel, BidCos and HM-CC-VG-1 on the device. Unknown
+   * (no answer, no such parameters): the last known limits stay.
+   */
+  private async readLimits(): Promise<void> {
+    const device = this.channelAddress.split(':')[0]!;
+    let limits: SetPointLimits | undefined;
+    for (const address of [this.channelAddress, device]) {
+      const values = await this.ccu.readMaster(address);
+      const min = toFiniteNumber(values?.TEMPERATURE_MINIMUM);
+      const max = toFiniteNumber(values?.TEMPERATURE_MAXIMUM);
+      if (min !== undefined && max !== undefined && min < max) {
+        limits = { min, max, notInManu: isTrue(values?.MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE) };
+        break;
+      }
+    }
+    if (!limits) {
+      return;
+    }
+    const store = this.store();
+    const old = store.limits;
+    if (
+      old &&
+      old.min === limits.min &&
+      old.max === limits.max &&
+      old.notInManu === limits.notInManu
+    ) {
+      return;
+    }
+    store.limits = limits;
+    this.persist();
+    this.log.debug(
+      '%s: set point limits %s..%s °C%s',
+      this.accessory.displayName,
+      limits.min,
+      limits.max,
+      limits.notInManu ? ' (not in manual mode)' : '',
+    );
+    if (this.service) {
+      const { min, max } = this.range();
+      // A new range bumps the bridge's configuration number; Home reloads it.
+      this.service
+        .getCharacteristic(this.Characteristic.TargetTemperature)
+        .setProps({ minValue: min, maxValue: max });
+      this.checkOff();
+      this.pushState(this.service);
+    }
+  }
+
+  /** Target temperature range shown in Home (see attach). */
+  private range(): { min: number; max: number } {
+    const limits = this.activeLimits();
+    const min = this.userMin ?? limits?.min ?? DEFAULT_MIN_TEMP;
+    let max = this.userMax ?? limits?.max ?? DEFAULT_MAX_TEMP;
+    if (max <= min) {
+      max = Math.max(min + 0.5, DEFAULT_MAX_TEMP);
+    }
+    return { min, max };
+  }
+
+  /** MASTER limits that apply to what Home writes (manual mode). */
+  private activeLimits(): SetPointLimits | undefined {
+    const limits = this.store().limits;
+    return limits && !limits.notInManu ? limits : undefined;
+  }
+
+  /**
+   * Highest set point the device may report for Off: 4.5 °C, or its
+   * minimum if that is higher and also applies in manual mode.
+   */
+  private offLimit(): number {
+    return Math.max(OFF_TEMP, this.activeLimits()?.min ?? OFF_TEMP);
+  }
+
+  private store(): ThermostatContext {
+    const ctx = this.accessory.context as unknown as { thermostat?: ThermostatContext };
+    ctx.thermostat ??= {};
+    return ctx.thermostat;
+  }
+
+  private inOffGrace(): boolean {
+    return this.offRequestedAt > 0 && Date.now() - this.offRequestedAt < OFF_GRACE_MS;
+  }
+
+  private requestOff(): void {
+    this.store().offRequested = true;
+    this.persist();
+    this.offRequestedAt = Date.now();
+    clearTimeout(this.offGraceTimer);
+    // When the grace ends, settle on what the device reports by then.
+    this.offGraceTimer = setTimeout(() => {
+      this.offRequestedAt = 0;
+      this.checkOff();
+      if (this.service) this.pushState(this.service);
+    }, OFF_GRACE_MS);
+  }
+
+  private clearOff(): void {
+    clearTimeout(this.offGraceTimer);
+    this.offRequestedAt = 0;
+    if (this.store().offRequested) {
+      this.store().offRequested = false;
+      this.persist();
+    }
+  }
+
+  /**
+   * Outside the grace time: Off chosen in Home ends when the CCU reports
+   * Auto or a set point above the off limit (changed on the device or in
+   * the CCU).
+   */
+  private checkOff(): void {
+    if (!this.store().offRequested || this.inOffGrace()) {
+      return;
+    }
+    if (this.ccuMode === 0 || this.targetTemp > this.offLimit()) {
+      this.clearOff();
+      return;
+    }
+    if (this.targetTemp > OFF_TEMP && !this.offNoticeLogged) {
+      this.offNoticeLogged = true;
+      this.log.info(
+        '%s: Off is reported as %s °C, the minimum set point configured in the CCU',
+        this.accessory.displayName,
+        this.targetTemp,
+      );
+    }
+  }
+
+  /** Off at the off set point, or Off chosen in Home (see the class comment). */
+  private isOff(): boolean {
+    if (this.targetTemp <= OFF_TEMP) {
+      return true;
+    }
+    if (!this.store().offRequested) {
+      return false;
+    }
+    return this.inOffGrace() || (this.ccuMode !== 0 && this.targetTemp <= this.offLimit());
+  }
+
+  /** The target temperature within the range shown in Home. */
+  private shownTarget(): number {
+    const { min, max } = this.range();
+    return Math.min(max, Math.max(min, this.targetTemp));
+  }
+
   private applyTarget(temp: number): void {
     this.targetTemp = temp;
-    if (temp > OFF_TEMP) {
+    if (temp > this.offLimit() && !this.inOffGrace()) {
       this.lastHeatTemp = temp;
     }
   }
 
   private pushState(service: Service): void {
-    service.updateCharacteristic(this.Characteristic.TargetTemperature, this.targetTemp);
+    service.updateCharacteristic(this.Characteristic.TargetTemperature, this.shownTarget());
     service.updateCharacteristic(
       this.Characteristic.TargetHeatingCoolingState,
       this.deriveTargetMode(),
@@ -279,22 +501,22 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
   }
 
   /**
-   * Auto from the CCU mode; otherwise Off at the off set point, else Heat.
-   * Without a CCU mode (groups after a CCU restart): the mode chosen in
-   * Home, else the set point decides.
+   * Off (see isOff) in every mode, also Auto with a 4.5 °C slot in the
+   * week program; otherwise Auto from the CCU mode, else Heat. Without a
+   * CCU mode (groups after a CCU restart): the mode chosen in Home.
    */
   private deriveTargetMode(): number {
     if (this.ccuMode === undefined && this.mode !== undefined) {
       return this.mode;
     }
-    if (this.ccuMode === 0) {
-      return HEATING_AUTO;
+    if (this.isOff()) {
+      return HEATING_OFF;
     }
-    return this.targetTemp <= OFF_TEMP ? HEATING_OFF : HEATING_HEAT;
+    return this.ccuMode === 0 ? HEATING_AUTO : HEATING_HEAT;
   }
 
   private deriveCurrentMode(): number {
-    if (this.targetTemp <= OFF_TEMP) {
+    if (this.isOff()) {
       return HEATING_OFF;
     }
     return this.targetTemp > this.currentTemp ? HEATING_HEAT : HEATING_OFF;
