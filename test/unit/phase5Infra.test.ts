@@ -24,7 +24,7 @@ const ch = (address: string, type: string): CcuChannel => ({
   name: address,
 });
 
-describe('pairChannel (plan 8.4)', () => {
+describe('pairChannel', () => {
   const ps: CcuDevice = {
     address: 'PS',
     type: 'HMIP-PS',
@@ -104,7 +104,7 @@ describe('CcuClient values and typing', () => {
     return new CcuClient({ config, log: new PrefixedLogger(makeLog(), 't') });
   }
 
-  it('toTyped shapes values by paramset TYPE (plan 4.3)', () => {
+  it('toTyped shapes values by paramset TYPE', () => {
     expect(toTyped('FLOAT', 1)).toEqual({ explicitDouble: 1 });
     expect(toTyped('FLOAT', 'x')).toEqual({ explicitDouble: 0 });
     expect(toTyped('INTEGER', 2.6)).toBe(3);
@@ -180,7 +180,7 @@ describe('CcuClient values and typing', () => {
   });
 });
 
-describe('clampToProps (plan 8.5)', () => {
+describe('clampToProps', () => {
   it('clamps numbers, enforces validValues, passes non-numbers', () => {
     expect(clampToProps(120, { minValue: 0, maxValue: 100 })).toBe(100);
     expect(clampToProps(-3, { minValue: 0 })).toBe(0);

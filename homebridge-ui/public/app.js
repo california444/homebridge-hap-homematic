@@ -159,7 +159,7 @@ const GROUP_RE = /^(SWITCH|SHUTTER|BLIND|DIMMER)_(TRANSMITTER|VIRTUAL_RECEIVER)$
  *     a pure input device (HmIP-DSD-PCB bell signal) keeps them.
  *   - every channel of a heating group (VirtualDevices) except the
  *     thermostat channel 1: the others (window contact, switch outputs,
- *     floor heating) only mirror the members (plan-gruppen 3.5).
+ *     floor heating) only mirror the members.
  * Channels already in devices.json are never hidden.
  */
 function hiddenChannels(device) {

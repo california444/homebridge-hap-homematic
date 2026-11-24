@@ -52,7 +52,7 @@ export function parseDeviceKey(
 }
 
 /**
- * UUID seed per decision D6: `<Interface>:<Serial>:<Channel>:<Service>`.
+ * UUID seed: `<Interface>:<Serial>:<Channel>:<Service>`.
  * Device mappings use `device` in place of the channel number. Changing
  * the service therefore creates a new HomeKit accessory.
  */

@@ -315,7 +315,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * Plan 7.3: after a re-subscribe compare listDevices with what we had
+   * After a re-subscribe compare listDevices with what we had
    * and let the interface's handlers re-read their values (events during
    * the outage are lost).
    */
@@ -364,7 +364,7 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
   /**
    * The channel a handler attaches to. Per-channel mappings name it; for
    * device mappings it is the first channel whose type the service
-   * supports (refined per service in Phase 5).
+   * supports (refined per service).
    */
   private resolveChannel(mapping: AccessoryMapping, channelTypes: string[]): CcuChannel {
     const device = this.discovery?.findDevice(mapping.interface, mapping.device);

@@ -449,7 +449,7 @@ describe('ThermostatAccessory', () => {
     expect(await getChar(service, 'TemperatureDisplayUnits').onGetHandler!()).toBe(0);
   });
 
-  describe('heating groups (plan-gruppen 3.6)', () => {
+  describe('heating groups', () => {
     const vg: CcuChannel = {
       address: 'INT0000002:1',
       name: 'Group BidCos',

@@ -6,7 +6,7 @@ import type { CcuChannel } from '../../types.js';
 
 const SMOKE_CHANNEL_TYPES = ['SMOKE_DETECTOR', 'SMOKE_DETECTOR_COMMUNICATION'];
 
-/** HmIP-SWSD SMOKE_DETECTOR_ALARM_STATUS (plan 3.1 / 8.3). */
+/** HmIP-SWSD SMOKE_DETECTOR_ALARM_STATUS. */
 export const ALARM_STATUS = [
   'IDLE_OFF',
   'PRIMARY_ALARM',

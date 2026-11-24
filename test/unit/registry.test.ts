@@ -51,7 +51,7 @@ describe('SERVICE_DEFINITIONS shape', () => {
   });
 });
 
-describe('service option metadata (UI, plan 5.3)', () => {
+describe('service option metadata (UI)', () => {
   it('declares the options the handlers read', () => {
     const keys = (k: string) => (findServiceByKey(k)?.options ?? []).map((o) => o.key);
     expect(keys('BlindAccessory')).toEqual(['invert']);

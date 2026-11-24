@@ -1,10 +1,10 @@
 /**
- * HmIP transmitter / virtual-receiver pairing (plan 8.4).
+ * HmIP transmitter / virtual-receiver pairing.
  *
  * HmIP actuators (HmIP-PS, -DRSI4, -BROLL, -FROLL, …) expose one
  * `<KIND>_TRANSMITTER` channel with the real output state, followed by
  * three `<KIND>_VIRTUAL_RECEIVER` channels that take commands. A receiver
- * only reports its own (virtual) state, not the output (3.1, finding 4).
+ * only reports its own (virtual) state, not the output.
  * So: read state from the transmitter, send commands to the first
  * receiver after it. The grouping follows the channel order (CHILDREN),
  * not fixed numbers.

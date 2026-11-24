@@ -80,7 +80,7 @@ export class SetValueError extends Error {
 /** Receives the failed commands to the addresses it owns, see setOwner(). */
 export type SetFailureReporter = (err: SetValueError) => void;
 
-/** sendQueue defaults (plan-sendequeue.md). */
+/** sendQueue defaults. */
 export const SEND_QUEUE_DEFAULTS = { timeoutMs: 5000, gapMs: 100 } as const;
 
 /** Last known signal strength of a device in dBm, both directions. */
@@ -391,7 +391,7 @@ export class CcuClient extends EventEmitter {
   }
 
   /**
-   * Queue a CCU datapoint write (plan-sendequeue.md) and return at once.
+   * Queue a CCU datapoint write and return at once.
    * The send queue sends one setValue at a time across all interfaces; a
    * newer write to the same datapoint replaces a waiting one. A failure
    * goes to the address's owner (setOwner), else to the log.
@@ -468,7 +468,7 @@ export class CcuClient extends EventEmitter {
 
   /**
    * One setValue via XML-RPC on the channel's interface, typed by the
-   * paramset description (plan 4.3): FLOAT as explicit double (the CCU
+   * paramset description: FLOAT as explicit double (the CCU
    * rejects `1` as int for a FLOAT), INTEGER/ENUM rounded, BOOL and
    * ACTION as boolean. Without a description the value is sent as is.
    */
@@ -540,8 +540,8 @@ export class CcuClient extends EventEmitter {
    * Current values of a channel via `getParamset(VALUES)` (no radio
    * traffic). Concurrent calls for the same channel share one request.
    * `undefined` when the CCU answered with an error (e.g. BidCos device
-   * without power, plan 3.1 finding 1); `{}` for unreachable HmIP devices.
-   * ACTION datapoints (PRESS_*) are never returned (plan 4.2).
+   * without power); `{}` for unreachable HmIP devices.
+   * ACTION datapoints (PRESS_*) are never returned.
    */
   readValues(address: string): Promise<Record<string, unknown> | undefined> {
     const running = this.inflight.get(address);

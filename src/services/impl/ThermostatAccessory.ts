@@ -70,7 +70,7 @@ interface ThermostatContext {
  * 3 = boost. Humidity (wall thermostats, heating groups with one):
  * HUMIDITY (HmIP), ACTUAL_HUMIDITY (BidCos).
  *
- * Heating groups (VirtualDevices, plan-gruppen 3.6) use the same channel
+ * Heating groups (VirtualDevices) use the same channel
  * types. HM-CC-VG-1 sends every value as a string (toFiniteNumber takes
  * both). A group may lack SET_POINT_MODE after a CCU restart and never
  * reports LOW_BAT unless a member does.

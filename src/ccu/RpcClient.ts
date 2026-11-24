@@ -15,8 +15,7 @@ import type { CcuInterfaceId } from '../types.js';
 const PROBE_TIMEOUT_MS = 5_000;
 /**
  * Upper bound for one XML-RPC call. homematic-xmlrpc has no timeout of
- * its own; while the CCU shuts down, calls otherwise hang (plan 3.1,
- * finding 14). `init` gets more time: the CCU calls our listDevices
+ * its own; while the CCU shuts down, calls otherwise hang. `init` gets more time: the CCU calls our listDevices
  * before it answers.
  */
 export const CALL_TIMEOUT_MS = 15_000;
@@ -309,10 +308,9 @@ export class RpcClient {
 
   /**
    * XML-RPC `getParamset(address, 'VALUES')`: current values of a channel,
-   * usually from the CCU's cache without radio traffic (plan 3.1, finding
-   * 11). For BidCos values that are old, rfd may ask the device by radio
+   * usually from the CCU's cache without radio traffic. For BidCos values that are old, rfd may ask the device by radio
    * (CONFIG_STATUS_REQ, seen right after init on 17.11.2026).
-   * Unreachable HmIP devices answer `{}` (finding 2).
+   * Unreachable HmIP devices answer `{}`.
    * `MASTER`: the channel's (or, with a device address, the device's)
    * configuration as stored by the CCU.
    */

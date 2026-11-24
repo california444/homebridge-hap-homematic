@@ -1,5 +1,5 @@
 /**
- * Irrigation (plan 8.1, decision D3): one HomeKit IrrigationSystem with a
+ * Irrigation: one HomeKit IrrigationSystem with a
  * linked Valve per switch channel of a multi-channel actuator such as the
  * HM-LC-Sw4-DR-2. Mapped as a whole device in devices.json:
  *
@@ -179,7 +179,7 @@ class IrrigationHandler extends AccessoryBase implements ChannelService {
       store.durations![key] ??
       clampDuration(Number(settings.defaultDuration ?? DEFAULT_DURATION_S));
     if (duration > 0) {
-      // The actuator switches off by itself after ON_TIME (D3). ON_TIME and
+      // The actuator switches off by itself after ON_TIME. ON_TIME and
       // STATE are one job in the send queue, nothing gets in between.
       this.ccu.setValues(valve.address, [
         ['ON_TIME', duration],

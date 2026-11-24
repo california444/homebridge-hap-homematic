@@ -135,7 +135,7 @@ describe('RpcClient', () => {
     await expect(c.ping('me')).rejects.toThrow('Invalid XML-RPC message');
   });
 
-  it('unsubscribes with exactly the same callback URL and an empty id (plan 7.5)', async () => {
+  it('unsubscribes with exactly the same callback URL and an empty id', async () => {
     const t = makeTransport();
     const c = makeClient(t);
     await c.unsubscribe(); // not subscribed → no call

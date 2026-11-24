@@ -1,5 +1,5 @@
 /**
- * Keeps one CCU interface (rfd or HMIPServer) subscribed (plan section 7).
+ * Keeps one CCU interface (rfd or HMIPServer) subscribed.
  *
  *   CONNECTING ──init OK──► CONNECTED ──ping call fails──► DISCONNECTED
  *        │                     │                               │
@@ -9,7 +9,7 @@
  *   CONNECTED ──no own PONG and no other callback for 90 s──► STALE ──init──► CONNECTED
  *
  * Why: after a CCU restart the CCU answers `ping` again but has forgotten
- * every subscription and never re-registers on its own (3.1, finding 14).
+ * every subscription and never re-registers on its own.
  * Only the PONG event proves the subscription is alive; any other callback
  * for this interface (events, foreign PONGs, listDevices, newDevices) counts
  * as well. A failing `ping` call means "unreachable"; the first successful

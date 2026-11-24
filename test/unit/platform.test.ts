@@ -554,7 +554,7 @@ describe('HomematicPlatform', () => {
     ).toBe(true);
   });
 
-  it('phase 5 wiring: HmIP pairing, device to attach, start values via refresh, persist, describer', async () => {
+  it('wiring: HmIP pairing, device to attach, start values via refresh, persist, describer', async () => {
     await writeDevices({
       version: 1,
       devices: {

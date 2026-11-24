@@ -1,5 +1,5 @@
 /**
- * Device discovery over XML-RPC with on-disk caches (plan sections 4.1, 6).
+ * Device discovery over XML-RPC with on-disk caches.
  *
  *   discovery.json  raw `listDevices` answer per interface. Used when an
  *                   interface is unreachable at start, so accessories still

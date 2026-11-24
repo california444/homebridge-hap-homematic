@@ -14,7 +14,7 @@ const SMOKE: CcuChannel = {
   name: 'RM1',
 };
 
-describe('SmokeAccessory (plan 8.3)', () => {
+describe('SmokeAccessory', () => {
   const setup = (settings?: Record<string, unknown>) => {
     const env = makeSvcEnv();
     vi.spyOn(env.ccu, 'getInterfaceState').mockReturnValue('CONNECTED');
@@ -60,7 +60,7 @@ describe('SmokeAccessory (plan 8.3)', () => {
     expect(await smoke.onGetHandler!()).toBe(0);
   });
 
-  it('no value yet (CCU restart, finding 16): "no smoke" + StatusFault, battery normal, until the first value', async () => {
+  it('no value yet (CCU restart): "no smoke" + StatusFault, battery normal, until the first value', async () => {
     const { env, a, smoke, fault } = setup();
     env.values[SMOKE.address] = {};
     await a.handler.refresh();
@@ -143,7 +143,7 @@ describe('ContactAccessory', () => {
   });
 });
 
-describe('SwitchAccessory with HmIP pairing (plan 8.4)', () => {
+describe('SwitchAccessory with HmIP pairing', () => {
   it('reads STATE from the transmitter, writes to the receiver, ignores receiver STATE', async () => {
     const env = makeSvcEnv();
     const ch: CcuChannel = {
@@ -168,7 +168,7 @@ describe('SwitchAccessory with HmIP pairing (plan 8.4)', () => {
   });
 });
 
-describe('IrrigationAccessory (plan 8.1)', () => {
+describe('IrrigationAccessory', () => {
   const SERIAL = 'ABC0000002';
   const dev: CcuDevice = {
     address: SERIAL,
@@ -229,7 +229,7 @@ describe('IrrigationAccessory (plan 8.1)', () => {
     expect(fallback.a.accessory.services.filter((s) => s.UUID === 'srv:Valve')).toHaveLength(4);
   });
 
-  it('on: ON_TIME first, then STATE; the actuator switches off itself (D3)', async () => {
+  it('on: ON_TIME first, then STATE; the actuator switches off itself', async () => {
     const { env, a, valve } = setup();
     const dur = a.char(valve(1), 'SetDuration');
     expect(dur.onGetHandler!()).toBe(600);
@@ -358,7 +358,7 @@ describe('IrrigationAccessory (plan 8.1)', () => {
   });
 });
 
-describe('DoorbellAccessory (plan 8.2)', () => {
+describe('DoorbellAccessory', () => {
   const D: CcuChannel = {
     address: '0026E0000000C1:1',
     index: 1,
@@ -371,7 +371,7 @@ describe('DoorbellAccessory (plan 8.2)', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('rings on PRESS_SHORT whatever the value (finding 7), debounced 2 s, onGet null', async () => {
+  it('rings on PRESS_SHORT whatever the value, debounced 2 s, onGet null', async () => {
     const env = makeSvcEnv();
     const a = build(env, doorbellService, D);
     const ev = a.char(a.svc('Doorbell'), 'ProgrammableSwitchEvent');
@@ -391,7 +391,7 @@ describe('DoorbellAccessory (plan 8.2)', () => {
     expect(ev.updateValue).toHaveBeenCalledTimes(2);
   });
 
-  it('never rings from start values (ACTION, plan 4.2)', async () => {
+  it('never rings from start values (ACTION)', async () => {
     const env = makeSvcEnv();
     const a = build(env, doorbellService, D);
     env.values[D.address] = { PRESS_SHORT: true, STATE: true };

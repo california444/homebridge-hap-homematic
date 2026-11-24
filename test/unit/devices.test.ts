@@ -18,7 +18,7 @@ import type { DevicesFile } from '../../src/types.js';
 
 const KNOWN = new Set(['SwitchAccessory', 'BlindAccessory', 'IrrigationAccessory']);
 
-/** The example from plan section 5.2 (with made-up serials). */
+/** The example from docs/DEVICES.md (with made-up serials). */
 const EXAMPLE = {
   version: 1,
   devices: {
@@ -51,7 +51,7 @@ const errorsOf = (raw: unknown, known: ReadonlySet<string> | undefined = KNOWN):
 };
 
 describe('validateDevicesFile', () => {
-  it('accepts the plan 5.2 example', () => {
+  it('accepts the documented example', () => {
     expect(validateDevicesFile(EXAMPLE, KNOWN)).toEqual({ ok: true, file: EXAMPLE });
     expect(validateDevicesFile(emptyDevicesFile()).ok).toBe(true);
   });
@@ -292,7 +292,7 @@ describe('toMappings', () => {
   });
 });
 
-describe('keys and UUID seed (D6)', () => {
+describe('keys and UUID seed', () => {
   it('parses device keys', () => {
     expect(parseDeviceKey('HmIP-RF:00000000000A01')).toEqual({
       interface: 'HmIP-RF',

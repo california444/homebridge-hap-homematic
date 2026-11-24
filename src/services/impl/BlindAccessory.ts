@@ -1,7 +1,7 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
 // Taken from upstream commit 2011787 (2026-11-11); see NOTICE.
-// Changed for plan 8.4 / 8.6: transmitter state, invert, unknown values.
+// Changed: transmitter state, invert, unknown values.
 import type { Service } from 'homebridge';
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
