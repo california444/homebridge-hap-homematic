@@ -81,7 +81,7 @@ in the channel entry.
 | `ContactAccessory`    | `invert`            | `false`       | swap open / closed. Always a HomeKit contact sensor; the former variants `door` / `window` (motorised-door services with a useless position slider) are mapped to it                                                                                                                   |
 | `ThermostatAccessory` | `showHumidity`      | `false`       | humidity (`HUMIDITY` / `ACTUAL_HUMIDITY`) on the thermostat; only for devices with a sensor (wall thermostats) or heating groups with one as member — an empty group reports placeholders. Not offered in the UI and ignored for channels without the datapoint (radiator thermostats) |
 | `SmokeAccessory`      | `secondaryAlarm`    | `true`        | `false`: an alarm of another detector of the group does not show smoke on this one                                                                                                                                                                                                     |
-| `DoorbellAccessory`   | `trigger`           | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge)                                                                                                                                                                                                                                   |
+| `DoorbellAccessory`   | `trigger`           | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge); must fit the input's operating mode, see [Input channels](#input-channels)                                                                                                                                                       |
 | `DoorbellAccessory`   | `debounceSeconds`   | `2`           | repeats within this time are ignored                                                                                                                                                                                                                                                   |
 | `IrrigationAccessory` | `defaultDuration`   | `600`         | run time in seconds (max. 3600), sent as `ON_TIME`; the actuator switches off by itself. A duration set for a valve in Home replaces it for that valve. `0` = stays on until switched off                                                                                              |
 | `IrrigationAccessory` | channel `valveType` | `Irrigation`  | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet`                                                                                                                                                                                                                              |
@@ -100,6 +100,26 @@ state there and sends commands to the first `*_VIRTUAL_RECEIVER` after it.
 Mapping a receiver of the group works the same. The custom UI lists only one
 channel per group and hides channels no service can handle as well as the
 CCU's virtual remote (RCV-50) and the built-in buttons / wall-button inputs (`KEY_TRANSCEIVER`, `MULTI_MODE_INPUT_TRANSMITTER`) of actuators; "Show all channels" lists every channel.
+
+### Input channels
+
+What an input channel (`MULTI_MODE_INPUT_TRANSMITTER`: HmIP-DSD-PCB,
+HmIP-FCI1 / FCI6, wall-button inputs of HmIP-DRSI4) sends depends on its
+operating mode in the CCU (`CHANNEL_OPERATION_MODE`, `MASTER`):
+
+| Operating mode | Sends                       | Services                                       |
+| -------------- | --------------------------- | ---------------------------------------------- |
+| key            | `PRESS_SHORT`, `PRESS_LONG` | push button; doorbell with `trigger` `PRESS_*` |
+| switch, binary | `STATE`                     | doorbell with `trigger: STATE`                 |
+| inactive       | nothing                     | none                                           |
+
+The custom UI reads the mode when the channel editor opens and offers only
+the services and trigger values that fit (all of them if the CCU does not
+tell). For a doorbell on a switch or binary input it stores
+`trigger: STATE`. The plugin reads the mode at start, after every
+re-subscribe and after a configuration change (`CONFIG_PENDING`) and logs
+a warning once if a mapping does not fit, e.g. a push button on an input
+that was later set to switch in the CCU.
 
 ### Battery
 

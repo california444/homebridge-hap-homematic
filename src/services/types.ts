@@ -14,6 +14,7 @@ import type { Characteristic, PlatformAccessory, Service } from 'homebridge';
 import type { CcuClient } from '../ccu/CcuClient.js';
 import type { PrefixedLogger } from '../util/logger.js';
 import type { AccessoryContext, CcuChannel, CcuDevice } from '../types.js';
+import type { InputMode } from './inputMode.js';
 
 /** The parts of `api.hap` the handlers need for HAP status errors. */
 export interface HapStatus {
@@ -64,6 +65,12 @@ export interface OptionSpec {
    * CCU unreachable: offered.
    */
   datapoints?: string[];
+  /**
+   * enum on input channels (MULTI_MODE_INPUT_TRANSMITTER): values that
+   * work in each operating mode of the channel (CHANNEL_OPERATION_MODE).
+   * The custom UI offers only these once it knows the mode.
+   */
+  inputModeValues?: Partial<Record<InputMode, string[]>>;
 }
 
 export interface ServiceDefinition {
@@ -79,6 +86,12 @@ export interface ServiceDefinition {
   variants?: ServiceVariant[];
   /** `device`: one accessory for the whole device (devices.json mode "device"). */
   scope?: 'channel' | 'device';
+  /**
+   * Input channels (MULTI_MODE_INPUT_TRANSMITTER): operating modes
+   * (CHANNEL_OPERATION_MODE) in which the service works. The custom UI
+   * offers it only in these; the handler warns on a mismatch.
+   */
+  inputModes?: InputMode[];
   /** Options of the mapping. */
   options?: OptionSpec[];
   /** Device scope: options per channel (e.g. valve name and type). */

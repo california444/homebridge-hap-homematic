@@ -58,6 +58,7 @@ import { DISCOVERY_CACHE_FILE } from '../dist/src/ccu/Discovery.js';
 import { resolveConfig, ConfigError } from '../dist/src/util/config.js';
 import { PrefixedLogger } from '../dist/src/util/logger.js';
 import { SERVICE_DEFINITIONS, servicesForChannelType } from '../dist/src/services/registry.js';
+import { toInputMode } from '../dist/src/services/inputMode.js';
 import { PluginStorage } from '../dist/src/util/storage.js';
 import {
   DEVICES_FILE,
@@ -134,6 +135,7 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
         priority: s.priority,
         variants: s.variants ?? [],
         scope: s.scope ?? 'channel',
+        inputModes: s.inputModes ?? null,
         options: s.options ?? [],
         channelOptions: s.channelOptions ?? [],
       })),
@@ -204,7 +206,9 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
    * Datapoint names of one channel (getParamsetDescription VALUES, no
    * radio traffic), for options that need a datapoint (OptionSpec
    * `datapoints`). `datapoints: null` if the CCU did not answer; the UI
-   * then offers every option.
+   * then offers every option. With `inputMode: true` also the operating
+   * mode of an input channel (CHANNEL_OPERATION_MODE from MASTER, e.g.
+   * `KEY_BEHAVIOR`), `null` if unknown; the UI then offers every service.
    */
   async handleParamset(payload) {
     const address = typeof payload?.address === 'string' ? payload.address : '';
@@ -222,11 +226,19 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
       ccu.setInterfaceFor(address.split(':')[0], payload.interface);
     }
     try {
-      const description = await ccu.getParamsetDescription(address);
-      return { address, datapoints: Object.keys(description ?? {}) };
-    } catch (err) {
-      console.warn('[ui] getParamsetDescription(%s) failed: %s', address, err.message);
-      return { address, datapoints: null };
+      let datapoints = null;
+      try {
+        datapoints = Object.keys((await ccu.getParamsetDescription(address)) ?? {});
+      } catch (err) {
+        console.warn('[ui] getParamsetDescription(%s) failed: %s', address, err.message);
+      }
+      // Input channels: operating mode (CHANNEL_OPERATION_MODE, MASTER).
+      let inputMode = null;
+      if (payload.inputMode === true) {
+        const master = await ccu.readMaster(address);
+        inputMode = toInputMode(master?.CHANNEL_OPERATION_MODE) ?? null;
+      }
+      return { address, datapoints, inputMode };
     } finally {
       try {
         await ccu.stop();

@@ -24,7 +24,8 @@ import type {
 import { SetValueError, type CcuClient, type SignalInfo } from '../ccu/CcuClient.js';
 import { formatSeconds } from '../ccu/SendQueue.js';
 import type { PrefixedLogger } from '../util/logger.js';
-import type { AccessoryContext, CcuInterfaceId } from '../types.js';
+import type { AccessoryContext, CcuChannel, CcuInterfaceId } from '../types.js';
+import { INPUT_CHANNEL_TYPE, INPUT_MODE_LABELS, toInputMode, type InputMode } from './inputMode.js';
 import type { HapStatus, ServiceContext } from './types.js';
 import { clampToProps, toFiniteNumber, type ValueProps } from '../util/sanitize.js';
 
@@ -254,6 +255,41 @@ export abstract class AccessoryBase {
       return;
     }
     service.updateCharacteristic(char, v as CharacteristicValue);
+  }
+
+  /**
+   * Input channels (MULTI_MODE_INPUT_TRANSMITTER): read the operating mode
+   * (CHANNEL_OPERATION_MODE, MASTER) on refresh and after a configuration
+   * change, and warn once per mode when `check` names a problem, e.g. a
+   * button mapping on an input that sends STATE only. Other channel
+   * types: nothing.
+   */
+  protected watchInputMode(
+    channel: CcuChannel,
+    check: (mode: InputMode) => string | undefined,
+  ): void {
+    if (channel.type !== INPUT_CHANNEL_TYPE) {
+      return;
+    }
+    let last: InputMode | undefined;
+    this.readMasterOnRefresh(channel.address, async () => {
+      const master = await this.ccu.readMaster(channel.address);
+      const mode = toInputMode(master?.CHANNEL_OPERATION_MODE);
+      if (!mode || mode === last) {
+        return;
+      }
+      last = mode;
+      const problem = check(mode);
+      if (problem) {
+        this.log.warn(
+          '%s: input %s is set to "%s" in the CCU: %s',
+          this.accessory.displayName,
+          channel.address,
+          INPUT_MODE_LABELS[mode],
+          problem,
+        );
+      }
+    });
   }
 
   /** Run `fn` on dispose() (timers and the like). */
