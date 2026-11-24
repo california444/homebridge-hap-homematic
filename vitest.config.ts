@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
+    // No test may reach a real CCU or a local CCU mock (XML-RPC ports).
+    setupFiles: ['test/setup/noRealCcu.ts'],
     coverage: {
       provider: 'v8',
       // One HTML report in coverage/ (the lcov reporter would add a second
