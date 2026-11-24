@@ -103,6 +103,14 @@ Tested on real hardware with an OpenCCU:
 | HmIP-SWSD       | HmIP-RF   | Smoke detector               |
 | HmIP-DSD-PCB    | HmIP-RF   | Doorbell                     |
 
+Tested by users:
+
+| Device                                       | Interface      | Service                           |
+| -------------------------------------------- | -------------- | --------------------------------- |
+| HmIP-HEATING group (HmIP-WTH-2, HmIP-eTRV-B) | VirtualDevices | Thermostat, humidity ([#42][i42]) |
+
+[i42]: https://github.com/california444/homebridge-hap-homematic/issues/42
+
 The other services are implemented and unit-tested, but have not been
 checked on real devices yet. Reports are welcome as an
 [issue](https://github.com/california444/homebridge-hap-homematic/issues).
