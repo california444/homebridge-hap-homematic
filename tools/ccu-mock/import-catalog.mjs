@@ -4,6 +4,10 @@
 //   node tools/ccu-mock/import-catalog.mjs pydevccu <Pfad zu pydevccu-0.2.6/pydevccu>
 //       → catalog/pydevccu/devices.json  (nur Geräte-/Kanalbeschreibungen und VALUES-Beschreibungen)
 //
+//   node tools/ccu-mock/import-catalog.mjs master <Pfad zu pydevccu/pydevccu>
+//       → catalog/pydevccu/master.json  (MASTER-Beschreibungen je Gerätetyp, nur die Parameter
+//         in MASTER_PARAMS; Schlüssel = Kanalnummer, "device" für das Gerät selbst)
+//
 //   node tools/ccu-mock/import-catalog.mjs virtual <virtual-devices.json aus p03-spike.mjs>
 //       → catalog/virtual/<TYP>.json  (je Gruppentyp eine Datei, Adresse auf INT0000001 normiert)
 //
@@ -50,6 +54,43 @@ if (mode === 'pydevccu') {
   }
   writeJson(path.join(here, 'catalog/pydevccu/devices.json'), out);
   console.log(`${Object.keys(out).length} Gerätetypen übernommen.`);
+} else if (mode === 'master') {
+  // Nur was das Plugin auswerten könnte: Batteriegrenze, Thermostat-Grenzen, Betriebsart von Eingängen
+  const MASTER_PARAMS = [
+    'LOW_BAT_LIMIT',
+    'TEMPERATURE_MINIMUM',
+    'TEMPERATURE_MAXIMUM',
+    'MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE',
+    'CHANNEL_OPERATION_MODE',
+  ];
+  const KEEP = ['ID', 'TYPE', 'OPERATIONS', 'FLAGS', 'MIN', 'MAX', 'DEFAULT', 'UNIT', 'VALUE_LIST'];
+  const devDir = path.join(src, 'device_descriptions');
+  const psDir = path.join(src, 'paramset_descriptions');
+  const out = {};
+  for (const file of fs
+    .readdirSync(psDir)
+    .filter((f) => f.endsWith('.json'))
+    .sort()) {
+    const devFile = path.join(devDir, file);
+    const parent = fs.existsSync(devFile) ? readJson(devFile).find((d) => !d.PARENT) : null;
+    if (!parent) continue;
+    const byChannel = {};
+    for (const [address, sets] of Object.entries(readJson(path.join(psDir, file)))) {
+      const master = sets?.MASTER ?? {};
+      const picked = {};
+      for (const p of MASTER_PARAMS) {
+        if (!master[p]) continue;
+        picked[p] = Object.fromEntries(
+          KEEP.filter((k) => k in master[p]).map((k) => [k, master[p][k]]),
+        );
+      }
+      if (Object.keys(picked).length === 0) continue;
+      byChannel[address.includes(':') ? address.split(':')[1] : 'device'] = picked;
+    }
+    if (Object.keys(byChannel).length) out[parent.TYPE] = byChannel;
+  }
+  writeJson(path.join(here, 'catalog/pydevccu/master.json'), out);
+  console.log(`${Object.keys(out).length} Gerätetypen mit MASTER-Parametern übernommen.`);
 } else if (mode === 'virtual') {
   const { devices } = readJson(src);
   for (const parent of devices.filter((d) => !d.PARENT)) {
