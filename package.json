@@ -1,6 +1,6 @@
 {
   "name": "homebridge-hap-homematic",
-  "version": "1.3.0-beta.4",
+  "version": "1.3.0",
   "description": "Homebridge plugin for HomeMatic / HomematicIP devices on a CCU / OpenCCU, using XML-RPC only.",
   "keywords": [
     "ccu",
