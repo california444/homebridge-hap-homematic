@@ -11,7 +11,7 @@ import type { PlatformConfig } from 'homebridge';
 
 /**
  * CCU interfaces this plugin talks to (XML-RPC only): the two radio
- * interfaces and VirtualDevices (heating groups, plan-gruppen.md).
+ * interfaces and VirtualDevices (heating groups).
  */
 export type CcuInterfaceId = 'BidCos-RF' | 'HmIP-RF' | 'VirtualDevices';
 
@@ -47,7 +47,7 @@ export interface ResolvedConfig {
   useTls: boolean;
   rpcAuth: RpcAuthConfig;
   eventServer: EventServerConfig;
-  /** setValue send queue (plan-sendequeue.md); defaults 5000 / 100 ms. */
+  /** setValue send queue; defaults 5000 / 100 ms. */
   sendQueue?: SendQueueConfig;
 }
 

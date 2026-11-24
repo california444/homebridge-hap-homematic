@@ -5,7 +5,7 @@
  *   - access to platform-level objects (Service / Characteristic / api / ccu)
  *   - getOrAdd helpers for HAP services
  *   - registerListener() that auto-cleans on dispose()
- *   - need() / readOnRefresh(): start values via getParamset (plan 4.2)
+ *   - need() / readOnRefresh(): start values via getParamset
  *   - unknown(): "No Response" instead of a made-up default
  *   - update(): push values clamped to the characteristic's props (8.5)
  *   - watchFault(): StatusFault from UNREACH and the interface state (7.7, 8.5)
@@ -350,7 +350,7 @@ export abstract class AccessoryBase {
 
   /**
    * Tracked async setter that maps thrown errors to a HAP-friendly fault.
-   * setValue only queues the command (plan-sendequeue.md), so HomeKit gets
+   * setValue only queues the command, so HomeKit gets
    * its answer at once; a command the CCU did not deliver is logged later
    * via reportSetFailure.
    */

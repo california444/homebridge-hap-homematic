@@ -113,7 +113,7 @@ export interface ChannelService {
   /**
    * Re-read current values from the CCU. Called after every re-subscribe
    * of the channel's interface (CCU restart, stale subscription), because
-   * events during the outage are lost (plan 7.3, 4.2).
+   * events during the outage are lost.
    */
   refresh?(): void | Promise<void>;
 }

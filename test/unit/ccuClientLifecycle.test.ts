@@ -353,7 +353,7 @@ describe('CcuClient supervision wiring', () => {
   });
 });
 
-describe('CcuClient Phase 3 additions', () => {
+describe('CcuClient additions', () => {
   type Inner = { callbackUrl: string; port: number; tls: boolean; auth?: unknown };
   const inner = (ccu: CcuClient, id: string) =>
     (ccu as unknown as { rpcClients: Map<string, Inner> }).rpcClients.get(id)!;

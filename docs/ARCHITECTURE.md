@@ -148,8 +148,7 @@ graph analysable.
 ## Values: start values, unknown values, limits
 
 - **Start values** come from `getParamset(channel, 'VALUES')` — never
-  `getValue`, which triggers radio traffic on BidCos for every call (plan
-  3.1, finding 11). `getParamset` usually answers from the CCU's cache.
+  `getValue`, which triggers radio traffic on BidCos for every call. `getParamset` usually answers from the CCU's cache.
   Exception seen on 17.11.2026: right after `init`, `rfd` sent one
   `CONFIG_STATUS_REQ` by radio to each BidCos actuator whose cached value
   was old (`STATE age=…` in the CCU log), one after the other. This only
@@ -161,7 +160,7 @@ graph analysable.
 - **Unknown values** (device without power → Failure; HmIP device
   without cached values → `{}`) stay unknown: `onGet` throws
   `SERVICE_COMMUNICATION_FAILURE` ("No Response"). Exception: smoke
-  detectors report "no smoke" plus StatusFault (decision D12).
+  detectors report "no smoke" plus StatusFault.
 - **Writes** are typed by the paramset description: FLOAT as explicit
   double, INTEGER / ENUM rounded, BOOL / ACTION boolean.
 - **Send queue** (`ccu/SendQueue.ts`): BidCos-RF and HmIP-RF share one

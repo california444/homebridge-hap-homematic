@@ -14,7 +14,7 @@ afterEach(() => {
 
 /**
  * A scripted CCU interface. `phase` decides how ping / init behave, like
- * the phases of the CCU restart in plan 3.1, finding 14.
+ * the phases of a CCU restart.
  */
 type Phase = 'up' | 'timeout' | 'refused' | 'booting' | 'upNoRegistration';
 
@@ -107,7 +107,7 @@ describe('InterfaceSupervisor', () => {
     expect(client.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('CCU restart (finding 14): DISCONNECTED on failing pings, init at once when ping works again', async () => {
+  it('CCU restart: DISCONNECTED on failing pings, init at once when ping works again', async () => {
     const { ccu, client } = fakeCcu();
     const { sup, states, subs, spies } = makeSup(client, ccu);
     await sup.start();

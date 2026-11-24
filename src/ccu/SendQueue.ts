@@ -1,5 +1,5 @@
 /**
- * Send queue for setValue (plan-sendequeue.md): only one setValue at a
+ * Send queue for setValue: only one setValue at a
  * time goes to the CCU, across BidCos-RF and HmIP-RF. Both interfaces
  * share one radio module; parallel commands lost their confirmations
  * although the CCU carried them out.

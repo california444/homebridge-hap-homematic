@@ -184,7 +184,7 @@ its values as strings; the plugin reads them as numbers. A group has no
 restart) the set point decides between Off and Heat (see
 [Thermostats](#thermostats)).
 
-## Accessory identity (decision D6)
+## Accessory identity
 
 Each accessory's UUID is derived from
 `<Interface>:<Serial>:<Channel>:<Service>`, with `device` in place of the

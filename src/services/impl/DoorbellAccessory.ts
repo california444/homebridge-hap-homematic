@@ -1,9 +1,9 @@
 /**
- * Doorbell (plan 8.2): HomeKit Doorbell service fed by a bell-signal
+ * Doorbell: HomeKit Doorbell service fed by a bell-signal
  * input such as the HmIP-DSD-PCB (channel 1, MULTI_MODE_INPUT_TRANSMITTER).
  * Replaces the chain DSD-PCB → CCU program → virtual key.
  *
- * Trigger (option `trigger`, default PRESS_SHORT, plan 3.1 finding 7):
+ * Trigger (option `trigger`, default PRESS_SHORT):
  *   PRESS_SHORT / PRESS_LONG — fire on the event itself, whatever its value
  *                              (the CCU may send `false` for a press)
  *   STATE                    — fire when STATE turns true

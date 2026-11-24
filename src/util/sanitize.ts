@@ -96,7 +96,7 @@ export interface ValueProps {
 }
 
 /**
- * Make a value acceptable for a characteristic (plan 8.5): numbers are
+ * Make a value acceptable for a characteristic: numbers are
  * clamped to minValue / maxValue; with validValues only listed values
  * pass. Returns undefined when the value must not be pushed (non-finite,
  * or not a valid enum value). Booleans and strings pass unchanged.

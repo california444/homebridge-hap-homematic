@@ -127,7 +127,7 @@ describe('CcuClient registerListener / event dispatch', () => {
   });
 });
 
-describe('CcuClient interfaces (plan-gruppen 3.1)', () => {
+describe('CcuClient interfaces', () => {
   const make = (extra: Record<string, unknown>) =>
     new CcuClient({
       config: resolveConfig({
