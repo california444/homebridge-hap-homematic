@@ -428,6 +428,170 @@ describe('ThermostatAccessory', () => {
     const service = accessory.services[0]!;
     expect(await getChar(service, 'TemperatureDisplayUnits').onGetHandler!()).toBe(0);
   });
+
+  describe('heating groups (plan-gruppen 3.6)', () => {
+    const vg: CcuChannel = {
+      address: 'INT0000002:1',
+      name: 'Group BidCos',
+      index: 1,
+      type: 'CLIMATECONTROL_RT_TRANSCEIVER',
+    };
+    const ipGroup: CcuChannel = {
+      address: 'INT0000001:1',
+      name: 'Group HmIP',
+      index: 1,
+      type: 'HEATING_CLIMATECONTROL_TRANSCEIVER',
+    };
+    const setup = async (ch: CcuChannel, settings?: Record<string, unknown>) => {
+      const env = makeEnv();
+      const { ctx, accessory } = buildCtx(env, {
+        kind: 'channel',
+        id: ch.address,
+        service: 'ThermostatAccessory',
+        ...(settings ? { settings } : {}),
+      });
+      return { env, ctx, accessory };
+    };
+
+    it('HM-CC-VG-1: string values, battery "normal" without LOWBAT', async () => {
+      const { env, ctx, accessory } = await setup(vg);
+      env.values((address, dp) =>
+        address === 'INT0000002:1'
+          ? ({ SET_TEMPERATURE: '21.5', ACTUAL_TEMPERATURE: '19.0', CONTROL_MODE: '1' } as never)[
+              dp
+            ]
+          : undefined,
+      );
+      await attachAndRefresh(thermostatService.build(ctx), vg);
+      const service = accessory.services[0]!;
+      expect(await getChar(service, 'TargetTemperature').onGetHandler!()).toBe(21.5);
+      expect(await getChar(service, 'CurrentTemperature').onGetHandler!()).toBe(19);
+      expect(await getChar(service, 'TargetHeatingCoolingState').onGetHandler!()).toBe(1);
+      env.fireEvent('INT0000002:1', 'CONTROL_MODE', '0');
+      expect(await getChar(service, 'TargetHeatingCoolingState').onGetHandler!()).toBe(3);
+      const battery = accessory.services.find((s) => s.subtype === 'battery')!;
+      expect(await getChar(battery, 'StatusLowBattery').onGetHandler!()).toBe(0);
+      expect(service.characteristics.has('char:CurrentRelativeHumidity')).toBe(false);
+    });
+
+    it('HmIP-HEATING without SET_POINT_MODE: the set point decides Off / Heat', async () => {
+      const { env, ctx, accessory } = await setup(ipGroup);
+      env.values((address, dp) =>
+        address === 'INT0000001:1' && dp === 'SET_POINT_TEMPERATURE' ? 4.5 : undefined,
+      );
+      await attachAndRefresh(thermostatService.build(ctx), ipGroup);
+      const mode = getChar(accessory.services[0]!, 'TargetHeatingCoolingState');
+      expect(await mode.onGetHandler!()).toBe(0);
+      env.fireEvent('INT0000001:1', 'SET_POINT_TEMPERATURE', 21);
+      expect(await mode.onGetHandler!()).toBe(1);
+      await getChar(accessory.services[0]!, 'TargetTemperature').onSetHandler!(22);
+      expect(env.setValueMock).toHaveBeenCalledWith('INT0000001:1', 'SET_POINT_TEMPERATURE', 22);
+    });
+
+    it('a single thermostat keeps "unknown" battery until LOW_BAT arrives', async () => {
+      const { ctx, accessory } = await setup(hmip);
+      await attachAndRefresh(thermostatService.build(ctx), hmip);
+      const battery = accessory.services.find((s) => s.subtype === 'battery')!;
+      await expect(getChar(battery, 'StatusLowBattery').onGetHandler!()).rejects.toBeDefined();
+    });
+  });
+
+  describe('option showHumidity', () => {
+    it('off by default: no CurrentRelativeHumidity', async () => {
+      const env = makeEnv();
+      const { ctx, accessory } = buildCtx(env, {
+        kind: 'channel',
+        id: hmip.address,
+        service: 'ThermostatAccessory',
+      });
+      await attachAndRefresh(thermostatService.build(ctx), hmip);
+      expect(accessory.services[0]!.characteristics.has('char:CurrentRelativeHumidity')).toBe(
+        false,
+      );
+    });
+
+    it('on: HUMIDITY (HmIP) / ACTUAL_HUMIDITY (BidCos, string) → CurrentRelativeHumidity', async () => {
+      for (const [ch, dp, raw, want] of [
+        [hmip, 'HUMIDITY', 45, 45],
+        [bidcos, 'ACTUAL_HUMIDITY', '55.4', 55],
+      ] as const) {
+        const env = makeEnv();
+        vi.spyOn(env.ccu, 'describeChannel').mockReturnValue({ [dp]: { TYPE: 'FLOAT' } } as never);
+        const { ctx, accessory } = buildCtx(env, {
+          kind: 'channel',
+          id: ch.address,
+          service: 'ThermostatAccessory',
+          settings: { showHumidity: true },
+        });
+        await attachAndRefresh(thermostatService.build(ctx), ch);
+        const hum = getChar(accessory.services[0]!, 'CurrentRelativeHumidity');
+        await expect(hum.onGetHandler!()).rejects.toBeDefined();
+        env.fireEvent(ch.address, dp, raw);
+        expect(await hum.onGetHandler!()).toBe(want);
+      }
+    });
+
+    it('on, but the channel has no humidity datapoint (radiator thermostat): nothing shown', async () => {
+      const env = makeEnv();
+      vi.spyOn(env.ccu, 'describeChannel').mockReturnValue({
+        SET_POINT_TEMPERATURE: { TYPE: 'FLOAT' },
+      } as never);
+      const { ctx, accessory } = buildCtx(env, {
+        kind: 'channel',
+        id: hmip.address,
+        service: 'ThermostatAccessory',
+        settings: { showHumidity: true },
+      });
+      const info = vi.spyOn(ctx.log, 'info');
+      await attachAndRefresh(thermostatService.build(ctx), hmip);
+      env.fireEvent(hmip.address, 'HUMIDITY', 40);
+      expect(accessory.services[0]!.characteristics.has('char:CurrentRelativeHumidity')).toBe(
+        false,
+      );
+      expect(info.mock.calls.some((c) => String(c[0]).includes('Show humidity'))).toBe(true);
+    });
+
+    it('on, no cached description: CurrentRelativeHumidity appears with the first value', async () => {
+      const env = makeEnv();
+      const { ctx, accessory } = buildCtx(env, {
+        kind: 'channel',
+        id: hmip.address,
+        service: 'ThermostatAccessory',
+        settings: { showHumidity: true },
+      });
+      await attachAndRefresh(thermostatService.build(ctx), hmip);
+      const service = accessory.services[0]!;
+      expect(service.characteristics.has('char:CurrentRelativeHumidity')).toBe(false);
+      env.fireEvent(hmip.address, 'HUMIDITY', 61);
+      expect(await getChar(service, 'CurrentRelativeHumidity').onGetHandler!()).toBe(61);
+    });
+
+    it('switched off again, or no datapoint any more: an existing CurrentRelativeHumidity is removed', async () => {
+      const env = makeEnv();
+      const describe = vi
+        .spyOn(env.ccu, 'describeChannel')
+        .mockReturnValue({ HUMIDITY: { TYPE: 'INTEGER' } } as never);
+      const { ctx, accessory } = buildCtx(env, {
+        kind: 'channel',
+        id: hmip.address,
+        service: 'ThermostatAccessory',
+        settings: { showHumidity: true },
+      });
+      await attachAndRefresh(thermostatService.build(ctx), hmip);
+      const service = accessory.services[0]!;
+      expect(service.characteristics.has('char:CurrentRelativeHumidity')).toBe(true);
+      accessory.context.settings = { showHumidity: false };
+      thermostatService.build(ctx).attach(hmip);
+      expect(service.characteristics.has('char:CurrentRelativeHumidity')).toBe(false);
+
+      accessory.context.settings = { showHumidity: true };
+      thermostatService.build(ctx).attach(hmip);
+      expect(service.characteristics.has('char:CurrentRelativeHumidity')).toBe(true);
+      describe.mockReturnValue({ SET_POINT_TEMPERATURE: { TYPE: 'FLOAT' } } as never);
+      thermostatService.build(ctx).attach(hmip);
+      expect(service.characteristics.has('char:CurrentRelativeHumidity')).toBe(false);
+    });
+  });
 });
 
 describe('ContactAccessory', () => {

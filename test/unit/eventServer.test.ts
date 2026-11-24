@@ -203,7 +203,7 @@ describe('EventServer', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('debug-logs connections and calls', async () => {
+  it('debug-logs calls, not the opening and closing of connections', async () => {
     const body =
       '<methodCall><methodName>event</methodName><params>' +
       '<param><value><string>cb</string></value></param>' +
@@ -212,11 +212,10 @@ describe('EventServer', () => {
       '<param><value><boolean>1</boolean></value></param>' +
       '</params></methodCall>';
     await call(port, body);
-    await until(() => debugLines().some((l) => l.includes('closed after')));
+    await until(() => debugLines().some((l) => l.includes('event(cb) X:1.STATE=true')));
+    await new Promise((r) => setTimeout(r, 50)); // let the socket close
     const lines = debugLines();
-    expect(lines.some((l) => /connection #%d from/.test(l))).toBe(true);
-    expect(lines.some((l) => l.includes('event(cb) X:1.STATE=true'))).toBe(true);
-    expect(lines.some((l) => l.includes('closed after') && l.includes(' 1 '))).toBe(true);
+    expect(lines.some((l) => /connection #/.test(l))).toBe(false);
   });
 
   it('debug-logs a response the CCU never received', async () => {
@@ -224,7 +223,7 @@ describe('EventServer', () => {
     const sock = connect(port, '127.0.0.1');
     await new Promise<void>((r) => sock.once('connect', () => r()));
     sock.write('POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n<method');
-    await until(() => debugLines().some((l) => l.includes('from')));
+    await new Promise((r) => setTimeout(r, 50)); // request headers received
     sock.destroy();
     await until(() => debugLines().some((l) => l.includes('not delivered')));
     expect(debugLines().some((l) => l.includes('not delivered'))).toBe(true);

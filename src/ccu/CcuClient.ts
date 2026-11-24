@@ -6,7 +6,8 @@
  * and dispatches inbound events to registered listeners.
  *
  * XML-RPC only: one RpcClient per enabled interface (BidCos-RF → rfd,
- * HmIP-RF → HMIPServer) for discovery (`listDevices`), reads and writes,
+ * HmIP-RF → HMIPServer, VirtualDevices → heating groups on `/groups`)
+ * for discovery (`listDevices`), reads and writes,
  * plus the local EventServer for the CCU's push events. No JSON-RPC,
  * no ReGa, no CCU login.
  *
@@ -113,6 +114,7 @@ const ENABLED_INTERFACES: ReadonlyArray<{
 }> = [
   { id: 'BidCos-RF', flag: 'bidcosRf' },
   { id: 'HmIP-RF', flag: 'hmIpRf' },
+  { id: 'VirtualDevices', flag: 'virtualDevices' },
 ];
 
 export interface InterfaceProbe {
@@ -619,9 +621,11 @@ export class CcuClient extends EventEmitter {
       if (deviceOnly) return deviceOnly;
     }
     // Before discovery: HmIP serials are 14 hex digits, BidCos serials
-    // are 10 characters (3 letters + 7 digits).
+    // are 10 characters (3 letters + 7 digits). Heating groups on
+    // VirtualDevices look like BidCos serials but start with INT.
     const serial = colon === -1 ? address : address.slice(0, colon);
-    return /^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF';
+    if (/^[0-9A-F]{14}$/i.test(serial)) return 'HmIP-RF';
+    return /^INT\d{7}$/.test(serial) ? 'VirtualDevices' : 'BidCos-RF';
   }
 
   private resolveCallbackHost(): string {

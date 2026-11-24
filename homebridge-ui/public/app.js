@@ -22,8 +22,15 @@
  *
  * Saving:
  *   - Mapping changes (add / edit / remove) write devices.json at once.
- *   - Settings changes are staged with updatePluginConfig(); the host's
- *     "Save" button writes config.json.
+ *   - Settings changes are staged with updatePluginConfig(). They are
+ *     written to config.json by the Save button next to the tabs (shown
+ *     only while there are unsaved settings, savePluginConfig()) or by
+ *     the host's Save button below the page. The host's close button
+ *     discards them; the plugin UI API offers no way to intercept it.
+ *   - Only the host's Save button offers the child bridge restart
+ *     afterwards. It is enabled while settings are unsaved and after any
+ *     saved change (devices.json or settings) in this session, so the
+ *     user can still restart from there.
  */
 
 // ---------------------------------------------------------------- helpers
@@ -77,7 +84,7 @@ const DEFAULT_BLOCK = () => ({
   name: 'HapHomematic',
   ccuIp: '',
   useTls: false,
-  interfaces: { bidcosRf: true, hmIpRf: true },
+  interfaces: { bidcosRf: true, hmIpRf: true, virtualDevices: false },
   interfacePorts: {},
   rpcAuth: { enabled: false, username: '', password: '' },
   eventServer: { host: '0.0.0.0', callbackHost: '', port: 9875 },
@@ -99,7 +106,7 @@ const state = {
   services: { channelServices: [] },
   ui: {
     search: { channels: '' },
-    filter: { channels: 'configured' }, // configured | all | unconfigured
+    filter: { channels: 'all' }, // configured | all | unconfigured
     filterType: { channels: 'all' }, // CCU channel type, e.g. SWITCH_VIRTUAL_RECEIVER, or 'all'
     sort: { channels: 'name' }, // name | device | address | type
     page: { channels: 1 },
@@ -110,6 +117,8 @@ const state = {
     /** Settings cards expanded (collapsed by default). */
     settingsOpen: { auth: false, ports: false, sendQueue: false },
   },
+  /** Datapoint names per channel address from the CCU (`/paramset`). */
+  paramsets: {},
   /** Last "Test CCU" result as HTML; survives re-renders. */
   testResult: '',
   pluginVersion: 'unknown',
@@ -143,11 +152,16 @@ const GROUP_RE = /^(SWITCH|SHUTTER|BLIND|DIMMER)_(TRANSMITTER|VIRTUAL_RECEIVER)$
  *     SWITCH/SHUTTER/BLIND/DIMMER_TRANSMITTER: HmIP-PS channel 1,
  *     BROLL/FROLL channels 1–2, DRSI4 wall-button inputs 1–4. A remote or
  *     a pure input device (HmIP-DSD-PCB bell signal) keeps them.
+ *   - every channel of a heating group (VirtualDevices) except the
+ *     thermostat channel 1: the others (window contact, switch outputs,
+ *     floor heating) only mirror the members (plan-gruppen 3.5).
  * Channels already in devices.json are never hidden.
  */
 function hiddenChannels(device) {
   const channels = sortBy(device.channels ?? [], (c) => c.index);
   if (/RCV-50$/i.test(device.type ?? '')) return new Set(channels.map((c) => c.address));
+  if (device.interface === 'VirtualDevices')
+    return new Set(channels.filter((c) => c.index !== 1).map((c) => c.address));
   const handled = new Set(state.services.channelServices.flatMap((s) => s.channelTypes));
   const hidden = new Set();
   const isActuator = channels.some((c) =>
@@ -192,8 +206,14 @@ const splitKey = (key) => {
   const i = key.indexOf(':');
   return [key.slice(0, i), key.slice(i + 1)];
 };
-// Same fallback as the plugin: HmIP serials are 14 hex digits.
-const guessInterface = (serial) => (/^[0-9A-F]{14}$/i.test(serial) ? 'HmIP-RF' : 'BidCos-RF');
+// Same fallback as the plugin: HmIP serials are 14 hex digits, heating
+// groups INT + 7 digits.
+const guessInterface = (serial) =>
+  /^[0-9A-F]{14}$/i.test(serial)
+    ? 'HmIP-RF'
+    : /^INT\d{7}$/.test(serial)
+      ? 'VirtualDevices'
+      : 'BidCos-RF';
 
 /**
  * devices.json flattened to one row per accessory. Per-channel mappings
@@ -305,7 +325,13 @@ async function saveDevices(successMsg) {
   spinner(true);
   try {
     await homebridge.request('/devices/put', { file: state.devicesFile });
-    toast('success', `${successMsg}. Restart the child bridge to apply.`, 'devices.json');
+    restartPending = true;
+    updateUnsaved();
+    toast(
+      'success',
+      `${successMsg}. Click Save below to restart the child bridge.`,
+      'devices.json',
+    );
     return true;
   } catch (err) {
     toast('error', err.message, 'devices.json');
@@ -389,19 +415,6 @@ function viewChannels(host) {
         <div class="hgui-meta">Reload devices and channels from the CCU.</div>
       </div>
     </div>
-    <details class="hgui-card" id="hgui-help" ${state.ui.helpOpen ? 'open' : ''}>
-      <summary>Which channels go to HomeKit?</summary>
-      <ol class="hgui-meta mb-2 ps-3">
-        <li>Click <strong>Discover</strong> to load the devices from the CCU.</li>
-        <li>Switch the filter to <em>Not in HomeKit</em>, pick a channel and click <strong>+ Add</strong>.
-          Give it a HomeKit name and choose the service (switch, outlet, light, blind, …).</li>
-        <li>Restart the child bridge to apply the changes.</li>
-      </ol>
-      <p class="hgui-meta mb-0">Only the channels worth mapping are listed (built-in buttons and wall-button inputs of actuators are hidden). An HmIP actuator shows one
-        channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
-        the plugin reads the state there and sends commands to the matching receiver channel itself.
-        Choose the channel and service once: changing either later creates a new accessory in Home.</p>
-    </details>
     <div class="hgui-toolbar">
       <input type="search" class="form-control" id="hgui-search-channels"
              placeholder="Search by HomeKit name, CCU name, address, type…"
@@ -433,6 +446,19 @@ function viewChannels(host) {
     ${devicesErrorHTML()}
     <div id="hgui-rows-host"></div>
     <div id="hgui-pager-host"></div>
+    <details class="hgui-card mt-3" id="hgui-help" ${state.ui.helpOpen ? 'open' : ''}>
+      <summary>Which channels go to HomeKit?</summary>
+      <ol class="hgui-meta mb-2 ps-3">
+        <li>Click <strong>Discover</strong> to load the devices from the CCU.</li>
+        <li>Switch the filter to <em>Not in HomeKit</em>, pick a channel and click <strong>+ Add</strong>.
+          Give it a HomeKit name and choose the service (switch, outlet, light, blind, …).</li>
+        <li>Restart the child bridge to apply the changes.</li>
+      </ol>
+      <p class="hgui-meta mb-0">Only the channels worth mapping are listed (built-in buttons and wall-button inputs of actuators are hidden). An HmIP actuator shows one
+        channel per output (e.g. HmIP-BROLL channel 3, HmIP-PS channel 2, HmIP-DRSI4 channels 5 / 9 / 13 / 17);
+        the plugin reads the state there and sends commands to the matching receiver channel itself.
+        Choose the channel and service once: changing either later creates a new accessory in Home.</p>
+    </details>
   `;
   $('hgui-filter-channels').value = state.ui.filter.channels;
   $('hgui-filterType-channels').value = channelTypes.has(state.ui.filterType.channels)
@@ -749,10 +775,13 @@ function viewSettings(host) {
           <label class="form-label">Event server port</label>
           <input class="form-control" type="number" min="1024" max="65535" id="cf-event-port" value="${h(m.eventServer.port)}" />
         </div>
-        <div class="col-md-3 d-flex align-items-end">
-          <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="cf-tls" ${m.useTls ? 'checked' : ''} />
-            <label class="form-check-label" for="cf-tls">Use TLS (42001 / 42010)</label>
+        <div class="col-md-3">
+          <label class="form-label d-none d-md-block">&nbsp;</label>
+          <div class="d-flex align-items-center hgui-input-height">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="cf-tls" ${m.useTls ? 'checked' : ''} />
+              <label class="form-check-label" for="cf-tls">Use TLS</label>
+            </div>
           </div>
         </div>
       </div>
@@ -778,10 +807,11 @@ function viewSettings(host) {
         ${[
           ['bidcosRf', 'BidCos-RF'],
           ['hmIpRf', 'HmIP-RF'],
+          ['virtualDevices', 'VirtualDevices (heating groups)'],
         ]
           .map(
             ([k, label]) => `
-            <div class="col-md-3 form-check">
+            <div class="col-auto form-check me-3 text-nowrap">
               <input class="form-check-input" type="checkbox" id="cf-if-${k}" ${m.interfaces[k] ? 'checked' : ''} />
               <label class="form-check-label" for="cf-if-${k}">${h(label)}</label>
             </div>`,
@@ -811,11 +841,12 @@ function viewSettings(host) {
     </details>
     <details class="hgui-card" data-settings-card="ports" ${state.ui.settingsOpen.ports ? 'open' : ''}>
       <summary>XML-RPC ports</summary>
-      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF) and <code>2010</code> (HmIP-RF), with TLS <code>42001</code> / <code>42010</code>.</p>
+      <p class="hgui-meta">Leave blank for the defaults <code>2001</code> (BidCos-RF), <code>2010</code> (HmIP-RF) and <code>9292</code> (VirtualDevices). With <em>Use TLS</em>: <code>42001</code> / <code>42010</code> / <code>49292</code>.</p>
       <div class="row g-2">
         ${[
           ['BidCos-RF', '2001'],
           ['HmIP-RF', '2010'],
+          ['VirtualDevices', '9292'],
         ]
           .map(
             ([k, ph]) => `
@@ -885,7 +916,7 @@ function viewSettings(host) {
   $('cf-auth-pass').addEventListener('input', (e) =>
     propagate((b) => (b.rpcAuth.password = e.target.value)),
   );
-  for (const k of ['bidcosRf', 'hmIpRf']) {
+  for (const k of ['bidcosRf', 'hmIpRf', 'virtualDevices']) {
     $(`cf-if-${k}`).addEventListener('change', (e) =>
       propagate((b) => (b.interfaces[k] = e.target.checked)),
     );
@@ -900,7 +931,7 @@ function viewSettings(host) {
       });
     });
   }
-  for (const k of ['BidCos-RF', 'HmIP-RF']) {
+  for (const k of ['BidCos-RF', 'HmIP-RF', 'VirtualDevices']) {
     $(`cf-port-${k}`).addEventListener('input', (e) => {
       const v = e.target.value.trim();
       propagate((b) => {
@@ -1008,6 +1039,21 @@ function subEditChannel(host, props) {
     return el.value;
   };
 
+  /**
+   * Datapoints of this channel from the CCU, for options with
+   * `datapoints` (e.g. "Show humidity" only where HUMIDITY exists).
+   * undefined: not asked yet or no answer — every option is offered.
+   */
+  let channelDatapoints = isDeviceRow ? undefined : state.paramsets[address];
+  const visibleOptions = (def) =>
+    (def?.options ?? []).filter(
+      (o) =>
+        !o.datapoints ||
+        !channelDatapoints ||
+        o.datapoints.some((dp) => channelDatapoints.includes(dp)),
+    );
+  const needsDatapoints = () => all.some((s) => s.options?.some((o) => o.datapoints));
+
   subviewHeader(
     host,
     mode === 'add' ? 'Add to HomeKit' : `Edit: ${draft.name || address}`,
@@ -1049,6 +1095,11 @@ function subEditChannel(host, props) {
           <div>
             <input class="form-control" id="ec-name" value="${h(draft.name ?? '')}" />
             <div class="hgui-hint">Shown in the Home app. Already-paired accessories keep the name they had in Home; rename there too.</div>
+            ${
+              device?.interface === 'VirtualDevices'
+                ? `<div class="hgui-hint">Heating group: the CCU does not pass group names over XML-RPC. The name is in the CCU under Settings → Groups (<code>${h(serial)}</code>).</div>`
+                : ''
+            }
           </div>
         </div>
         <div class="hgui-form-row">
@@ -1077,7 +1128,7 @@ function subEditChannel(host, props) {
           </div>`
             : ''
         }
-        ${(def?.options ?? [])
+        ${visibleOptions(def)
           .map(
             (o, i) => `
           <div class="hgui-form-row">
@@ -1144,7 +1195,7 @@ function subEditChannel(host, props) {
         draft.subtype = e.target.value;
       });
     }
-    (def?.options ?? []).forEach((o, i) => {
+    visibleOptions(def).forEach((o, i) => {
       body.querySelector(`#ec-opt-${i}`).addEventListener('change', (e) => {
         draft.options[o.key] = readOption(o, e.target);
       });
@@ -1158,6 +1209,21 @@ function subEditChannel(host, props) {
     }
   };
   draw();
+  if (!isDeviceRow && channelDatapoints === undefined && needsDatapoints()) {
+    homebridge
+      .request('/paramset', {
+        config: state.cfg,
+        address,
+        interface: device?.interface ?? entry?.interface ?? guessInterface(serial),
+      })
+      .then((r) => {
+        if (!Array.isArray(r?.datapoints)) return;
+        state.paramsets[address] = r.datapoints;
+        channelDatapoints = r.datapoints;
+        if (body.isConnected) draw();
+      })
+      .catch(() => undefined);
+  }
 
   const footer = $('hgui-sub-footer');
   footer.innerHTML = `
@@ -1178,7 +1244,12 @@ function subEditChannel(host, props) {
     }
     const def = byKey(draft.service);
     const intf = device?.interface ?? entry?.interface ?? guessInterface(serial);
-    const options = clean(draft.options ?? {});
+    // An option hidden for this channel (no datapoint) is not saved.
+    const shown = new Set(visibleOptions(def).map((o) => o.key));
+    const hidden = (def?.options ?? []).filter((o) => !shown.has(o.key)).map((o) => o.key);
+    const options = clean(
+      Object.fromEntries(Object.entries(draft.options ?? {}).filter(([k]) => !hidden.includes(k))),
+    );
     try {
       if (isDeviceRow || def?.scope === 'device') {
         const channels = {};
@@ -1299,16 +1370,53 @@ function discoverySourceText() {
 }
 
 /**
- * Push state.cfg to the homebridge UI host. The host's built-in "Save"
- * button at the bottom of the plugin settings page persists this to
- * disk — we deliberately don't call savePluginConfig() ourselves so
- * the user has one canonical Save control, not two.
+ * Push state.cfg to the homebridge UI host (staged, not saved) and show
+ * the Save button next to the tabs while it differs from config.json.
  */
 function pushConfig() {
   try {
     homebridge.updatePluginConfig([state.cfg]);
   } catch (err) {
     toast('error', `Could not stage config update: ${err.message}`);
+  }
+  updateUnsaved();
+}
+
+/** state.cfg as last read from / written to config.json. */
+let savedCfg = '';
+/** A change was written in this session; the bridge needs a restart. */
+let restartPending = false;
+
+function updateUnsaved() {
+  const dirty = savedCfg !== '' && JSON.stringify(state.cfg) !== savedCfg;
+  $('hgui-unsaved')?.classList.toggle('d-none', !dirty);
+  $('hgui-save-btn')?.classList.toggle('d-none', !dirty);
+  // The host's Save button below the page: usable while there is
+  // something to save or to restart for. Only it offers the restart.
+  try {
+    (dirty || restartPending ? homebridge.enableSaveButton : homebridge.disableSaveButton)?.call(
+      homebridge,
+    );
+  } catch {
+    /* older host without this API */
+  }
+}
+
+/** Write the staged settings to config.json (the host's Save, without closing). */
+async function saveSettings() {
+  const btn = $('hgui-save-btn');
+  if (btn) btn.disabled = true;
+  try {
+    await homebridge.updatePluginConfig([state.cfg]);
+    await homebridge.savePluginConfig();
+    savedCfg = JSON.stringify(state.cfg);
+    restartPending = true;
+    toast('success', 'Settings saved. Click Save below to restart the child bridge.');
+  } catch (err) {
+    toast('error', `Could not save settings: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+    updateUnsaved();
   }
 }
 
@@ -1344,6 +1452,7 @@ async function init() {
       interfaces: {
         bidcosRf: b.interfaces?.bidcosRf ?? def.interfaces.bidcosRf,
         hmIpRf: b.interfaces?.hmIpRf ?? def.interfaces.hmIpRf,
+        virtualDevices: b.interfaces?.virtualDevices ?? def.interfaces.virtualDevices,
       },
       rpcAuth: { ...def.rpcAuth, ...b.rpcAuth },
       eventServer: { ...def.eventServer, ...b.eventServer },
@@ -1357,6 +1466,10 @@ async function init() {
   } catch (err) {
     toast('error', `Could not load config: ${err.message}`);
   }
+
+  savedCfg = JSON.stringify(state.cfg);
+  updateUnsaved();
+  $('hgui-save-btn')?.addEventListener('click', () => void saveSettings());
 
   await loadDevices();
   try {

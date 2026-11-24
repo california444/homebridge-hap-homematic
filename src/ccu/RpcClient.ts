@@ -25,12 +25,24 @@ export const INIT_TIMEOUT_MS = 45_000;
 export const INTERFACE_PORTS: Record<CcuInterfaceId, number> = {
   'BidCos-RF': 2001,
   'HmIP-RF': 2010,
+  VirtualDevices: 9292,
 };
 
 /** CCU defaults for XML-RPC over TLS. */
 export const INTERFACE_TLS_PORTS: Record<CcuInterfaceId, number> = {
   'BidCos-RF': 42001,
   'HmIP-RF': 42010,
+  VirtualDevices: 49292,
+};
+
+/**
+ * HTTP path of the XML-RPC endpoint. VirtualDevices answers only on
+ * `/groups` (HTTP 404 elsewhere, measured on a CCU).
+ */
+export const INTERFACE_PATHS: Record<CcuInterfaceId, string> = {
+  'BidCos-RF': '/',
+  'HmIP-RF': '/',
+  VirtualDevices: '/groups',
 };
 
 /** One entry of a `getParamsetDescription(…, 'VALUES')` answer. */
@@ -62,6 +74,8 @@ export interface RpcClientOptions {
   interfaceId: CcuInterfaceId;
   host: string;
   port?: number;
+  /** HTTP path; default from INTERFACE_PATHS. */
+  path?: string;
   /** URL the CCU should call back. e.g. xmlrpc://192.168.1.20:9875 */
   callbackUrl: string;
   /** Identifier the CCU will tag callbacks with. */
@@ -104,6 +118,7 @@ export class RpcClient {
   readonly interfaceId: CcuInterfaceId;
   private readonly host: string;
   private readonly port: number;
+  private readonly path: string;
   private readonly callbackUrl: string;
   private readonly callbackId: string;
   private readonly log: PrefixedLogger;
@@ -120,6 +135,7 @@ export class RpcClient {
     this.tls = opts.tls ?? false;
     this.auth = opts.auth;
     this.port = opts.port ?? (this.tls ? INTERFACE_TLS_PORTS : INTERFACE_PORTS)[opts.interfaceId];
+    this.path = opts.path ?? INTERFACE_PATHS[opts.interfaceId];
     this.callbackUrl = opts.callbackUrl;
     this.callbackId = opts.callbackId;
     this.log = opts.log;
@@ -144,6 +160,7 @@ export class RpcClient {
     type ClientOptions = {
       host: string;
       port: number;
+      path: string;
       rejectUnauthorized?: boolean;
       basic_auth?: { user: string; pass: string };
     };
@@ -165,6 +182,7 @@ export class RpcClient {
     const client = factory({
       host: this.host,
       port: this.port,
+      path: this.path,
       // CCUs use self-signed certificates; the connection only ever goes
       // to the configured ccuIp.
       ...(this.tls ? { rejectUnauthorized: false } : {}),

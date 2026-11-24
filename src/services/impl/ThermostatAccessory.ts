@@ -30,11 +30,18 @@ const DEFAULT_HEAT_TEMP = 20;
  *         CLIMATECONTROL_REGULATOR): SET_TEMPERATURE, AUTO_MODE /
  *         MANU_MODE (actions), CONTROL_MODE (read).
  * In both cases the read-back mode is 0 = auto, 1 = manual, 2 = party,
- * 3 = boost.
+ * 3 = boost. Humidity (wall thermostats, heating groups with one):
+ * HUMIDITY (HmIP), ACTUAL_HUMIDITY (BidCos).
+ *
+ * Heating groups (VirtualDevices, plan-gruppen 3.6) use the same channel
+ * types. HM-CC-VG-1 sends every value as a string (toFiniteNumber takes
+ * both). A group may lack SET_POINT_MODE after a CCU restart and never
+ * reports LOW_BAT unless a member does.
  */
 interface ThermostatDialect {
   setPoint: string;
   modeState: string;
+  humidity: string;
   setAuto(): Promise<void>;
   setManual(temp: number): Promise<void>;
 }
@@ -45,7 +52,8 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
   private targetTemp = 20;
   /** Last target above OFF_TEMP, restored when switching Off → Heat. */
   private lastHeatTemp = DEFAULT_HEAT_TEMP;
-  private mode = HEATING_OFF;
+  /** Mode last chosen in Home; undefined until then. */
+  private mode: number | undefined;
   /** Mode reported by the CCU; undefined until the first value arrives. */
   private ccuMode: number | undefined;
 
@@ -60,6 +68,7 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       minTemp?: number;
       maxTemp?: number;
       minStep?: number;
+      showHumidity?: unknown;
     };
     const minTemp =
       typeof settings.minTemp === 'number' && Number.isFinite(settings.minTemp)
@@ -161,9 +170,70 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       }
     });
 
+    this.attachHumidity(service, dialect.humidity, settings.showHumidity === true);
+
     // Thermostats are battery-powered (HmIP-eTRV-*, HmIP-WTH-*, etc.).
-    // Surface LOW_BAT as a HomeKit BatteryService.
-    this.attachBattery(channel.address);
+    // Surface LOW_BAT as a HomeKit BatteryService. A heating group has
+    // no LOW_BAT value of its own until a member reports one: "normal"
+    // instead of "No Response" meanwhile.
+    const isGroup = this.ccu.interfaceOf(channel.address) === 'VirtualDevices';
+    this.attachBattery(channel.address, { assumeNormal: isGroup });
+  }
+
+  /**
+   * Option showHumidity (off by default): CurrentRelativeHumidity on the
+   * thermostat. Only useful with a sensor (wall thermostat; a heating
+   * group with one as member). Empty groups report placeholders.
+   *
+   * Like the battery level, it needs the datapoint in the channel's
+   * paramset description: radiator thermostats have none and would show
+   * "No Response" forever. Without a cached description the
+   * characteristic appears with the first value (a restored one stays).
+   */
+  private attachHumidity(service: Service, datapoint: string, show: boolean): void {
+    const C = this.Characteristic.CurrentRelativeHumidity;
+    const description = this.ccu.describeChannel(this.channelAddress);
+    const exists = service.testCharacteristic(C);
+    const remove = (): void => {
+      if (service.testCharacteristic(C)) {
+        service.removeCharacteristic(service.getCharacteristic(C));
+      }
+    };
+    if (!show) {
+      remove();
+      return;
+    }
+    if (description && !(datapoint in description)) {
+      remove();
+      this.log.info(
+        '%s: option "Show humidity" ignored, channel %s has no %s',
+        this.accessory.displayName,
+        this.channelAddress,
+        datapoint,
+      );
+      return;
+    }
+    let humidity: number | undefined;
+    let ready = false;
+    const ensure = (): void => {
+      if (ready) return;
+      ready = true;
+      service
+        .getCharacteristic(C)
+        .setProps({ minValue: 0, maxValue: 100, minStep: 1 })
+        .onGet(this.wrapGet<number>(() => humidity ?? this.unknown()));
+    };
+    if (description || exists) {
+      ensure();
+    }
+    this.need(this.channelAddress, datapoint, (raw) => {
+      const v = toFiniteNumber(raw);
+      if (v !== undefined) {
+        humidity = Math.min(100, Math.max(0, Math.round(v)));
+        ensure();
+        service.updateCharacteristic(C, humidity);
+      }
+    });
   }
 
   private dialectFor(channelType: string): ThermostatDialect {
@@ -172,6 +242,7 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       return {
         setPoint: 'SET_POINT_TEMPERATURE',
         modeState: 'SET_POINT_MODE',
+        humidity: 'HUMIDITY',
         setAuto: () => this.ccu.setValue(address, 'CONTROL_MODE', 0),
         setManual: async (temp) => {
           await this.ccu.setValue(address, 'CONTROL_MODE', 1);
@@ -182,6 +253,7 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     return {
       setPoint: 'SET_TEMPERATURE',
       modeState: 'CONTROL_MODE',
+      humidity: 'ACTUAL_HUMIDITY',
       setAuto: () => this.ccu.setValue(address, 'AUTO_MODE', true),
       setManual: (temp) => this.ccu.setValue(address, 'MANU_MODE', temp),
     };
@@ -206,9 +278,13 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     );
   }
 
-  /** Auto from the CCU mode; otherwise Off at the off set point, else Heat. */
+  /**
+   * Auto from the CCU mode; otherwise Off at the off set point, else Heat.
+   * Without a CCU mode (groups after a CCU restart): the mode chosen in
+   * Home, else the set point decides.
+   */
   private deriveTargetMode(): number {
-    if (this.ccuMode === undefined) {
+    if (this.ccuMode === undefined && this.mode !== undefined) {
       return this.mode;
     }
     if (this.ccuMode === 0) {
@@ -230,5 +306,18 @@ export const thermostatService: ServiceDefinition = {
   description: 'Heating thermostat',
   channelTypes: THERMOSTAT_CHANNEL_TYPES,
   priority: 10,
+  options: [
+    {
+      key: 'showHumidity',
+      label: 'Show humidity',
+      type: 'boolean',
+      default: false,
+      datapoints: ['HUMIDITY', 'ACTUAL_HUMIDITY'],
+      hint:
+        'Humidity on the thermostat in Home. Only for devices with a humidity sensor (wall thermostats) ' +
+        'or heating groups with one as member; an empty group reports placeholder values. ' +
+        'Ignored for channels without a humidity datapoint (radiator thermostats).',
+    },
+  ],
   build: (ctx: ServiceContext) => new ThermostatHandler(ctx),
 };

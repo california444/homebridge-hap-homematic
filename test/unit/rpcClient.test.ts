@@ -188,7 +188,11 @@ describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
   type Factory = (opts: Record<string, unknown>) => {
     methodCall: (m: string, p: unknown[], cb: (e: Error | null, v?: unknown) => void) => void;
   };
-  async function capture(tls: boolean, auth?: { username: string; password: string }) {
+  async function capture(
+    tls: boolean,
+    auth?: { username: string; password: string },
+    interfaceId: 'HmIP-RF' | 'VirtualDevices' = 'HmIP-RF',
+  ) {
     const seen: { factory?: string; opts?: Record<string, unknown> } = {};
     const fake =
       (name: string): Factory =>
@@ -204,7 +208,7 @@ describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
     // ensureTransport() imports homematic-xmlrpc lazily, so doMock applies.
     vi.doMock('homematic-xmlrpc', () => ({ ...api, default: api }));
     const c = new RpcClient({
-      interfaceId: 'HmIP-RF',
+      interfaceId,
       host: '10.0.0.2',
       callbackUrl: 'http://cb',
       callbackId: 'id',
@@ -221,7 +225,21 @@ describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
   it('uses plain HTTP on the default port', async () => {
     const seen = await capture(false);
     expect(seen.factory).toBe('createClient');
-    expect(seen.opts).toEqual({ host: '10.0.0.2', port: 2010 });
+    expect(seen.opts).toEqual({ host: '10.0.0.2', port: 2010, path: '/' });
+  });
+
+  it('VirtualDevices: port 9292 / TLS 49292, path /groups', async () => {
+    expect((await capture(false, undefined, 'VirtualDevices')).opts).toEqual({
+      host: '10.0.0.2',
+      port: 9292,
+      path: '/groups',
+    });
+    expect((await capture(true, undefined, 'VirtualDevices')).opts).toEqual({
+      host: '10.0.0.2',
+      port: 49292,
+      path: '/groups',
+      rejectUnauthorized: false,
+    });
   });
 
   it('uses HTTPS on 42010, accepts the self-signed cert, sends Basic auth', async () => {
@@ -230,6 +248,7 @@ describe('RpcClient transport options (homematic-xmlrpc 2.0)', () => {
     expect(seen.opts).toEqual({
       host: '10.0.0.2',
       port: 42010,
+      path: '/',
       rejectUnauthorized: false,
       basic_auth: { user: 'u', pass: 'p' },
     });

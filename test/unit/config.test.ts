@@ -50,7 +50,7 @@ describe('resolveConfig', () => {
   it('fills defaults for everything else', () => {
     const c = resolveConfig(base);
     expect(c.ccuIp).toBe('192.168.1.10');
-    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: true });
+    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: true, virtualDevices: false });
     expect(c.eventServer).toEqual({ host: '0.0.0.0', callbackHost: '192.168.1.20', port: 9875 });
     expect(c.useTls).toBe(false);
     expect(c.rpcAuth).toEqual({ enabled: false });
@@ -120,9 +120,14 @@ describe('resolveConfig', () => {
     });
   });
 
-  it('keeps only BidCos-RF / HmIP-RF interface toggles', () => {
+  it('keeps only BidCos-RF / HmIP-RF / VirtualDevices interface toggles', () => {
     const c = resolveConfig({ ...base, interfaces: { hmIpRf: false, cuxd: true } as never });
-    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: false });
+    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: false, virtualDevices: false });
+  });
+
+  it('turns on VirtualDevices (heating groups) only when asked', () => {
+    const c = resolveConfig({ ...base, interfaces: { virtualDevices: true } });
+    expect(c.interfaces).toEqual({ bidcosRf: true, hmIpRf: true, virtualDevices: true });
   });
 
   it('rejects out-of-range event-server port', () => {
@@ -161,10 +166,11 @@ describe('resolveConfig', () => {
     it('passes through valid per-interface overrides', () => {
       const c = resolveConfig({
         ...base,
-        interfacePorts: { 'BidCos-RF': 2001, 'HmIP-RF': 2010 },
+        interfacePorts: { 'BidCos-RF': 2001, 'HmIP-RF': 2010, VirtualDevices: 9293 },
       });
       expect(c.interfacePorts['BidCos-RF']).toBe(2001);
       expect(c.interfacePorts['HmIP-RF']).toBe(2010);
+      expect(c.interfacePorts.VirtualDevices).toBe(9293);
     });
 
     it('treats cleared UI fields (null / "") as "use the default"', () => {

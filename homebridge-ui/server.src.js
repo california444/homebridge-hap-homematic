@@ -19,11 +19,15 @@ import { networkInterfaces } from 'node:os';
 
 import { HomebridgePluginUiServer, RequestError } from '@homebridge/plugin-ui-utils';
 
-// Boot-time diagnostic banner. homebridge-config-ui-x captures stdout of
-// the UI subprocess and surfaces it under "Custom UI logs" — and if the
-// user is just running `node server.js` to verify the install, this is
-// the first thing they see. If you DON'T see this line, the file isn't
-// reachable from the install path.
+// homebridge-config-ui-x copies the UI subprocess's stdout into the
+// Homebridge log. @homebridge/plugin-ui-utils logs "Incoming Request:
+// <path>" for every request with no way to turn it off; drop those lines.
+const consoleLog = console.log.bind(console);
+console.log = (...args) => {
+  if (args[0] === 'Incoming Request:') return;
+  consoleLog(...args);
+};
+
 // Read once at boot so /services can return it without re-reading per
 // request and so the boot banner has the same source of truth.
 const PLUGIN_VERSION = (() => {
@@ -39,9 +43,6 @@ const PLUGIN_VERSION = (() => {
   }
   const distRoot = resolvePath(here, '..', 'dist', 'src');
   const distPresent = existsSync(distRoot);
-  console.log(
-    `[homebridge-hap-homematic UI] v${version} booting from ${here}; dist present: ${distPresent}`,
-  );
   if (!distPresent) {
     console.error(
       `[homebridge-hap-homematic UI] FATAL: ${distRoot} does not exist. ` +
@@ -113,12 +114,12 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     this.onRequest('/test-connection', (payload) => this.handleTestConnection(payload));
     this.onRequest('/discover', (payload) => this.handleDiscover(payload));
     this.onRequest('/discover/cached', () => this.handleCachedDiscovery());
+    this.onRequest('/paramset', (payload) => this.handleParamset(payload));
     this.onRequest('/network', () => this.handleNetwork());
     this.onRequest('/devices/get', () => this.handleGetDevices());
     this.onRequest('/devices/put', (payload) => this.handlePutDevices(payload));
 
     this.ready();
-    console.log('[homebridge-hap-homematic UI] handlers registered, ready signaled');
   }
 
   // --- handlers ----------------------------------------------------
@@ -197,6 +198,42 @@ class HapHomematicUiServer extends HomebridgePluginUiServer {
     const devices = [];
     for (const [id, list] of results) devices.push(...toDevices(list, id));
     return { devices: enrich(devices), source: 'live', fetchedAt };
+  }
+
+  /**
+   * Datapoint names of one channel (getParamsetDescription VALUES, no
+   * radio traffic), for options that need a datapoint (OptionSpec
+   * `datapoints`). `datapoints: null` if the CCU did not answer; the UI
+   * then offers every option.
+   */
+  async handleParamset(payload) {
+    const address = typeof payload?.address === 'string' ? payload.address : '';
+    if (!/^[A-Za-z0-9]{1,32}:\d{1,3}$/.test(address)) {
+      throw new RequestError('Invalid channel address', { status: 400 });
+    }
+    const config = this.coerceConfig(payload.config);
+    const ccu = new CcuClient({ config, log: new PrefixedLogger(new UiLogger(), 'ui:paramset') });
+    // Route by the discovered interface; serials of the CCU mock (VCU…)
+    // would otherwise be guessed as BidCos-RF.
+    if (
+      typeof payload.interface === 'string' &&
+      ccu.enabledInterfaces().includes(payload.interface)
+    ) {
+      ccu.setInterfaceFor(address.split(':')[0], payload.interface);
+    }
+    try {
+      const description = await ccu.getParamsetDescription(address);
+      return { address, datapoints: Object.keys(description ?? {}) };
+    } catch (err) {
+      console.warn('[ui] getParamsetDescription(%s) failed: %s', address, err.message);
+      return { address, datapoints: null };
+    } finally {
+      try {
+        await ccu.stop();
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   /**

@@ -30,9 +30,15 @@ export class ConfigError extends Error {
 const DEFAULT_INTERFACES: InterfaceToggles = {
   bidcosRf: true,
   hmIpRf: true,
+  // Off: existing installations keep exactly the interfaces they had.
+  virtualDevices: false,
 };
 
-const VALID_INTERFACE_IDS: ReadonlySet<CcuInterfaceId> = new Set(['BidCos-RF', 'HmIP-RF']);
+const VALID_INTERFACE_IDS: ReadonlySet<CcuInterfaceId> = new Set([
+  'BidCos-RF',
+  'HmIP-RF',
+  'VirtualDevices',
+]);
 
 const DEFAULT_EVENT_SERVER = {
   host: '0.0.0.0',
@@ -73,6 +79,7 @@ export function resolveConfig(raw: RawConfig, opts: ResolveOptions = {}): Resolv
   const interfaces: InterfaceToggles = {
     bidcosRf: Boolean(raw.interfaces?.bidcosRf ?? DEFAULT_INTERFACES.bidcosRf),
     hmIpRf: Boolean(raw.interfaces?.hmIpRf ?? DEFAULT_INTERFACES.hmIpRf),
+    virtualDevices: Boolean(raw.interfaces?.virtualDevices ?? DEFAULT_INTERFACES.virtualDevices),
   };
 
   const useTls = Boolean(raw.useTls ?? false);

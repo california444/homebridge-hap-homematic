@@ -125,6 +125,11 @@ describe('CcuClient values and typing', () => {
     expect(set.mock.calls.map((x) => x[2])).toEqual([{ explicitDouble: 1 }, false, 1]);
     expect(c.describe('A:1', 'LEVEL')?.TYPE).toBe('FLOAT');
     expect(c.interfaceOf('00000000000A01:1')).toBe('HmIP-RF');
+    // Before discovery: INT + 7 digits are heating groups, other 10-char serials BidCos.
+    expect(c.interfaceOf('INT0000001:1')).toBe('VirtualDevices');
+    expect(c.interfaceOf('INT0000001')).toBe('VirtualDevices');
+    expect(c.interfaceOf('OEQ0000001:1')).toBe('BidCos-RF');
+    expect(c.interfaceOf('INTA000001:1')).toBe('BidCos-RF');
   });
 
   it('readValues: one request per channel at a time, ACTION filtered, errors → undefined', async () => {
@@ -327,6 +332,19 @@ describe('AccessoryBase helpers', () => {
     env.fire('ABC0000001:0', 'OPERATING_VOLTAGE', 'x');
     expect(await level.onGetHandler!()).toBe(50);
     expect(a.char(bat, 'ChargingState').onGetHandler!()).toBe(2);
+  });
+
+  it('a failed get names the characteristic (hap-nodejs calls it as a method)', async () => {
+    const env = makeSvcEnv();
+    const debug = vi.spyOn(env.log, 'debug');
+    const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+    const low = a.char(a.svc('battery'), 'StatusLowBattery');
+    await expect(
+      low.onGetHandler!.call({ displayName: 'Status Low Battery' }),
+    ).rejects.toMatchObject(NO_RESPONSE);
+    expect(debug).toHaveBeenCalledWith('get %s: %s', 'Status Low Battery', expect.any(String));
+    await expect(low.onGetHandler!()).rejects.toMatchObject(NO_RESPONSE);
+    expect(debug).toHaveBeenLastCalledWith('get %s: %s', '?', expect.any(String));
   });
 
   it('battery with LOW_BAT only: no BatteryLevel, a cached one is removed', async () => {

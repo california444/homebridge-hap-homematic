@@ -230,6 +230,10 @@
   .hgui-card h6 {
     margin-bottom: 0.5rem;
   }
+  /* Same height as a .form-control, so a checkbox lines up with inputs. */
+  .hgui-input-height {
+    min-height: calc(1.5em + 0.75rem + 2px);
+  }
   .hgui-meta {
     color: var(--bs-secondary-color);
     font-size: 0.85rem;
@@ -305,7 +309,11 @@
     <li class="nav-item" role="presentation">
       <button class="nav-link" type="button" role="tab" data-tab="channels">🏠 Channels</button>
     </li>
-    <li class="nav-item ms-auto d-flex align-items-center">
+    <li class="nav-item ms-auto d-flex align-items-center gap-2">
+      <!-- Shown only with unsaved settings: the host's own Save button sits
+           below the (tall) iframe and is often out of view. -->
+      <span class="hgui-meta d-none" id="hgui-unsaved">Unsaved settings</span>
+      <button class="btn btn-sm btn-primary d-none" type="button" id="hgui-save-btn">Save</button>
       <span class="hgui-version" id="hgui-version-banner"></span>
     </li>
   </ul>

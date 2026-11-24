@@ -257,19 +257,18 @@ export class EventServer extends EventEmitter {
   private trackConnection(socket: Socket): void {
     const info: ConnectionInfo = { id: ++this.connectionSeq, requests: 0 };
     this.connections.set(socket, info);
-    this.log.debug(
-      'connection #%d from %s:%s',
-      info.id,
-      socket.remoteAddress ?? '?',
-      String(socket.remotePort ?? '?'),
-    );
+    // Every callback opens and closes its own connection (Connection:
+    // close), so opening and closing are not logged; only a broken one.
     socket.on('close', (hadError: boolean) => {
-      this.log.debug(
-        'connection #%d closed after %d request(s)%s',
-        info.id,
-        info.requests,
-        hadError ? ' (error)' : '',
-      );
+      if (hadError) {
+        this.log.debug(
+          'connection #%d from %s:%s closed with an error after %d request(s)',
+          info.id,
+          socket.remoteAddress ?? '?',
+          String(socket.remotePort ?? '?'),
+          info.requests,
+        );
+      }
     });
   }
 

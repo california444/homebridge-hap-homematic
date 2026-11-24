@@ -33,7 +33,7 @@ Konfiguration der Plattform in `hb-test/config.json`:
 
 - `ccuIp: 127.0.0.1`, Ports 2001/2010, ohne TLS (`useTls: false`), keine `rpcAuth`
 - `eventServer.callbackHost: 127.0.0.1`, `eventServer.port: 9875`
-- VirtualDevices (9292) erst aktivieren, wenn das Plugin das Interface kennt (Issue #42)
+- Heizungsgruppen: `interfaces.virtualDevices: true` (ab 1.3.0-beta.0, Port 9292), dann Kanal 1 der Gruppe (`INT…:1`) als Thermostat zuordnen. In Home an die Gruppe schreiben, nicht an ein Mitglied: Ein Wert an ein Mitglied geht nur an dieses Gerät (die Gruppe folgt nur mit „Gruppe folgt Mitgliedern“)
 
 Dann in der Mock-UI Geräte auswählen, in der Plugin-UI auf „Discover“ klicken, zuordnen und die Child-Bridge neu starten. Alternativ „CCU-Neustart simulieren“: Das Plugin meldet sich danach neu an und liest die Discovery neu.
 
