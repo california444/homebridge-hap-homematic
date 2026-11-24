@@ -88,28 +88,23 @@ in the
 
 ## Tested devices
 
-Tested on real hardware with an OpenCCU:
+Tested on real hardware:
 
-| Device          | Interface | Service                      |
-| --------------- | --------- | ---------------------------- |
-| HM-LC-Sw1PBU-FM | BidCos-RF | Switch / Light               |
-| HM-LC-Sw1-DR    | BidCos-RF | Switch / Light               |
-| HM-LC-Sw4-DR-2  | BidCos-RF | Irrigation system (4 valves) |
-| HM-LC-Bl1PBU-FM | BidCos-RF | Blind                        |
-| HM-Sec-SCo      | BidCos-RF | Contact sensor               |
-| HmIP-PS         | HmIP-RF   | Switch / Outlet              |
-| HmIP-DRSI4      | HmIP-RF   | Switch / Light (4 outputs)   |
-| HmIP-BROLL      | HmIP-RF   | Blind                        |
-| HmIP-SWSD       | HmIP-RF   | Smoke detector               |
-| HmIP-DSD-PCB    | HmIP-RF   | Doorbell                     |
-
-Tested by users:
-
-| Device                                       | Interface      | Service                           |
-| -------------------------------------------- | -------------- | --------------------------------- |
-| HmIP-HEATING group (HmIP-WTH-2, HmIP-eTRV-B) | VirtualDevices | Thermostat, humidity ([#42][i42]) |
-
-[i42]: https://github.com/california444/homebridge-hap-homematic/issues/42
+| Device             | Interface      | Service                      |
+| ------------------ | -------------- | ---------------------------- |
+| HM-LC-Sw1PBU-FM    | BidCos-RF      | Switch / Light               |
+| HM-LC-Sw1-DR       | BidCos-RF      | Switch / Light               |
+| HM-LC-Sw4-DR-2     | BidCos-RF      | Irrigation system (4 valves) |
+| HM-LC-Bl1PBU-FM    | BidCos-RF      | Blind                        |
+| HM-Sec-SCo         | BidCos-RF      | Contact sensor               |
+| HmIP-PS            | HmIP-RF        | Switch / Outlet              |
+| HmIP-DRSI4         | HmIP-RF        | Switch / Light (4 outputs)   |
+| HmIP-BROLL         | HmIP-RF        | Blind                        |
+| HmIP-SWSD          | HmIP-RF        | Smoke detector               |
+| HmIP-DSD-PCB       | HmIP-RF        | Doorbell                     |
+| HmIP-WTH-2         | HmIP-RF        | Thermostat                   |
+| HmIP-eTRV-B        | HmIP-RF        | Thermostat                   |
+| HmIP-HEATING group | VirtualDevices | Thermostat, humidity         |
 
 The other services are implemented and unit-tested, but have not been
 checked on real devices yet. Reports are welcome as an
