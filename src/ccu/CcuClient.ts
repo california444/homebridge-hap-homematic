@@ -103,9 +103,9 @@ function channel0(address: string): string {
   return `${colon === -1 ? address : address.slice(0, colon)}:0`;
 }
 
-/** The CCU's answer without the (sometimes doubled) "setValue failed:" prefix. */
+/** The CCU's answer without the (sometimes doubled) "setValue failed:" / "putParamset failed:" prefix. */
 function describeFailure(message: string): string {
-  return message.replace(/^(?:setValue failed:\s*)+/, '');
+  return message.replace(/^(?:(?:setValue|putParamset) failed:\s*)+/, '');
 }
 
 const ENABLED_INTERFACES: ReadonlyArray<{
@@ -405,10 +405,16 @@ export class CcuClient extends EventEmitter {
    * other commands in between (irrigation: ON_TIME, then STATE). The
    * first failure ends the job. Throws at once for an address on a
    * disabled interface.
+   *
+   * `together`: one `putParamset` with all values instead of one
+   * setValue each, so the CCU applies them at once (HmIP thermostats:
+   * CONTROL_MODE and SET_POINT_TEMPERATURE; a heating group then passes
+   * both on to its members together).
    */
   setValues(
     address: string,
     writes: ReadonlyArray<readonly [datapoint: string, value: unknown]>,
+    opts: { together?: boolean } = {},
   ): void {
     if (writes.length === 0) {
       return;
@@ -421,13 +427,20 @@ export class CcuClient extends EventEmitter {
       key: `${intf}:${address}:${writes.map(([dp]) => dp).join('+')}`,
       label,
       run: async () => {
+        if (opts.together && writes.length > 1) {
+          await this.sendValues(address, writes);
+          return;
+        }
         for (current = 0; current < writes.length; current++) {
           const [dp, v] = writes[current]!;
           await this.sendValue(address, dp, v);
         }
       },
       onError: (err, ms) => {
-        const [dp, v] = writes[Math.min(current, writes.length - 1)]!;
+        const together = opts.together && writes.length > 1;
+        const [dp, v] = together
+          ? writesLabel(writes)
+          : writes[Math.min(current, writes.length - 1)]!;
         const failure = new SetValueError(
           address,
           dp,
@@ -471,6 +484,22 @@ export class CcuClient extends EventEmitter {
         describeFailure((err as Error).message),
         err,
       );
+    }
+  }
+
+  /** One putParamset(VALUES), typed like sendValue. */
+  private async sendValues(
+    address: string,
+    writes: ReadonlyArray<readonly [datapoint: string, value: unknown]>,
+  ): Promise<void> {
+    const typed = Object.fromEntries(
+      writes.map(([dp, v]) => [dp, toTyped(this.describe(address, dp)?.TYPE, v)]),
+    );
+    try {
+      await this.clientFor(address).putParamset(address, typed);
+    } catch (err) {
+      const [dp, v] = writesLabel(writes);
+      throw new SetValueError(address, dp, v, describeFailure((err as Error).message), err);
     }
   }
 
@@ -701,6 +730,18 @@ export function toDevices(raw: RpcDeviceDescription[], intf: CcuInterfaceId): Cc
     d.channels.sort((a, b) => a.index - b.index);
   }
   return [...devices.values()];
+}
+
+/**
+ * Several writes as SetValueError datapoint / value, so the log line
+ * `<dp>=<value>` reads `CONTROL_MODE=1, SET_POINT_TEMPERATURE=4.5`.
+ */
+function writesLabel(
+  writes: ReadonlyArray<readonly [datapoint: string, value: unknown]>,
+): [string, unknown] {
+  const head = writes.slice(0, -1).map(([dp, v]) => `${dp}=${String(v)}, `);
+  const [lastDp, lastValue] = writes[writes.length - 1]!;
+  return [`${head.join('')}${lastDp}`, lastValue];
 }
 
 /** Shape a value for setValue by the datapoint's paramset TYPE. */

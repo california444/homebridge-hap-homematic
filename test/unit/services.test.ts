@@ -39,6 +39,8 @@ const channel: CcuChannel = { address: 'HmIP.000123:1', name: 'Test', index: 1, 
 interface TestEnv {
   ccu: CcuClient;
   setValueMock: ReturnType<typeof vi.spyOn>;
+  /** ccu.setValues: joint writes (HmIP thermostat mode + set point). */
+  setValuesMock: ReturnType<typeof vi.spyOn>;
   getValueMock: ReturnType<typeof vi.spyOn>;
   /** Start values for refresh(): readValues answers from fn(address, datapoint). */
   values(fn: (address: string, datapoint: string) => unknown): void;
@@ -54,6 +56,7 @@ function makeEnv(): TestEnv {
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'svc-test') });
   const setValueMock = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   const getValueMock = vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);
+  const setValuesMock = vi.spyOn(ccu, 'setValues').mockReturnValue(undefined);
   vi.spyOn(ccu, 'readMaster').mockResolvedValue(undefined);
   let valueFn: (address: string, datapoint: string) => unknown = () => undefined;
   vi.spyOn(ccu, 'readValues').mockImplementation(
@@ -69,6 +72,7 @@ function makeEnv(): TestEnv {
   return {
     ccu,
     setValueMock,
+    setValuesMock,
     getValueMock,
     values(fn) {
       valueFn = fn;
@@ -396,22 +400,37 @@ describe('ThermostatAccessory', () => {
     const service = accessory.services[0]!;
     const mode = getChar(service, 'TargetHeatingCoolingState');
 
+    // Off and Heat: mode and set point in one putParamset (together).
     await mode.onSetHandler!(0);
-    expect(env.setValueMock.mock.calls).toEqual([
-      ['HmIP.000123:1', 'CONTROL_MODE', 1],
-      ['HmIP.000123:1', 'SET_POINT_TEMPERATURE', 4.5],
+    expect(env.setValuesMock.mock.calls).toEqual([
+      [
+        'HmIP.000123:1',
+        [
+          ['CONTROL_MODE', 1],
+          ['SET_POINT_TEMPERATURE', 4.5],
+        ],
+        { together: true },
+      ],
     ]);
-    env.setValueMock.mockClear();
+    expect(env.setValueMock).not.toHaveBeenCalled();
+    env.setValuesMock.mockClear();
 
     await mode.onSetHandler!(1);
-    expect(env.setValueMock.mock.calls).toEqual([
-      ['HmIP.000123:1', 'CONTROL_MODE', 1],
-      ['HmIP.000123:1', 'SET_POINT_TEMPERATURE', 20],
+    expect(env.setValuesMock.mock.calls).toEqual([
+      [
+        'HmIP.000123:1',
+        [
+          ['CONTROL_MODE', 1],
+          ['SET_POINT_TEMPERATURE', 20],
+        ],
+        { together: true },
+      ],
     ]);
-    env.setValueMock.mockClear();
+    env.setValuesMock.mockClear();
 
     await mode.onSetHandler!(3);
     expect(env.setValueMock.mock.calls).toEqual([['HmIP.000123:1', 'CONTROL_MODE', 0]]);
+    expect(env.setValuesMock).not.toHaveBeenCalled();
 
     // Mode changed on the device: SET_POINT_MODE 1 (manual) → Heat.
     env.fireEvent('HmIP.000123:1', 'SET_POINT_MODE', 1);

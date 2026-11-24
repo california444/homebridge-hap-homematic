@@ -306,9 +306,18 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
         modeState: 'SET_POINT_MODE',
         humidity: 'HUMIDITY',
         setAuto: () => this.ccu.setValue(address, 'CONTROL_MODE', 0),
+        // Mode and set point in one putParamset, as aiohomematic, RedMatic
+        // and matterbridge-homematic do: two setValue calls made a group
+        // report the old set point in manual mode first (#42).
         setManual: async (temp) => {
-          await this.ccu.setValue(address, 'CONTROL_MODE', 1);
-          await this.ccu.setValue(address, 'SET_POINT_TEMPERATURE', temp);
+          this.ccu.setValues(
+            address,
+            [
+              ['CONTROL_MODE', 1],
+              ['SET_POINT_TEMPERATURE', temp],
+            ],
+            { together: true },
+          );
         },
       };
     }

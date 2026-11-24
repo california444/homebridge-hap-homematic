@@ -93,6 +93,63 @@ describe('CcuClient.setValue errors', () => {
     expect(sent).toEqual(['ON_TIME']);
     expect(reported[0]).toMatchObject({ datapoint: 'ON_TIME', value: 60, reason: 'Failure (-1)' });
   });
+
+  it('together: one putParamset, typed by the paramset description', async () => {
+    const ccu = makeCcu();
+    const calls: unknown[][] = [];
+    vi.spyOn(ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
+      setValue: async (...a: unknown[]) => calls.push(['setValue', ...a]),
+      putParamset: async (...a: unknown[]) => calls.push(['putParamset', ...a]),
+    });
+    ccu.setDescriber(
+      () =>
+        ({
+          CONTROL_MODE: { TYPE: 'INTEGER' },
+          SET_POINT_TEMPERATURE: { TYPE: 'FLOAT' },
+        }) as never,
+    );
+    ccu.setValues(
+      'INT0000001:1',
+      [
+        ['CONTROL_MODE', 1],
+        ['SET_POINT_TEMPERATURE', 21],
+      ],
+      { together: true },
+    );
+    await ccu.sendQueue.idle();
+    expect(calls).toEqual([
+      [
+        'putParamset',
+        'INT0000001:1',
+        { CONTROL_MODE: 1, SET_POINT_TEMPERATURE: { explicitDouble: 21 } },
+      ],
+    ]);
+    // Key order is the write order (CONTROL_MODE first).
+    expect(Object.keys(calls[0]![2] as object)).toEqual(['CONTROL_MODE', 'SET_POINT_TEMPERATURE']);
+  });
+
+  it('together: a failure names all writes', async () => {
+    const ccu = makeCcu();
+    vi.spyOn(ccu as unknown as { clientFor(a: string): unknown }, 'clientFor').mockReturnValue({
+      putParamset: async () => {
+        throw new Error('putParamset failed: Generic error (UNREACH) (-1)');
+      },
+    });
+    const reported: SetValueError[] = [];
+    ccu.setOwner('INT0000001:1', (e) => reported.push(e));
+    ccu.setValues(
+      'INT0000001:1',
+      [
+        ['CONTROL_MODE', 1],
+        ['SET_POINT_TEMPERATURE', 4.5],
+      ],
+      { together: true },
+    );
+    await ccu.sendQueue.idle();
+    expect(reported[0]!.message).toBe(
+      'INT0000001:1 CONTROL_MODE=1, SET_POINT_TEMPERATURE=4.5 not delivered: Generic error (UNREACH) (-1)',
+    );
+  });
 });
 
 describe('CcuClient.signalInfo', () => {
