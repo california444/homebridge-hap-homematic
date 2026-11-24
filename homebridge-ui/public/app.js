@@ -25,9 +25,12 @@
  *   - Settings changes are staged with updatePluginConfig(). They are
  *     written to config.json by the Save button next to the tabs (shown
  *     only while there are unsaved settings, savePluginConfig()) or by
- *     the host's Save button below the page, which is disabled while
- *     nothing is unsaved. The host's close button discards them; the
- *     plugin UI API offers no way to intercept it.
+ *     the host's Save button below the page. The host's close button
+ *     discards them; the plugin UI API offers no way to intercept it.
+ *   - Only the host's Save button offers the child bridge restart
+ *     afterwards. It is enabled while settings are unsaved and after any
+ *     saved change (devices.json or settings) in this session, so the
+ *     user can still restart from there.
  */
 
 // ---------------------------------------------------------------- helpers
@@ -322,7 +325,13 @@ async function saveDevices(successMsg) {
   spinner(true);
   try {
     await homebridge.request('/devices/put', { file: state.devicesFile });
-    toast('success', `${successMsg}. Restart the child bridge to apply.`, 'devices.json');
+    restartPending = true;
+    updateUnsaved();
+    toast(
+      'success',
+      `${successMsg}. Click Save below to restart the child bridge.`,
+      'devices.json',
+    );
     return true;
   } catch (err) {
     toast('error', err.message, 'devices.json');
@@ -1375,15 +1384,19 @@ function pushConfig() {
 
 /** state.cfg as last read from / written to config.json. */
 let savedCfg = '';
+/** A change was written in this session; the bridge needs a restart. */
+let restartPending = false;
 
 function updateUnsaved() {
   const dirty = savedCfg !== '' && JSON.stringify(state.cfg) !== savedCfg;
   $('hgui-unsaved')?.classList.toggle('d-none', !dirty);
   $('hgui-save-btn')?.classList.toggle('d-none', !dirty);
-  // The host's Save button below the page: usable only when there is
-  // something to save (channel mappings are written at once anyway).
+  // The host's Save button below the page: usable while there is
+  // something to save or to restart for. Only it offers the restart.
   try {
-    (dirty ? homebridge.enableSaveButton : homebridge.disableSaveButton)?.call(homebridge);
+    (dirty || restartPending ? homebridge.enableSaveButton : homebridge.disableSaveButton)?.call(
+      homebridge,
+    );
   } catch {
     /* older host without this API */
   }
@@ -1397,7 +1410,8 @@ async function saveSettings() {
     await homebridge.updatePluginConfig([state.cfg]);
     await homebridge.savePluginConfig();
     savedCfg = JSON.stringify(state.cfg);
-    toast('success', 'Settings saved. Restart the child bridge to apply them.');
+    restartPending = true;
+    toast('success', 'Settings saved. Click Save below to restart the child bridge.');
   } catch (err) {
     toast('error', `Could not save settings: ${err.message}`);
   } finally {
