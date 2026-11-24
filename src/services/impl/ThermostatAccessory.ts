@@ -47,6 +47,8 @@ interface ThermostatContext {
   limits?: SetPointLimits;
   /** Off was chosen in Home and not undone since. */
   offRequested?: boolean;
+  /** Temperature Heat restores after Off (survives a restart while Off). */
+  lastHeatTemp?: number;
 }
 
 /**
@@ -106,6 +108,10 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     const service = this.getOrAddService(this.Service.Thermostat, channel.name);
 
     this.service = service;
+    const savedHeat = this.store().lastHeatTemp;
+    if (typeof savedHeat === 'number' && Number.isFinite(savedHeat) && savedHeat > OFF_TEMP) {
+      this.lastHeatTemp = savedHeat;
+    }
 
     // Target temperature range: the mapping options minTemp / maxTemp
     // win; otherwise the MASTER limits of the device (last known value
@@ -166,7 +172,14 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
             this.applyTarget(OFF_TEMP);
             await dialect.setManual(OFF_TEMP);
           } else if (value === HEATING_AUTO) {
+            // From Off: the remembered temperature until the CCU reports
+            // the week program's set point, not the off value.
+            const wasOff = this.isOff();
             this.clearOff();
+            if (wasOff) {
+              this.targetTemp = this.lastHeatTemp;
+            }
+            service.updateCharacteristic(this.Characteristic.TargetTemperature, this.shownTarget());
             await dialect.setAuto();
           } else {
             const wasOff = this.isOff();
@@ -178,6 +191,9 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
               Math.max(min, restore ? this.lastHeatTemp : this.targetTemp),
             );
             this.applyTarget(temp);
+            // At once, not with the CCU's echo: Home would show the old
+            // value (the minimum) until then.
+            service.updateCharacteristic(this.Characteristic.TargetTemperature, this.shownTarget());
             await dialect.setManual(temp);
           }
         }),
@@ -473,8 +489,12 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
 
   /** The target temperature within the range shown in Home. */
   private shownTarget(): number {
+    // While Off, Home keeps the temperature Heat restores: no off value
+    // (4.5 °C, the device minimum, a group's member reports) reaches it,
+    // and switching back shows no jump.
     const { min, max } = this.range();
-    return Math.min(max, Math.max(min, this.targetTemp));
+    const t = this.isOff() ? this.lastHeatTemp : this.targetTemp;
+    return Math.min(max, Math.max(min, t));
   }
 
   /**
@@ -487,6 +507,10 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     this.targetTemp = temp;
     if (temp > OFF_TEMP && !this.store().offRequested && !this.inOffGrace()) {
       this.lastHeatTemp = temp;
+      if (this.store().lastHeatTemp !== temp) {
+        this.store().lastHeatTemp = temp;
+        this.persist();
+      }
     }
   }
 
