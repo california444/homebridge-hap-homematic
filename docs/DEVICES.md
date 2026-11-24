@@ -81,7 +81,7 @@ in the channel entry.
 | `ContactAccessory`    | `invert`            | `false`       | swap open / closed. Always a HomeKit contact sensor; the former variants `door` / `window` (motorised-door services with a useless position slider) are mapped to it                                                                                                                   |
 | `ThermostatAccessory` | `showHumidity`      | `false`       | humidity (`HUMIDITY` / `ACTUAL_HUMIDITY`) on the thermostat; only for devices with a sensor (wall thermostats) or heating groups with one as member — an empty group reports placeholders. Not offered in the UI and ignored for channels without the datapoint (radiator thermostats) |
 | `SmokeAccessory`      | `secondaryAlarm`    | `true`        | `false`: an alarm of another detector of the group does not show smoke on this one                                                                                                                                                                                                     |
-| `DoorbellAccessory`   | `trigger`           | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge)                                                                                                                                                                                                                                   |
+| `DoorbellAccessory`   | `trigger`           | `PRESS_SHORT` | `PRESS_SHORT`, `PRESS_LONG` or `STATE` (rising edge); must fit the input's operating mode, see [Input channels](#input-channels)                                                                                                                                                       |
 | `DoorbellAccessory`   | `debounceSeconds`   | `2`           | repeats within this time are ignored                                                                                                                                                                                                                                                   |
 | `IrrigationAccessory` | `defaultDuration`   | `600`         | run time in seconds (max. 3600), sent as `ON_TIME`; the actuator switches off by itself. A duration set for a valve in Home replaces it for that valve. `0` = stays on until switched off                                                                                              |
 | `IrrigationAccessory` | channel `valveType` | `Irrigation`  | `Irrigation`, `GenericValve`, `ShowerHead`, `WaterFaucet`                                                                                                                                                                                                                              |
@@ -101,6 +101,62 @@ Mapping a receiver of the group works the same. The custom UI lists only one
 channel per group and hides channels no service can handle as well as the
 CCU's virtual remote (RCV-50) and the built-in buttons / wall-button inputs (`KEY_TRANSCEIVER`, `MULTI_MODE_INPUT_TRANSMITTER`) of actuators; "Show all channels" lists every channel.
 
+### Input channels
+
+What an input channel (`MULTI_MODE_INPUT_TRANSMITTER`: HmIP-DSD-PCB,
+HmIP-FCI1 / FCI6, wall-button inputs of HmIP-DRSI4) sends depends on its
+operating mode in the CCU (`CHANNEL_OPERATION_MODE`, `MASTER`):
+
+| Operating mode | Sends                       | Services                                       |
+| -------------- | --------------------------- | ---------------------------------------------- |
+| key            | `PRESS_SHORT`, `PRESS_LONG` | push button; doorbell with `trigger` `PRESS_*` |
+| switch, binary | `STATE`                     | doorbell with `trigger: STATE`                 |
+| inactive       | nothing                     | none                                           |
+
+The custom UI reads the mode when the channel editor opens and offers only
+the services and trigger values that fit (all of them if the CCU does not
+tell). For a doorbell on a switch or binary input it stores
+`trigger: STATE`. The plugin reads the mode at start, after every
+re-subscribe and after a configuration change (`CONFIG_PENDING`) and logs
+a warning once if a mapping does not fit, e.g. a push button on an input
+that was later set to switch in the CCU.
+
+### Battery
+
+Battery-powered devices get a HomeKit battery service with "battery low"
+from `LOW_BAT` / `LOWBAT`. A percentage appears only for devices that
+report `OPERATING_VOLTAGE`. The CCU has no percentage; the plugin derives
+it from the voltage: 0 % at `LOW_BAT_LIMIT` (the voltage at which the
+device reports low battery, `MASTER` of channel 0, on the device for
+BidCos) and 100 % at `LOW_BAT_LIMIT / 0.75`, e.g. 1.1–1.47 V for one
+cell, 2.2–2.93 V for two. Without the limit: 2.4–3.2 V. The limit is read
+at start, after every re-subscribe and after a configuration change
+(`CONFIG_PENDING`).
+
+### Thermostats
+
+The target temperature range in Home comes from the device settings in
+the CCU (`MASTER` paramset: `TEMPERATURE_MINIMUM` / `TEMPERATURE_MAXIMUM`,
+on the thermostat channel for HmIP, on the device for BidCos and
+`HM-CC-VG-1`). It is read at start, after every re-subscribe and when the
+device reports `CONFIG_PENDING` going back to false after a change in the
+CCU. If `MIN_MAX_VALUE_NOT_RELEVANT_FOR_MANU_MODE` is set, the limits do
+not apply to what Home writes (manual mode) and the range stays
+4.5–30.5 °C, as without `MASTER` values. The hidden options `minTemp` /
+`maxTemp` win over both.
+
+Off writes manual mode with 4.5 °C. A device whose minimum is higher
+(HmIP-eTRV-B and HmIP-WTH-2 ship with 5.0 °C) raises that to its minimum
+and reports it back. After Off chosen in Home the accessory stays Off as
+long as the device is in manual mode at or below its minimum; during the
+first 15 s it stays Off whatever arrives (a heating group passes on its
+members one by one). A higher set point or Auto reported by the CCU ends
+it, as do Heat, Auto or a temperature from Home. Heat then restores the
+target before Off. The plugin logs once per device that Off is reported
+as the minimum; the device then regulates to that temperature, it is not
+fully off. A set point of 4.5 °C counts as Off in every mode, also in an
+Auto week program.
+
 ### Heating groups (VirtualDevices)
 
 Needs `interfaces.virtualDevices` in the plugin settings. Map channel 1 of
@@ -116,7 +172,8 @@ outputs, floor heating): they only mirror the members. `HM-CC-VG-1` sends
 its values as strings; the plugin reads them as numbers. A group has no
 `LOW_BAT` of its own until a member reports one, so its battery shows
 "normal" meanwhile. Without `SET_POINT_MODE` (possible after a CCU
-restart) the set point decides between Off (4.5 °C) and Heat.
+restart) the set point decides between Off and Heat (see
+[Thermostats](#thermostats)).
 
 ## Accessory identity (decision D6)
 

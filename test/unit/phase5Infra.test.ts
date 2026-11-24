@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CcuClient, toTyped } from '../../src/ccu/CcuClient.js';
 import { RpcClient } from '../../src/ccu/RpcClient.js';
 import { pairChannel } from '../../src/ccu/pairing.js';
-import { AccessoryBase, maintenanceAddress } from '../../src/services/AccessoryBase.js';
+import {
+  AccessoryBase,
+  batteryPercent,
+  maintenanceAddress,
+} from '../../src/services/AccessoryBase.js';
 import type { ServiceDefinition } from '../../src/services/types.js';
 import { clampToProps } from '../../src/util/sanitize.js';
 import { resolveConfig } from '../../src/util/config.js';
@@ -332,6 +336,75 @@ describe('AccessoryBase helpers', () => {
     env.fire('ABC0000001:0', 'OPERATING_VOLTAGE', 'x');
     expect(await level.onGetHandler!()).toBe(50);
     expect(a.char(bat, 'ChargingState').onGetHandler!()).toBe(2);
+  });
+
+  it('batteryPercent: 2.4..3.2 V without a limit, limit..limit/0.75 with one', () => {
+    expect(batteryPercent(2.8)).toBe(50);
+    expect(batteryPercent(1.3)).toBe(0);
+    expect(batteryPercent(1.3, 1.1)).toBe(55);
+    expect(batteryPercent(1.5, 1.1)).toBe(100);
+    expect(batteryPercent(2.6, 2.2)).toBe(55);
+    expect(batteryPercent(4.4, 3.3)).toBe(100);
+    expect(batteryPercent(3.0, 3.3)).toBe(0);
+    expect(batteryPercent(2.8, 0)).toBe(50); // HmIP-PCBS-BAT: limit 0.0
+  });
+
+  describe('battery scale from LOW_BAT_LIMIT (MASTER)', () => {
+    const withVoltage = (env: ReturnType<typeof makeSvcEnv>) =>
+      vi.spyOn(env.ccu, 'describeChannel').mockReturnValue({
+        LOW_BAT: { TYPE: 'BOOL' },
+        OPERATING_VOLTAGE: { TYPE: 'FLOAT' },
+      } as never);
+
+    it('rescales after refresh and keeps the limit in the context', async () => {
+      const env = makeSvcEnv();
+      withVoltage(env);
+      env.values['ABC0000001:0'] = { LOW_BAT: false, OPERATING_VOLTAGE: 1.3 };
+      env.master['ABC0000001:0'] = { LOW_BAT_LIMIT: 1.1 };
+      const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+      await a.handler.refresh();
+      expect(await a.char(a.svc('battery'), 'BatteryLevel').onGetHandler!()).toBe(55);
+      expect((a.accessory.context as { battery?: unknown }).battery).toEqual({ lowBatLimit: 1.1 });
+      expect(a.persist).toHaveBeenCalled();
+    });
+
+    it('uses the limit on the device (BidCos) and the last known one at attach', async () => {
+      const env = makeSvcEnv();
+      withVoltage(env);
+      env.master['ABC0000001'] = { LOW_BAT_LIMIT: '2.2' };
+      const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+      await a.handler.refresh();
+      env.fire('ABC0000001:0', 'OPERATING_VOLTAGE', 2.6);
+      expect(await a.char(a.svc('battery'), 'BatteryLevel').onGetHandler!()).toBe(55);
+
+      const restored = build(env, probeDef, ch('ABC0000002:1', 'X'), {
+        battery: { lowBatLimit: 1.1 },
+      } as never);
+      env.fire('ABC0000002:0', 'OPERATING_VOLTAGE', 1.3);
+      expect(await restored.char(restored.svc('battery'), 'BatteryLevel').onGetHandler!()).toBe(55);
+    });
+
+    it('re-reads the limit when CONFIG_PENDING goes from true to false', async () => {
+      const env = makeSvcEnv();
+      withVoltage(env);
+      const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+      await a.handler.refresh();
+      env.fire('ABC0000001:0', 'OPERATING_VOLTAGE', 1.3);
+      const level = a.char(a.svc('battery'), 'BatteryLevel');
+      expect(await level.onGetHandler!()).toBe(0);
+      env.master['ABC0000001:0'] = { LOW_BAT_LIMIT: 1.1 };
+      env.fire('ABC0000001:0', 'CONFIG_PENDING', true);
+      env.fire('ABC0000001:0', 'CONFIG_PENDING', false);
+      await vi.waitFor(async () => expect(await level.onGetHandler!()).toBe(55));
+    });
+
+    it('does not read MASTER for devices without OPERATING_VOLTAGE', async () => {
+      const env = makeSvcEnv();
+      vi.spyOn(env.ccu, 'describeChannel').mockReturnValue({ LOWBAT: { TYPE: 'BOOL' } } as never);
+      const a = build(env, probeDef, ch('ABC0000001:1', 'X'));
+      await a.handler.refresh();
+      expect(env.readMaster).not.toHaveBeenCalled();
+    });
   });
 
   it('a failed get names the characteristic (hap-nodejs calls it as a method)', async () => {

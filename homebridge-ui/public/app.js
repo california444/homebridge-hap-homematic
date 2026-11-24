@@ -119,6 +119,11 @@ const state = {
   },
   /** Datapoint names per channel address from the CCU (`/paramset`). */
   paramsets: {},
+  /**
+   * Operating mode of input channels (CHANNEL_OPERATION_MODE) per address,
+   * `null` when the CCU did not tell (`/paramset` with `inputMode`).
+   */
+  inputModes: {},
   /** Last "Test CCU" result as HTML; survives re-renders. */
   testResult: '',
   pluginVersion: 'unknown',
@@ -964,6 +969,15 @@ function subviewHeader(host, title, breadcrumb) {
 
 // --- editChannel: form
 
+/** Input channels: what they send depends on CHANNEL_OPERATION_MODE (MASTER). */
+const INPUT_CHANNEL_TYPE = 'MULTI_MODE_INPUT_TRANSMITTER';
+const INPUT_MODE_LABELS = {
+  INACTIVE: 'inactive',
+  KEY_BEHAVIOR: 'key',
+  SWITCH_BEHAVIOR: 'switch',
+  BINARY_BEHAVIOR: 'binary sensor',
+};
+
 function subEditChannel(host, props) {
   const { address, mode } = props;
   const cl = channelLookup();
@@ -985,6 +999,21 @@ function subEditChannel(host, props) {
   if (entry?.service && !candidates.some((s) => s.key === entry.service) && byKey(entry.service)) {
     candidates = [byKey(entry.service), ...candidates];
   }
+
+  // Input channels: only services that work in the channel's operating
+  // mode (service `inputModes`). Unknown mode: all. The mapped service
+  // of an existing entry stays selectable, with a warning.
+  const isInput = !isDeviceRow && info?.channel?.type === INPUT_CHANNEL_TYPE;
+  let inputMode = isInput ? state.inputModes[address] : undefined;
+  const fitsMode = (s) => !inputMode || !s.inputModes || s.inputModes.includes(inputMode);
+  const offered = () =>
+    candidates.filter((s) => fitsMode(s) || (mode === 'edit' && s.key === entry?.service));
+  /** Option spec with the enum values for the operating mode (`inputModeValues`). */
+  const fitSpec = (o) => {
+    const values = inputMode ? o.inputModeValues?.[inputMode] : undefined;
+    if (!values?.length) return o;
+    return { ...o, values, default: values.includes(o.default) ? o.default : values[0] };
+  };
 
   const draft = entry
     ? {
@@ -1046,12 +1075,14 @@ function subEditChannel(host, props) {
    */
   let channelDatapoints = isDeviceRow ? undefined : state.paramsets[address];
   const visibleOptions = (def) =>
-    (def?.options ?? []).filter(
-      (o) =>
-        !o.datapoints ||
-        !channelDatapoints ||
-        o.datapoints.some((dp) => channelDatapoints.includes(dp)),
-    );
+    (def?.options ?? [])
+      .filter(
+        (o) =>
+          !o.datapoints ||
+          !channelDatapoints ||
+          o.datapoints.some((dp) => channelDatapoints.includes(dp)),
+      )
+      .map(fitSpec);
   const needsDatapoints = () => all.some((s) => s.options?.some((o) => o.datapoints));
 
   subviewHeader(
@@ -1075,7 +1106,7 @@ function subEditChannel(host, props) {
     body.innerHTML = `
       <div class="hgui-card">
         <div class="hgui-meta mb-2">
-          <code>${h(asDevice ? serial : address)}</code>${!asDevice && info?.channel?.type ? ` · ${h(info.channel.type)}` : ''}${device?.type ? ` · ${h(device.type)}` : ''}
+          <code>${h(asDevice ? serial : address)}</code>${!asDevice && info?.channel?.type ? ` · ${h(info.channel.type)}` : ''}${device?.type ? ` · ${h(device.type)}` : ''}${isInput && inputMode ? ` · operating mode in the CCU: ${h(INPUT_MODE_LABELS[inputMode] ?? inputMode)}` : ''}
           ${asDevice ? '<span class="hgui-pill ms-2">whole device</span>' : ''}
         </div>
         ${
@@ -1083,6 +1114,15 @@ function subEditChannel(host, props) {
             ? `<div class="alert alert-warning">Changing the service creates a <strong>new accessory</strong> in Home —
           its room and automations are lost (the accessory identity includes the service).</div>`
             : ''
+        }
+        ${
+          isInput && inputMode === 'INACTIVE'
+            ? `<div class="alert alert-warning">This input is <strong>inactive</strong> in the CCU and sends nothing.
+          Change its operating mode in the CCU (device settings) first.</div>`
+            : isInput && inputMode && def && !fitsMode(def)
+              ? `<div class="alert alert-warning">This input is set to <strong>${h(INPUT_MODE_LABELS[inputMode] ?? inputMode)}</strong>
+          in the CCU; ${h(def.key)} does not work with that. Pick another service or change the operating mode in the CCU.</div>`
+              : ''
         }
         ${
           otherChannels.length
@@ -1106,7 +1146,7 @@ function subEditChannel(host, props) {
           <label>Service</label>
           <div>
             <select class="form-select" id="ec-service">
-              ${candidates
+              ${offered()
                 .map(
                   (s) =>
                     `<option value="${h(s.key)}" ${s.key === draft.service ? 'selected' : ''}>${h(s.description)} (${h(s.key)})</option>`,
@@ -1208,18 +1248,38 @@ function subEditChannel(host, props) {
       });
     }
   };
+  /** Once the operating mode is known: a new mapping switches to a fitting service. */
+  const applyInputMode = () => {
+    if (mode !== 'add') return;
+    const fit = offered();
+    if (fit.length && !fit.some((s) => s.key === draft.service)) {
+      draft.service = fit[0].key;
+      draft.subtype = fit[0].variants?.[0]?.id;
+      draft.options = {};
+    }
+  };
+  applyInputMode();
   draw();
-  if (!isDeviceRow && channelDatapoints === undefined && needsDatapoints()) {
+  const askDatapoints = !isDeviceRow && channelDatapoints === undefined && needsDatapoints();
+  const askInputMode = isInput && inputMode === undefined;
+  if (askDatapoints || askInputMode) {
     homebridge
       .request('/paramset', {
         config: state.cfg,
         address,
         interface: device?.interface ?? entry?.interface ?? guessInterface(serial),
+        inputMode: askInputMode,
       })
       .then((r) => {
-        if (!Array.isArray(r?.datapoints)) return;
-        state.paramsets[address] = r.datapoints;
-        channelDatapoints = r.datapoints;
+        if (Array.isArray(r?.datapoints)) {
+          state.paramsets[address] = r.datapoints;
+          channelDatapoints = r.datapoints;
+        }
+        if (askInputMode) {
+          inputMode = typeof r?.inputMode === 'string' ? r.inputMode : null;
+          state.inputModes[address] = inputMode;
+          applyInputMode();
+        }
         if (body.isConnected) draw();
       })
       .catch(() => undefined);
@@ -1243,13 +1303,30 @@ function subEditChannel(host, props) {
       return;
     }
     const def = byKey(draft.service);
+    if (isInput && inputMode === 'INACTIVE') {
+      toast('warning', 'This input is inactive in the CCU');
+      return;
+    }
     const intf = device?.interface ?? entry?.interface ?? guessInterface(serial);
     // An option hidden for this channel (no datapoint) is not saved.
-    const shown = new Set(visibleOptions(def).map((o) => o.key));
+    const visible = visibleOptions(def);
+    const shown = new Set(visible.map((o) => o.key));
     const hidden = (def?.options ?? []).filter((o) => !shown.has(o.key)).map((o) => o.key);
-    const options = clean(
-      Object.fromEntries(Object.entries(draft.options ?? {}).filter(([k]) => !hidden.includes(k))),
+    const picked = Object.fromEntries(
+      Object.entries(draft.options ?? {}).filter(([k]) => !hidden.includes(k)),
     );
+    // Enum values limited by the operating mode: an earlier value that no
+    // longer fits becomes the mode's default, and that default is stored
+    // when it differs from the plugin's (e.g. trigger STATE).
+    for (const o of visible) {
+      if (o.type !== 'enum' || !o.inputModeValues?.[inputMode]) continue;
+      const v = picked[o.key] ?? o.default;
+      const value = o.values.includes(v) ? v : o.default;
+      const pluginDefault = def.options.find((x) => x.key === o.key)?.default;
+      if (value === pluginDefault) delete picked[o.key];
+      else picked[o.key] = value;
+    }
+    const options = clean(picked);
     try {
       if (isDeviceRow || def?.scope === 'device') {
         const channels = {};

@@ -54,6 +54,7 @@ function makeEnv(): TestEnv {
   const ccu = new CcuClient({ config, log: new PrefixedLogger(makeLog(), 'svc-test') });
   const setValueMock = vi.spyOn(ccu, 'setValue').mockResolvedValue(undefined);
   const getValueMock = vi.spyOn(ccu, 'getValue').mockResolvedValue(undefined);
+  vi.spyOn(ccu, 'readMaster').mockResolvedValue(undefined);
   let valueFn: (address: string, datapoint: string) => unknown = () => undefined;
   vi.spyOn(ccu, 'readValues').mockImplementation(
     async (address: string) =>

@@ -14,6 +14,7 @@
 import { AccessoryBase, isTrue } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
+import { sendsKeyPresses, sendsState } from '../inputMode.js';
 
 const TRIGGERS = ['PRESS_SHORT', 'PRESS_LONG', 'STATE'] as const;
 type Trigger = (typeof TRIGGERS)[number];
@@ -59,6 +60,15 @@ class DoorbellHandler extends AccessoryBase implements ChannelService {
     }
 
     this.attachBattery(channel.address);
+
+    this.watchInputMode(channel, (mode) => {
+      if (mode === 'INACTIVE') return 'it sends nothing; change its operating mode in the CCU';
+      if (trigger === 'STATE' && !sendsState(mode))
+        return 'it sends key presses, no STATE; set the option Trigger to PRESS_SHORT';
+      if (trigger !== 'STATE' && !sendsKeyPresses(mode))
+        return 'it sends STATE, no key presses; set the option Trigger to STATE';
+      return undefined;
+    });
   }
 }
 
@@ -66,6 +76,7 @@ export const doorbellService: ServiceDefinition = {
   key: 'DoorbellAccessory',
   description: 'Doorbell (bell-signal input, e.g. HmIP-DSD-PCB)',
   channelTypes: ['MULTI_MODE_INPUT_TRANSMITTER'],
+  inputModes: ['KEY_BEHAVIOR', 'SWITCH_BEHAVIOR', 'BINARY_BEHAVIOR'],
   priority: 20,
   options: [
     {
@@ -74,6 +85,12 @@ export const doorbellService: ServiceDefinition = {
       type: 'enum',
       values: [...TRIGGERS],
       default: 'PRESS_SHORT',
+      // Key mode sends PRESS_*, switch and binary mode send STATE.
+      inputModeValues: {
+        KEY_BEHAVIOR: ['PRESS_SHORT', 'PRESS_LONG'],
+        SWITCH_BEHAVIOR: ['STATE'],
+        BINARY_BEHAVIOR: ['STATE'],
+      },
       hint: 'PRESS_SHORT fires on the event whatever its value; STATE fires when it turns on.',
     },
     { key: 'debounceSeconds', label: 'Debounce (s)', type: 'number', default: 2, min: 0, max: 30 },

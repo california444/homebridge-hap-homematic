@@ -313,10 +313,15 @@ export class RpcClient {
    * 11). For BidCos values that are old, rfd may ask the device by radio
    * (CONFIG_STATUS_REQ, seen right after init on 17.11.2026).
    * Unreachable HmIP devices answer `{}` (finding 2).
+   * `MASTER`: the channel's (or, with a device address, the device's)
+   * configuration as stored by the CCU.
    */
-  async getParamset(address: string): Promise<Record<string, unknown>> {
+  async getParamset(
+    address: string,
+    paramsetKey: 'VALUES' | 'MASTER' = 'VALUES',
+  ): Promise<Record<string, unknown>> {
     const t = await this.ensureTransport();
-    const result = await t.call('getParamset', [address, 'VALUES']);
+    const result = await t.call('getParamset', [address, paramsetKey]);
     return result && typeof result === 'object' && !Array.isArray(result)
       ? (result as Record<string, unknown>)
       : {};

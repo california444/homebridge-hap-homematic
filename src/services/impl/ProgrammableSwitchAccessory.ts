@@ -1,6 +1,7 @@
 import { AccessoryBase } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { CcuChannel } from '../../types.js';
+import { sendsKeyPresses } from '../inputMode.js';
 
 const PROGRAMMABLE_SWITCH_CHANNEL_TYPES = [
   'KEY',
@@ -9,8 +10,8 @@ const PROGRAMMABLE_SWITCH_CHANNEL_TYPES = [
   'BLIND_BUTTON',
   // Multi-channel input modules: HmIP-FCI6, HMIPW-DRI32. Each input
   // channel exposes itself as MULTI_MODE_INPUT_TRANSMITTER and emits
-  // PRESS_SHORT / PRESS_LONG just like a remote, so the existing
-  // handler covers them without modification.
+  // PRESS_SHORT / PRESS_LONG just like a remote, but only in key mode
+  // (CHANNEL_OPERATION_MODE, see inputMode.ts).
   'MULTI_MODE_INPUT_TRANSMITTER',
 ];
 
@@ -51,6 +52,14 @@ class ProgrammableSwitchHandler extends AccessoryBase implements ChannelService 
     // first value: "battery normal" instead of "No Response" — a remote
     // may not send anything for a long time after a CCU restart.
     this.attachBatteryIfPresent(channel.address, { assumeNormal: true });
+
+    this.watchInputMode(channel, (mode) =>
+      mode === 'INACTIVE'
+        ? 'it sends nothing; change its operating mode in the CCU'
+        : sendsKeyPresses(mode)
+          ? undefined
+          : 'it sends STATE, no key presses; set it to key in the CCU, or map it as doorbell with trigger STATE',
+    );
   }
 }
 
@@ -58,6 +67,7 @@ export const programmableSwitchService: ServiceDefinition = {
   key: 'ProgrammableSwitchAccessory',
   description: 'Push button / remote (HomeKit Stateless Programmable Switch)',
   channelTypes: PROGRAMMABLE_SWITCH_CHANNEL_TYPES,
+  inputModes: ['KEY_BEHAVIOR'],
   priority: 10,
   build: (ctx: ServiceContext) => new ProgrammableSwitchHandler(ctx),
 };

@@ -494,6 +494,20 @@ export class CcuClient extends EventEmitter {
   }
 
   /**
+   * Configuration of a channel or device via `getParamset(MASTER)`, e.g.
+   * the set point limits of a thermostat. MASTER values send no events;
+   * re-read after CONFIG_PENDING returns to false. `undefined` on error.
+   */
+  async readMaster(address: string): Promise<Record<string, unknown> | undefined> {
+    try {
+      return await this.clientFor(address).getParamset(address, 'MASTER');
+    } catch (err) {
+      this.log.debug('getParamset(%s, MASTER) failed: %s', address, (err as Error).message);
+      return undefined;
+    }
+  }
+
+  /**
    * Current values of a channel via `getParamset(VALUES)` (no radio
    * traffic). Concurrent calls for the same channel share one request.
    * `undefined` when the CCU answered with an error (e.g. BidCos device
