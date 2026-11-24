@@ -185,14 +185,6 @@ export class HomematicPlatform implements DynamicPlatformPlugin {
     // Start values via getParamset, after every handler declared its needs.
     await this.refreshHandlers(() => true);
 
-    // Beta diagnostics for heating groups (plan-gruppen 3.9), not awaited.
-    const groupChannels = mappings
-      .filter((m) => m.interface === 'VirtualDevices' && m.channel !== undefined)
-      .map((m) => `${m.device}:${m.channel}`);
-    if (groupChannels.length > 0) {
-      void this.ccu.groupDiagnostics.probe(groupChannels);
-    }
-
     // Drop cached accessories that are no longer mapped.
     const toRemove: PlatformAccessory[] = [];
     for (const [uuid, acc] of this.cachedAccessories) {

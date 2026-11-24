@@ -28,8 +28,8 @@ A Homebridge plugin that brings **HomeMatic** (BidCos-RF) and
   weather station, energy meter, push button / remote, doorbell and
   **irrigation system with several valves**.
 - **Heating groups** of the CCU (Settings → Groups) as one HomeKit
-  thermostat each, via the CCU's VirtualDevices interface (optional,
-  beta). A change in Home goes to the group, and the CCU passes it on to
+  thermostat each, via the CCU's VirtualDevices interface (optional).
+  A change in Home goes to the group, and the CCU passes it on to
   every member. See [Heating groups](#heating-groups).
 - HomematicIP specifics are handled for you: transmitter / receiver
   channel groups, `SMOKE_DETECTOR_ALARM_STATUS`, built-in buttons of
@@ -127,14 +127,6 @@ Only channel 1 is offered; the other channels of a group mirror its
 members. The battery shows "normal" until a member reports low battery.
 Humidity appears only with the thermostat option **Show humidity**, which
 is useful only if a wall thermostat with a sensor is a member.
-
-**Beta diagnostics.** While groups are in beta, the plugin logs every
-write to a group, the events that follow, a read-back after 3 s and the
-start values, each line marked `[group-diag]`. To help, change the target
-temperature and mode of a group in Home a few times and attach the output
-of `grep group-diag` from the Homebridge log to
-[issue #42](https://github.com/california444/homebridge-hap-homematic/issues/42).
-These lines will be removed again in a later version.
 
 ## Requirements
 
