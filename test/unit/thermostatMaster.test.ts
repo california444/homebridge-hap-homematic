@@ -210,6 +210,40 @@ describe('Thermostat: Off on a device with a minimum above 4.5 °C (#42)', () =>
     expect(mode.value).toBe(3);
   });
 
+  it('Heat after Off restores the minimum when it was chosen in Home', async () => {
+    vi.useFakeTimers();
+    const env = makeSvcEnv();
+    env.master[hmip.address] = LIMITS_5_30;
+    env.values[hmip.address] = { SET_POINT_TEMPERATURE: 13.5, SET_POINT_MODE: 1 };
+    const b = await setup(env, hmip);
+    const { mode, target } = chars(b);
+    await target.onSetHandler!(5);
+    env.fire(hmip.address, 'SET_POINT_TEMPERATURE', 5);
+    await mode.onSetHandler!(0);
+    env.fire(hmip.address, 'SET_POINT_MODE', 1);
+    env.fire(hmip.address, 'SET_POINT_TEMPERATURE', 5);
+    vi.advanceTimersByTime(16_000);
+    expect(mode.value).toBe(0);
+    env.setValues.mockClear();
+    await mode.onSetHandler!(1);
+    expect(env.setValues.mock.calls[0]![1]).toEqual([
+      ['CONTROL_MODE', 1],
+      ['SET_POINT_TEMPERATURE', 5],
+    ]);
+  });
+
+  it('Heat without Off keeps a set point at the minimum', async () => {
+    const env = makeSvcEnv();
+    env.master[hmip.address] = LIMITS_5_30;
+    env.values[hmip.address] = { SET_POINT_TEMPERATURE: 5, SET_POINT_MODE: 0 };
+    const b = await setup(env, hmip);
+    await chars(b).mode.onSetHandler!(1);
+    expect(env.setValues.mock.calls[0]![1]).toEqual([
+      ['CONTROL_MODE', 1],
+      ['SET_POINT_TEMPERATURE', 5],
+    ]);
+  });
+
   it('a temperature from Home ends Off', async () => {
     const env = makeSvcEnv();
     env.master[hmip.address] = LIMITS_5_30;

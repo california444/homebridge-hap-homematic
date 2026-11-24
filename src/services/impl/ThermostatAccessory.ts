@@ -172,7 +172,7 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
             const wasOff = this.isOff();
             this.clearOff();
             const { min, max } = this.range();
-            const restore = wasOff || this.targetTemp <= this.offLimit();
+            const restore = wasOff || this.targetTemp <= OFF_TEMP;
             const temp = Math.min(
               max,
               Math.max(min, restore ? this.lastHeatTemp : this.targetTemp),
@@ -477,9 +477,15 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
     return Math.min(max, Math.max(min, this.targetTemp));
   }
 
+  /**
+   * A set point above 4.5 °C is the temperature Heat restores after Off,
+   * also the device minimum chosen in Home. Not while Off chosen in Home
+   * is pending: then the device reports its minimum (or a group its
+   * members one by one), which is no heating temperature.
+   */
   private applyTarget(temp: number): void {
     this.targetTemp = temp;
-    if (temp > this.offLimit() && !this.inOffGrace()) {
+    if (temp > OFF_TEMP && !this.store().offRequested && !this.inOffGrace()) {
       this.lastHeatTemp = temp;
     }
   }
