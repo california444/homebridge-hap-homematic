@@ -26,7 +26,25 @@ import { formatSeconds } from '../ccu/SendQueue.js';
 import type { PrefixedLogger } from '../util/logger.js';
 import type { AccessoryContext, CcuInterfaceId } from '../types.js';
 import type { HapStatus, ServiceContext } from './types.js';
-import { clampToProps, type ValueProps } from '../util/sanitize.js';
+import { clampToProps, toFiniteNumber, type ValueProps } from '../util/sanitize.js';
+
+/**
+ * Battery percentage without LOW_BAT_LIMIT: 2.4 V = 0 %, 3.2 V = 100 %
+ * (two cells). With LOW_BAT_LIMIT from MASTER: 0 % at the limit, 100 %
+ * at limit / 0.75. That ratio fits the limits in the device data (1.1 V
+ * one cell, 2.2 / 2.4 V two cells, 3.3 V three, 4.4 V four) against
+ * fresh cells; a heuristic, the CCU reports no percentage.
+ */
+const BATTERY_DEFAULT_RANGE: [number, number] = [2.4, 3.2];
+const BATTERY_FULL_RATIO = 0.75;
+
+export function batteryPercent(volts: number, lowBatLimit?: number): number {
+  const [empty, full] =
+    lowBatLimit !== undefined && lowBatLimit > 0
+      ? [lowBatLimit, lowBatLimit / BATTERY_FULL_RATIO]
+      : BATTERY_DEFAULT_RANGE;
+  return Math.min(100, Math.max(0, Math.round(((volts - empty) / (full - empty)) * 100)));
+}
 
 export type DatapointListener = (value: unknown) => void;
 
@@ -69,6 +87,8 @@ export abstract class AccessoryBase {
   private readonly disposers: Array<() => void> = [];
   /** channel address → datapoint → appliers, read on refresh(). */
   private readonly reads = new Map<string, Map<string, DatapointListener[]>>();
+  /** MASTER reads, run after the start values on refresh(). */
+  private readonly masterReads: Array<() => Promise<void>> = [];
 
   constructor(ctx: ServiceContext) {
     this.accessory = ctx.accessory;
@@ -180,6 +200,30 @@ export abstract class AccessoryBase {
         }
       }
     }
+    for (const read of this.masterReads) {
+      try {
+        await read();
+      } catch (err) {
+        this.log.debug('MASTER read failed: %s', (err as Error).message);
+      }
+    }
+  }
+
+  /**
+   * Run `read` on every refresh(), after the start values, and when the
+   * device reports CONFIG_PENDING going back to false (a configuration
+   * change in the CCU; MASTER values send no events).
+   */
+  protected readMasterOnRefresh(channelAddress: string, read: () => Promise<void>): void {
+    this.masterReads.push(read);
+    let pending = false;
+    this.registerListener(maintenanceAddress(channelAddress), 'CONFIG_PENDING', (raw) => {
+      const now = isTrue(raw);
+      if (pending && !now) {
+        void read().catch((err: Error) => this.log.debug('MASTER read failed: %s', err.message));
+      }
+      pending = now;
+    });
   }
 
   /** Throw "No Response" for a value the CCU has not told us yet (4.2). */
@@ -463,13 +507,15 @@ export abstract class AccessoryBase {
           : this.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL,
       );
     };
+    // Scale from LOW_BAT_LIMIT (MASTER of channel 0, on the device for
+    // BidCos); the last known limit is kept in the context.
+    const store = this.accessory.context as unknown as { battery?: { lowBatLimit?: number } };
+    let voltage: number | undefined;
     const applyVoltage = (raw: unknown): void => {
-      // HmIP devices nominally report 0..4 V; map 2.4..3.2 → 0..100 %.
-      // Anything outside that range gets clamped. This is a heuristic;
-      // CCU does not surface a real % anywhere.
       const v = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
       if (!Number.isFinite(v)) return;
-      const pct = Math.min(100, Math.max(0, Math.round(((v - 2.4) / (3.2 - 2.4)) * 100)));
+      voltage = v;
+      const pct = batteryPercent(v, store.battery?.lowBatLimit);
       level = pct;
       ensureLevel();
       service.updateCharacteristic(this.Characteristic.BatteryLevel, pct);
@@ -478,6 +524,30 @@ export abstract class AccessoryBase {
     this.need(deviceAddress, 'LOW_BAT', applyLow);
     this.need(deviceAddress, 'LOWBAT', applyLow); // BidCos spelling
     this.need(deviceAddress, 'OPERATING_VOLTAGE', applyVoltage);
+
+    if (description && !('OPERATING_VOLTAGE' in description)) {
+      return; // no percentage, no limit needed
+    }
+    const serial = deviceAddress.split(':')[0]!;
+    this.readMasterOnRefresh(featureChannelAddress, async () => {
+      let limit: number | undefined;
+      for (const address of [deviceAddress, serial]) {
+        const v = toFiniteNumber((await this.ccu.readMaster(address))?.LOW_BAT_LIMIT);
+        if (v !== undefined && v > 0) {
+          limit = v;
+          break;
+        }
+      }
+      if (limit === undefined || store.battery?.lowBatLimit === limit) {
+        return;
+      }
+      store.battery = { ...store.battery, lowBatLimit: limit };
+      this.persist();
+      this.log.debug('%s: battery low at %s V', this.accessory.displayName, limit);
+      if (voltage !== undefined) {
+        applyVoltage(voltage);
+      }
+    });
   }
 
   dispose(): void {

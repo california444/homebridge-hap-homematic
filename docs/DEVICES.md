@@ -101,6 +101,18 @@ Mapping a receiver of the group works the same. The custom UI lists only one
 channel per group and hides channels no service can handle as well as the
 CCU's virtual remote (RCV-50) and the built-in buttons / wall-button inputs (`KEY_TRANSCEIVER`, `MULTI_MODE_INPUT_TRANSMITTER`) of actuators; "Show all channels" lists every channel.
 
+### Battery
+
+Battery-powered devices get a HomeKit battery service with "battery low"
+from `LOW_BAT` / `LOWBAT`. A percentage appears only for devices that
+report `OPERATING_VOLTAGE`. The CCU has no percentage; the plugin derives
+it from the voltage: 0 % at `LOW_BAT_LIMIT` (the voltage at which the
+device reports low battery, `MASTER` of channel 0, on the device for
+BidCos) and 100 % at `LOW_BAT_LIMIT / 0.75`, e.g. 1.1–1.47 V for one
+cell, 2.2–2.93 V for two. Without the limit: 2.4–3.2 V. The limit is read
+at start, after every re-subscribe and after a configuration change
+(`CONFIG_PENDING`).
+
 ### Thermostats
 
 The target temperature range in Home comes from the device settings in

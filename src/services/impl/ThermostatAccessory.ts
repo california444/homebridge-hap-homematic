@@ -1,6 +1,6 @@
 // Modified by california444 (2026) for homebridge-hap-homematic,
 // a hard fork of Homebridge-Homematic-HAP (Apache-2.0). See NOTICE.
-import { AccessoryBase, isTrue, maintenanceAddress } from '../AccessoryBase.js';
+import { AccessoryBase, isTrue } from '../AccessoryBase.js';
 import type { ChannelService, ServiceContext, ServiceDefinition } from '../types.js';
 import type { Service } from 'homebridge';
 import type { CcuChannel } from '../../types.js';
@@ -99,7 +99,6 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
   private offRequestedAt = 0;
   private offGraceTimer: ReturnType<typeof setTimeout> | undefined;
   private offNoticeLogged = false;
-  private configPending = false;
 
   attach(channel: CcuChannel): void {
     this.channelAddress = channel.address;
@@ -218,15 +217,9 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       }
     });
 
-    // MASTER values send no events. After a change in the CCU the device
-    // reports CONFIG_PENDING true, then false: read the limits again.
-    this.registerListener(maintenanceAddress(this.channelAddress), 'CONFIG_PENDING', (raw) => {
-      const pending = isTrue(raw);
-      if (this.configPending && !pending) {
-        void this.readLimits();
-      }
-      this.configPending = pending;
-    });
+    // Set point limits from MASTER: at start, after re-subscribe and
+    // after a configuration change in the CCU.
+    this.readMasterOnRefresh(this.channelAddress, () => this.readLimits());
     this.onDispose(() => clearTimeout(this.offGraceTimer));
 
     // Pull initial state so the accessory reflects current values
@@ -326,12 +319,6 @@ class ThermostatHandler extends AccessoryBase implements ChannelService {
       setAuto: () => this.ccu.setValue(address, 'AUTO_MODE', true),
       setManual: (temp) => this.ccu.setValue(address, 'MANU_MODE', temp),
     };
-  }
-
-  /** Start values, then the MASTER limits (at start and after every re-subscribe). */
-  override async refresh(): Promise<void> {
-    await super.refresh();
-    await this.readLimits();
   }
 
   /**
