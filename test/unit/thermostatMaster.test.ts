@@ -114,14 +114,17 @@ describe('Thermostat: MASTER set point limits', () => {
     await vi.waitFor(() => expect(chars(b).target.props).toMatchObject({ minValue: 8 }));
   });
 
-  it('shows a set point below the range at the range minimum', async () => {
+  it('while Off, Home sees the temperature Heat restores, not the off value', async () => {
     const env = makeSvcEnv();
     env.master[hmip.address] = LIMITS_5_30;
     env.values[hmip.address] = { SET_POINT_TEMPERATURE: 4.5, SET_POINT_MODE: 1 };
-    const b = await setup(env, hmip);
-    const { target, mode } = chars(b);
-    expect(target.value).toBe(5);
-    expect(mode.value).toBe(0);
+    const fresh = await setup(env, hmip);
+    expect(chars(fresh).target.value).toBe(20); // nothing remembered yet: default
+    expect(chars(fresh).mode.value).toBe(0);
+    // Remembered across a restart (context).
+    const restored = await setup(env, hmip, { thermostat: { lastHeatTemp: 18 } });
+    expect(chars(restored).target.value).toBe(18);
+    expect(await chars(restored).target.onGetHandler!()).toBe(18);
   });
 });
 
@@ -242,6 +245,44 @@ describe('Thermostat: Off on a device with a minimum above 4.5 °C (#42)', () =>
       ['CONTROL_MODE', 1],
       ['SET_POINT_TEMPERATURE', 5],
     ]);
+  });
+
+  it('Off keeps the temperature in Home; Heat shows the restored one at once', async () => {
+    vi.useFakeTimers();
+    const env = makeSvcEnv();
+    env.master[group.address] = LIMITS_5_30;
+    env.values[group.address] = { SET_POINT_TEMPERATURE: 21, SET_POINT_MODE: 1 };
+    const b = await setup(env, group);
+    const { mode, target } = chars(b);
+    expect(target.value).toBe(21);
+    await mode.onSetHandler!(0);
+    for (const t of [20, 18, 5, 18, 5]) {
+      env.fire(group.address, 'SET_POINT_TEMPERATURE', t);
+      expect(target.value).toBe(21);
+    }
+    vi.advanceTimersByTime(16_000);
+    expect(target.value).toBe(21);
+    expect(await target.onGetHandler!()).toBe(21);
+    // Heat: 21 in Home before the CCU answers (no event fired here).
+    target.value = 5;
+    await mode.onSetHandler!(1);
+    expect(target.value).toBe(21);
+  });
+
+  it('Auto after Off shows the remembered temperature until the CCU reports', async () => {
+    const env = makeSvcEnv();
+    env.master[hmip.address] = LIMITS_5_30;
+    env.values[hmip.address] = { SET_POINT_TEMPERATURE: 19, SET_POINT_MODE: 1 };
+    const b = await setup(env, hmip);
+    const { mode, target } = chars(b);
+    await mode.onSetHandler!(0);
+    env.fire(hmip.address, 'SET_POINT_TEMPERATURE', 5);
+    target.value = 5;
+    await mode.onSetHandler!(3);
+    expect(target.value).toBe(19);
+    env.fire(hmip.address, 'SET_POINT_MODE', 0);
+    env.fire(hmip.address, 'SET_POINT_TEMPERATURE', 17);
+    expect(target.value).toBe(17);
   });
 
   it('a temperature from Home ends Off', async () => {

@@ -158,7 +158,10 @@ long as the device is in manual mode at or below its minimum; during the
 first 15 s it stays Off whatever arrives (a heating group passes on its
 members one by one). A higher set point or Auto reported by the CCU ends
 it, as do Heat, Auto or a temperature from Home. Heat then restores the
-target before Off. The plugin logs once per device that Off is reported
+target before Off. While Off, Home sees that target temperature, not the
+off value (4.5 °C, the minimum, a group's member reports), so switching
+back to Heat shows no jump; Auto shows it until the CCU reports the week
+program's set point. The target is kept across restarts. The plugin logs once per device that Off is reported
 as the minimum; the device then regulates to that temperature, it is not
 fully off. A set point of 4.5 °C counts as Off in every mode, also in an
 Auto week program.
