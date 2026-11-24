@@ -339,6 +339,16 @@ export class RpcClient {
   }
 
   /**
+   * XML-RPC `putParamset(address, 'VALUES', values)`: several datapoints
+   * in one call, which the CCU applies together (thermostats: mode and
+   * set point). Values must already be typed (FLOAT as explicit double).
+   */
+  async putParamset(address: string, values: Record<string, unknown>): Promise<void> {
+    const t = await this.ensureTransport();
+    await t.call('putParamset', [address, 'VALUES', values]);
+  }
+
+  /**
    * XML-RPC `ping(callerId)`. The call itself only proves the port is
    * open; a live subscription answers with an event `PONG` = callerId
    * (BidCos: `CENTRAL`, HmIP: `CENTRAL:0`). Throws when unreachable

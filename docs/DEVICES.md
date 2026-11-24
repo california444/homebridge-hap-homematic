@@ -145,6 +145,12 @@ not apply to what Home writes (manual mode) and the range stays
 4.5–30.5 °C, as without `MASTER` values. The hidden options `minTemp` /
 `maxTemp` win over both.
 
+On HmIP, Off and Heat write the mode and the set point in one
+`putParamset` (`CONTROL_MODE` 1 and `SET_POINT_TEMPERATURE`), so the CCU
+applies both at once; a heating group passes them on together. Auto writes
+`CONTROL_MODE` 0, a temperature from Home `SET_POINT_TEMPERATURE` alone.
+BidCos uses `MANU_MODE` with the temperature and `AUTO_MODE`.
+
 Off writes manual mode with 4.5 °C. A device whose minimum is higher
 (HmIP-eTRV-B and HmIP-WTH-2 ship with 5.0 °C) raises that to its minimum
 and reports it back. After Off chosen in Home the accessory stays Off as
@@ -162,10 +168,10 @@ Auto week program.
 Needs `interfaces.virtualDevices` in the plugin settings. Map channel 1 of
 the group as `ThermostatAccessory`:
 
-| Group type     | Radio system | Channel 1                            | Writes                                      |
-| -------------- | ------------ | ------------------------------------ | ------------------------------------------- |
-| `HmIP-HEATING` | HmIP         | `HEATING_CLIMATECONTROL_TRANSCEIVER` | `SET_POINT_TEMPERATURE`, `CONTROL_MODE`     |
-| `HM-CC-VG-1`   | BidCos       | `CLIMATECONTROL_RT_TRANSCEIVER`      | `SET_TEMPERATURE`, `MANU_MODE`, `AUTO_MODE` |
+| Group type     | Radio system | Channel 1                            | Writes                                                                          |
+| -------------- | ------------ | ------------------------------------ | ------------------------------------------------------------------------------- |
+| `HmIP-HEATING` | HmIP         | `HEATING_CLIMATECONTROL_TRANSCEIVER` | `SET_POINT_TEMPERATURE`, `CONTROL_MODE` (Off / Heat: both in one `putParamset`) |
+| `HM-CC-VG-1`   | BidCos       | `CLIMATECONTROL_RT_TRANSCEIVER`      | `SET_TEMPERATURE`, `MANU_MODE`, `AUTO_MODE`                                     |
 
 The custom UI hides the other channels of a group (window contact, switch
 outputs, floor heating): they only mirror the members. `HM-CC-VG-1` sends

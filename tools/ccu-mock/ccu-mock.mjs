@@ -783,7 +783,8 @@ function memberChannels(groupDev, memberAddr) {
     .map((d) => d.ADDRESS);
 }
 
-function applyGroupSet(gdev, ch, dp, value, corr) {
+/** `delay`: fixed delay to the members (putParamset: the same for all values, so their order stays). */
+function applyGroupSet(gdev, ch, dp, value, corr, delay) {
   const cfg = state.groups[gdev.address] ?? { members: [], follow: true, echo: false };
   const members = cfg.members.filter((m) => isSelected(m));
   if (!members.length) {
@@ -810,8 +811,8 @@ function applyGroupSet(gdev, ch, dp, value, corr) {
     const mdev = catalog.get(m);
     for (const mch of memberChannels(gdev, m)) {
       if (!descOf(mch)?.[dp]) continue;
-      const delay = 100 + Math.floor(Math.random() * 400);
-      setTimeout(() => applySet(mdev, mch, dp, value, corr), delay);
+      const wait = delay ?? 100 + Math.floor(Math.random() * 400);
+      setTimeout(() => applySet(mdev, mch, dp, value, corr), wait);
     }
   }
 }
@@ -905,9 +906,14 @@ async function handle(iface, method, params, rawTypes) {
       for (const dp of Object.keys(values))
         if (!desc[dp] || !(desc[dp].OPERATIONS & 2))
           return { fault: fault(-5, 'Unknown Parameter value for value key') };
-      // In der Reihenfolge der Struktur, wie die CCU (CONTROL_MODE vor SET_POINT_TEMPERATURE)
+      // In der Reihenfolge der Struktur, wie die CCU (CONTROL_MODE vor SET_POINT_TEMPERATURE).
+      // Gruppen geben alle Werte mit derselben Verzögerung weiter, die Reihenfolge bleibt.
+      const delay = 100 + Math.floor(Math.random() * 400);
       setImmediate(() => {
-        for (const [dp, v] of Object.entries(values)) applySet(dev, addr, dp, v, corr);
+        for (const [dp, v] of Object.entries(values)) {
+          if (dev.iface === 'VirtualDevices') applyGroupSet(dev, addr, dp, v, corr, delay);
+          else applySet(dev, addr, dp, v, corr);
+        }
       });
       return { value: '', corr };
     }

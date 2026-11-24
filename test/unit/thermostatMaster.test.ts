@@ -137,9 +137,15 @@ describe('Thermostat: Off on a device with a minimum above 4.5 °C (#42)', () =>
     expect(mode.value).toBe(1);
 
     await mode.onSetHandler!(0);
-    expect(env.setValue.mock.calls).toEqual([
-      [group.address, 'CONTROL_MODE', 1],
-      [group.address, 'SET_POINT_TEMPERATURE', 4.5],
+    expect(env.setValues.mock.calls).toEqual([
+      [
+        group.address,
+        [
+          ['CONTROL_MODE', 1],
+          ['SET_POINT_TEMPERATURE', 4.5],
+        ],
+        { together: true },
+      ],
     ]);
     // Reports of the members, one after the other (log in #42).
     for (const t of [20, 18, 5, 18, 5]) {
@@ -158,11 +164,17 @@ describe('Thermostat: Off on a device with a minimum above 4.5 °C (#42)', () =>
     );
 
     // Heat restores the target before Off, not the minimum.
-    env.setValue.mockClear();
+    env.setValues.mockClear();
     await mode.onSetHandler!(1);
-    expect(env.setValue.mock.calls).toEqual([
-      [group.address, 'CONTROL_MODE', 1],
-      [group.address, 'SET_POINT_TEMPERATURE', 21],
+    expect(env.setValues.mock.calls).toEqual([
+      [
+        group.address,
+        [
+          ['CONTROL_MODE', 1],
+          ['SET_POINT_TEMPERATURE', 21],
+        ],
+        { together: true },
+      ],
     ]);
   });
 
